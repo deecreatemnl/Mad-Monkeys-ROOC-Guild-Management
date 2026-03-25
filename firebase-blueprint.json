@@ -1,0 +1,120 @@
+{
+  "entities": {
+    "Member": {
+      "title": "Member",
+      "description": "A guild member in Ragnarok Origin Classic",
+      "type": "object",
+      "properties": {
+        "ign": {
+          "type": "string",
+          "description": "In-game name of the member"
+        },
+        "job": {
+          "type": "string",
+          "description": "The class/job of the member (e.g., Lord Knight, High Priest)"
+        },
+        "dateJoined": {
+          "type": "string",
+          "format": "date",
+          "description": "The date the member joined the guild"
+        },
+        "uid": {
+          "type": "string",
+          "description": "The Firebase Auth UID of the member (if applicable)"
+        }
+      },
+      "required": ["ign", "job", "dateJoined"]
+    },
+    "Event": {
+      "title": "Event",
+      "description": "A regular guild event (e.g., Guild War, Boss Hunt)",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the event"
+        },
+        "description": {
+          "type": "string",
+          "description": "Brief description of the event"
+        }
+      },
+      "required": ["name"]
+    },
+    "Party": {
+      "title": "Party",
+      "description": "A group of up to 5 members within an event",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the party (e.g., Party 1, Alpha Squad)"
+        }
+      },
+      "required": ["name"]
+    },
+    "Assignment": {
+      "title": "Assignment",
+      "description": "A member assigned to a party",
+      "type": "object",
+      "properties": {
+        "memberId": {
+          "type": "string",
+          "description": "ID of the member"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["Main DPS", "Support", "Tank", "DPS"],
+          "description": "The role of the member in the party"
+        }
+      },
+      "required": ["memberId", "role"]
+    },
+    "GuildSettings": {
+      "title": "Guild Settings",
+      "description": "Global settings for the guild",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the guild"
+        },
+        "subtitle": {
+          "type": "string",
+          "description": "Subtitle or description of the guild"
+        },
+        "timezone": {
+          "type": "string",
+          "description": "The guild's primary timezone"
+        },
+        "logoUrl": {
+          "type": "string",
+          "description": "URL to the guild's logo image"
+        }
+      },
+      "required": ["name", "subtitle", "timezone"]
+    }
+  },
+  "firestore": {
+    "/settings/{settingId}": {
+      "schema": "GuildSettings",
+      "description": "Collection for guild settings (usually a single document 'guild_settings')"
+    },
+    "/members/{memberId}": {
+      "schema": "Member",
+      "description": "Collection of guild members"
+    },
+    "/events/{eventId}": {
+      "schema": "Event",
+      "description": "Collection of guild events"
+    },
+    "/events/{eventId}/parties/{partyId}": {
+      "schema": "Party",
+      "description": "Subcollection of parties for a specific event"
+    },
+    "/events/{eventId}/parties/{partyId}/assignments/{assignmentId}": {
+      "schema": "Assignment",
+      "description": "Subcollection of assignments for a specific party"
+    }
+  }
+}

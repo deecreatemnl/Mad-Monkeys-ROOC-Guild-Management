@@ -1,0 +1,133 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: members
+    // Fields:
+    //   - ign: string (required)
+    //   - job: string (required)
+    //   - dateJoined: string (required)
+    //   - uid: string (optional)
+    //
+    // Collection: events
+    // Fields:
+    //   - name: string (required)
+    //   - description: string (optional)
+    //
+    // Subcollection: events/{eventId}/subevents
+    // Fields:
+    //   - name: string (required)
+    //
+    // Subcollection: events/{eventId}/subevents/{subEventId}/parties
+    // Fields:
+    //   - name: string (required)
+    //
+    // Subcollection: events/{eventId}/subevents/{subEventId}/parties/{partyId}/assignments
+    // Fields:
+    //   - memberId: string (required)
+    //   - role: string (required)
+    //
+    // Collection: jobs
+    // Fields:
+    //   - name: string (required)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == "darren@createmnl.com" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'superadmin')
+      );
+    }
+
+    function isAdmin() {
+      return isSuperAdmin() || (
+        isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+      );
+    }
+
+    function isValidMember(data) {
+      return data.ign is string && data.ign.size() > 0 &&
+             data.job is string && data.job.size() > 0;
+    }
+
+    function isValidEvent(data) {
+      return data.name is string && data.name.size() > 0;
+    }
+
+    function isValidSubEvent(data) {
+      return data.name is string && data.name.size() > 0;
+    }
+
+    function isValidParty(data) {
+      return data.name is string && data.name.size() > 0;
+    }
+
+    function isValidAssignment(data) {
+      return data.memberId is string && data.role is string;
+    }
+
+    function isValidJob(data) {
+      return data.name is string && data.name.size() > 0;
+    }
+
+    function isValidSettings(data) {
+      return data.name is string && data.name.size() > 0 &&
+             data.subtitle is string &&
+             data.timezone is string;
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidSettings(request.resource.data);
+    }
+
+    match /jobs/{jobId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /members/{memberId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /events/{eventId} {
+      allow read: if true; // Publicly readable for shareable lineup
+      allow write: if isAdmin();
+
+      match /subevents/{subEventId} {
+        allow read: if true;
+        allow write: if isAdmin();
+
+        match /parties/{partyId} {
+          allow read: if true; // Publicly readable for shareable lineup
+          allow write: if isAdmin();
+
+          match /assignments/{assignmentId} {
+            allow read: if true; // Publicly readable for shareable lineup
+            allow write: if isAdmin();
+          }
+        }
+      }
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
+      allow delete: if isAuthenticated() && isSuperAdmin();
+    }
+  }
+}
