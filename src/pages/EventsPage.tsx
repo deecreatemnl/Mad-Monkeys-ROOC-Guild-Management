@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy, setDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { useState, useEffect, useCallback } from 'react';
+import { fetchAPI } from '../firebase';
 import { GuildEvent, Member, Assignment, Party, SubEvent } from '../types';
 import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Shield, Sword, Heart, Star, Share2, Check, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search, Zap, Target, Music, Hammer, FlaskConical, Hand, Cross, Skull } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -172,15 +171,7 @@ function SortablePartyItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ 
-    id: party.id!,
-    data: {
-      type: 'party',
-      party,
-      subEventId: subEvent.id,
-      eventId: event.id
-    }
-  });
+  } = useSortable({ id: party.id! });
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -333,14 +324,7 @@ function SortableSubEventItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ 
-    id: subEvent.id!,
-    data: {
-      type: 'subevent',
-      subEvent,
-      eventId: event.id
-    }
-  });
+  } = useSortable({ id: subEvent.id! });
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -348,6 +332,17 @@ function SortableSubEventItem({
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  const handlePartyDragEnd = (eventDnd: DragEndEvent) => {
+    const { active, over } = eventDnd;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = parties.findIndex((p) => p.id === active.id);
+    const newIndex = parties.findIndex((p) => p.id === over.id);
+
+    const reordered = arrayMove(parties, oldIndex, newIndex);
+    onReorderParties(event.id!, subEvent.id!, reordered);
+  };
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -411,35 +406,41 @@ function SortableSubEventItem({
             transition={{ duration: 0.2, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
-            <SortableContext
-              items={parties.map(p => p.id!)}
-              strategy={rectSortingStrategy}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handlePartyDragEnd}
             >
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {parties.map((party) => (
-                  <SortablePartyItem
-                    key={party.id}
-                    party={party}
-                    event={event}
-                    subEvent={subEvent}
-                    isAdmin={isAdmin}
-                    assignments={assignments}
-                    members={members}
-                    openAssignModal={openAssignModal}
-                    openPartyModal={openPartyModal}
-                    deleteParty={deleteParty}
-                    unassignMember={unassignMember}
-                    getRoleStyle={getRoleStyle}
-                    onReorderAssignments={onReorderAssignments}
-                  />
-                ))}
-                {parties.length === 0 && (
-                  <div className="col-span-full py-4 text-center border border-dashed border-zinc-800 rounded-xl text-zinc-700 text-xs">
-                    No parties created for this sub event
-                  </div>
-                )}
-              </div>
-            </SortableContext>
+              <SortableContext
+                items={parties.map(p => p.id!)}
+                strategy={rectSortingStrategy}
+              >
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {parties.map((party) => (
+                    <SortablePartyItem
+                      key={party.id}
+                      party={party}
+                      event={event}
+                      subEvent={subEvent}
+                      isAdmin={isAdmin}
+                      assignments={assignments}
+                      members={members}
+                      openAssignModal={openAssignModal}
+                      openPartyModal={openPartyModal}
+                      deleteParty={deleteParty}
+                      unassignMember={unassignMember}
+                      getRoleStyle={getRoleStyle}
+                      onReorderAssignments={onReorderAssignments}
+                    />
+                  ))}
+                  {parties.length === 0 && (
+                    <div className="col-span-full py-4 text-center border border-dashed border-zinc-800 rounded-xl text-zinc-700 text-xs">
+                      No parties created for this sub event
+                    </div>
+                  )}
+                </div>
+              </SortableContext>
+            </DndContext>
           </motion.div>
         )}
       </AnimatePresence>
@@ -517,76 +518,44 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [partyFormData, setPartyFormData] = useState({ name: '' });
   const [assignFormData, setAssignFormData] = useState({ memberId: '', role: ROLES[0].name });
 
-  useEffect(() => {
-    const eventsQuery = query(collection(db, 'events'), orderBy('name', 'asc'));
-    const unsubscribeEvents = onSnapshot(eventsQuery, (snapshot) => {
-      const eventsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as GuildEvent));
+  const loadData = useCallback(async () => {
+    try {
+      const [eventsData, membersData] = await Promise.all([
+        fetchAPI('/api/events'),
+        fetchAPI('/api/members')
+      ]);
+      
       setEvents(eventsData);
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'events');
-      setLoading(false);
-    });
-
-    const membersQuery = query(collection(db, 'members'), orderBy('ign', 'asc'));
-    const unsubscribeMembers = onSnapshot(membersQuery, (snapshot) => {
-      const membersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Member));
       setMembers(membersData);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'members');
-    });
-
-    return () => {
-      unsubscribeEvents();
-      unsubscribeMembers();
-    };
+      
+      // Fetch sub-resources for each event
+      for (const event of eventsData) {
+        const subEventsData = await fetchAPI(`/api/events/${event.id}/subevents`);
+        subEventsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
+        setSubEvents(prev => ({ ...prev, [event.id!]: subEventsData }));
+        
+        for (const subEvent of subEventsData) {
+          const partiesData = await fetchAPI(`/api/events/${event.id}/subevents/${subEvent.id}/parties`);
+          partiesData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
+          setParties(prev => ({ ...prev, [subEvent.id!]: partiesData }));
+          
+          for (const party of partiesData) {
+            const assignmentsData = await fetchAPI(`/api/events/${event.id}/subevents/${subEvent.id}/parties/${party.id}/assignments`);
+            assignmentsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+            setAssignments(prev => ({ ...prev, [party.id!]: assignmentsData }));
+          }
+        }
+      }
+      setLoading(false);
+    } catch (error) {
+      console.error('Failed to load events data:', error);
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    const unsubscribes: (() => void)[] = [];
-    events.forEach(event => {
-      // Fetch SubEvents
-      const subEventsRef = collection(db, 'events', event.id!, 'subevents');
-      const unsubSubEvents = onSnapshot(subEventsRef, (snapshot) => {
-        const subEventsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SubEvent));
-        // Sort by order, fallback to name
-        subEventsData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
-        setSubEvents(prev => ({ ...prev, [event.id!]: subEventsData }));
-        
-        // For each subevent, fetch parties
-        subEventsData.forEach(subEvent => {
-          const partiesRef = collection(db, 'events', event.id!, 'subevents', subEvent.id!, 'parties');
-          const unsubParties = onSnapshot(partiesRef, (snapshot) => {
-            const partiesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Party));
-            // Sort by order, fallback to name
-            partiesData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
-            setParties(prev => ({ ...prev, [subEvent.id!]: partiesData }));
-            
-            // For each party, fetch assignments
-            partiesData.forEach(party => {
-              const assignmentsRef = collection(db, 'events', event.id!, 'subevents', subEvent.id!, 'parties', party.id!, 'assignments');
-              const unsubAssignments = onSnapshot(assignmentsRef, (snapshot) => {
-                const assignmentsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Assignment));
-                // Sort by order
-                assignmentsData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-                setAssignments(prev => ({ ...prev, [party.id!]: assignmentsData }));
-              }, (error) => {
-                handleFirestoreError(error, OperationType.LIST, `events/${event.id}/subevents/${subEvent.id}/parties/${party.id}/assignments`);
-              });
-              unsubscribes.push(unsubAssignments);
-            });
-          }, (error) => {
-            handleFirestoreError(error, OperationType.LIST, `events/${event.id}/subevents/${subEvent.id}/parties`);
-          });
-          unsubscribes.push(unsubParties);
-        });
-      }, (error) => {
-        handleFirestoreError(error, OperationType.LIST, `events/${event.id}/subevents`);
-      });
-      unsubscribes.push(unsubSubEvents);
-    });
-    return () => unsubscribes.forEach(unsub => unsub());
-  }, [events]);
+    loadData();
+  }, [loadData]);
 
   const handleShare = (eventId: string) => {
     const url = `${window.location.origin}/public/event/${eventId}`;
@@ -599,13 +568,20 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     e.preventDefault();
     try {
       if (editingEvent) {
-        await updateDoc(doc(db, 'events', editingEvent.id!), eventFormData);
+        await fetchAPI(`/api/events/${editingEvent.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(eventFormData)
+        });
       } else {
-        await addDoc(collection(db, 'events'), eventFormData);
+        await fetchAPI('/api/events', {
+          method: 'POST',
+          body: JSON.stringify(eventFormData)
+        });
       }
       closeEventModal();
+      loadData();
     } catch (error) {
-      handleFirestoreError(error, editingEvent ? OperationType.UPDATE : OperationType.CREATE, `events/${editingEvent?.id || ''}`);
+      console.error('Failed to save event:', error);
     }
   };
 
@@ -614,22 +590,29 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     if (!activeEventId) return;
     try {
       if (editingSubEvent) {
-        await updateDoc(doc(db, 'events', activeEventId, 'subevents', editingSubEvent.id!), subEventFormData);
+        await fetchAPI(`/api/events/${activeEventId}/subevents/${editingSubEvent.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(subEventFormData)
+        });
       } else {
         const currentSubEvents = subEvents[activeEventId] || [];
         const nextOrder = currentSubEvents.length > 0 
           ? Math.max(...currentSubEvents.map(s => s.order)) + 1 
           : 0;
-        await addDoc(collection(db, 'events', activeEventId, 'subevents'), {
-          ...subEventFormData,
-          order: nextOrder
+        await fetchAPI(`/api/events/${activeEventId}/subevents`, {
+          method: 'POST',
+          body: JSON.stringify({
+            ...subEventFormData,
+            order: nextOrder
+          })
         });
       }
       setIsSubEventModalOpen(false);
       setEditingSubEvent(null);
       setSubEventFormData({ name: '' });
+      loadData();
     } catch (error) {
-      handleFirestoreError(error, editingSubEvent ? OperationType.UPDATE : OperationType.CREATE, `events/${activeEventId}/subevents/${editingSubEvent?.id || ''}`);
+      console.error('Failed to save sub-event:', error);
     }
   };
 
@@ -638,24 +621,31 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     if (!activeEventId || !activeSubEventId) return;
     try {
       if (editingParty) {
-        await updateDoc(doc(db, 'events', activeEventId, 'subevents', activeSubEventId, 'parties', editingParty.id!), partyFormData);
+        await fetchAPI(`/api/events/${activeEventId}/subevents/${activeSubEventId}/parties/${editingParty.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(partyFormData)
+        });
       } else {
         const currentParties = parties[activeSubEventId] || [];
         const nextOrder = currentParties.length > 0 
           ? Math.max(...currentParties.map(p => p.order ?? 0)) + 1 
           : 0;
-        await addDoc(collection(db, 'events', activeEventId, 'subevents', activeSubEventId, 'parties'), {
-          ...partyFormData,
-          eventId: activeEventId,
-          subEventId: activeSubEventId,
-          order: nextOrder
+        await fetchAPI(`/api/events/${activeEventId}/subevents/${activeSubEventId}/parties`, {
+          method: 'POST',
+          body: JSON.stringify({
+            ...partyFormData,
+            eventId: activeEventId,
+            subEventId: activeSubEventId,
+            order: nextOrder
+          })
         });
       }
       setIsPartyModalOpen(false);
       setEditingParty(null);
       setPartyFormData({ name: '' });
+      loadData();
     } catch (error) {
-      handleFirestoreError(error, editingParty ? OperationType.UPDATE : OperationType.CREATE, `events/${activeEventId}/subevents/${activeSubEventId}/parties/${editingParty?.id || ''}`);
+      console.error('Failed to save party:', error);
     }
   };
 
@@ -671,28 +661,34 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     }
 
     const nextOrder = currentAssignments.length;
-    const assignmentId = `${activePartyId}_${assignFormData.memberId}`;
     try {
-      await setDoc(doc(db, 'events', activeEventId, 'subevents', activeSubEventId, 'parties', activePartyId, 'assignments', assignmentId), {
-        memberId: assignFormData.memberId,
-        role: assignFormData.role,
-        eventId: activeEventId,
-        subEventId: activeSubEventId,
-        partyId: activePartyId,
-        order: nextOrder
+      await fetchAPI(`/api/events/${activeEventId}/subevents/${activeSubEventId}/parties/${activePartyId}/assignments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          memberId: assignFormData.memberId,
+          role: assignFormData.role,
+          eventId: activeEventId,
+          subEventId: activeSubEventId,
+          partyId: activePartyId,
+          order: nextOrder
+        })
       });
       setIsAssignModalOpen(false);
       setAssignFormData({ memberId: '', role: ROLES[0].name });
+      loadData();
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `events/${activeEventId}/subevents/${activeSubEventId}/parties/${activePartyId}/assignments/${assignmentId}`);
+      console.error('Failed to assign member:', error);
     }
   };
 
   const unassignMember = async (eventId: string, subEventId: string, partyId: string, assignmentId: string) => {
     try {
-      await deleteDoc(doc(db, 'events', eventId, 'subevents', subEventId, 'parties', partyId, 'assignments', assignmentId));
+      await fetchAPI(`/api/events/${eventId}/subevents/${subEventId}/parties/${partyId}/assignments/${assignmentId}`, {
+        method: 'DELETE'
+      });
+      loadData();
     } catch (error) {
-      handleFirestoreError(error, OperationType.DELETE, `events/${eventId}/subevents/${subEventId}/parties/${partyId}/assignments/${assignmentId}`);
+      console.error('Failed to unassign member:', error);
     }
   };
 
@@ -703,9 +699,12 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       message: 'Are you sure you want to delete this party and all its assignments? This action cannot be undone.',
       onConfirm: async () => {
         try {
-          await deleteDoc(doc(db, 'events', eventId, 'subevents', subEventId, 'parties', partyId));
+          await fetchAPI(`/api/events/${eventId}/subevents/${subEventId}/parties/${partyId}`, {
+            method: 'DELETE'
+          });
+          loadData();
         } catch (error) {
-          handleFirestoreError(error, OperationType.DELETE, `events/${eventId}/subevents/${subEventId}/parties/${partyId}`);
+          console.error('Failed to delete party:', error);
         }
       }
     });
@@ -718,9 +717,12 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       message: 'Are you sure you want to delete this sub event? All parties and assignments will be lost.',
       onConfirm: async () => {
         try {
-          await deleteDoc(doc(db, 'events', eventId, 'subevents', subEventId));
+          await fetchAPI(`/api/events/${eventId}/subevents/${subEventId}`, {
+            method: 'DELETE'
+          });
+          loadData();
         } catch (error) {
-          handleFirestoreError(error, OperationType.DELETE, `events/${eventId}/subevents/${subEventId}`);
+          console.error('Failed to delete sub-event:', error);
         }
       }
     });
@@ -733,9 +735,12 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       message: 'Are you sure you want to delete this event? All parties and assignments will be lost.',
       onConfirm: async () => {
         try {
-          await deleteDoc(doc(db, 'events', id));
+          await fetchAPI(`/api/events/${id}`, {
+            method: 'DELETE'
+          });
+          loadData();
         } catch (error) {
-          handleFirestoreError(error, OperationType.DELETE, `events/${id}`);
+          console.error('Failed to delete event:', error);
         }
       }
     });
@@ -753,111 +758,23 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     const otherSubEvent = eventSubEvents[newIndex];
 
     try {
-      await updateDoc(doc(db, 'events', eventId, 'subevents', currentSubEvent.id!), { order: otherSubEvent.order });
-      await updateDoc(doc(db, 'events', eventId, 'subevents', otherSubEvent.id!), { order: currentSubEvent.order });
+      await fetchAPI(`/api/events/${eventId}/subevents/${currentSubEvent.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ order: otherSubEvent.order })
+      });
+      await fetchAPI(`/api/events/${eventId}/subevents/${otherSubEvent.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ order: currentSubEvent.order })
+      });
+      loadData();
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `events/${eventId}/subevents`);
+      console.error('Failed to reorder subevents:', error);
     }
   };
 
   const handleDragEnd = async (event: DragEndEvent, eventId: string) => {
     const { active, over } = event;
-    if (!over) return;
-
-    const activeData = active.data.current;
-    const overData = over.data.current;
-
-    // Handle Party Dragging (Transfer or Reorder)
-    if (activeData?.type === 'party') {
-      const activePartyId = active.id as string;
-      const sourceSubEventId = activeData.subEventId;
-      
-      // Determine target sub-event
-      let targetSubEventId = overData?.subEventId;
-      if (!targetSubEventId && overData?.type === 'subevent') {
-        targetSubEventId = over.id as string;
-      }
-      
-      if (!targetSubEventId) return;
-
-      const sourceParties = [...(parties[sourceSubEventId] || [])];
-      const targetParties = sourceSubEventId === targetSubEventId 
-        ? sourceParties 
-        : [...(parties[targetSubEventId] || [])];
-
-      const oldIndex = sourceParties.findIndex(p => p.id === activePartyId);
-      let newIndex = targetParties.findIndex(p => p.id === over.id);
-      
-      if (newIndex === -1) {
-        newIndex = targetParties.length;
-      }
-
-      if (sourceSubEventId === targetSubEventId) {
-        // Reorder within same sub-event
-        if (oldIndex === newIndex) return;
-        const reordered = arrayMove(sourceParties, oldIndex, newIndex);
-        handlePartyReorder(eventId, sourceSubEventId, reordered);
-      } else {
-        // Transfer between sub-events
-        const [movedParty] = sourceParties.splice(oldIndex, 1);
-        const updatedParty = { ...movedParty, subEventId: targetSubEventId };
-        targetParties.splice(newIndex, 0, updatedParty);
-        
-        // Update state immediately for smooth UI
-        setParties(prev => ({
-          ...prev,
-          [sourceSubEventId]: sourceParties,
-          [targetSubEventId]: targetParties
-        }));
-
-        // Update Firestore
-        try {
-          const partyAssignments = assignments[activePartyId] || [];
-          
-          // 1. Create party in new location
-          await setDoc(doc(db, 'events', eventId, 'subevents', targetSubEventId, 'parties', activePartyId), {
-            ...updatedParty,
-            order: newIndex
-          });
-          
-          // 2. Create assignments in new location
-          const assignmentPromises = partyAssignments.map(a => 
-            setDoc(doc(db, 'events', eventId, 'subevents', targetSubEventId, 'parties', activePartyId, 'assignments', a.id!), {
-              ...a,
-              subEventId: targetSubEventId
-            })
-          );
-          await Promise.all(assignmentPromises);
-          
-          // 3. Delete assignments from old location
-          const deleteAssignmentPromises = partyAssignments.map(a => 
-            deleteDoc(doc(db, 'events', eventId, 'subevents', sourceSubEventId, 'parties', activePartyId, 'assignments', a.id!))
-          );
-          await Promise.all(deleteAssignmentPromises);
-          
-          // 4. Delete party from old location
-          await deleteDoc(doc(db, 'events', eventId, 'subevents', sourceSubEventId, 'parties', activePartyId));
-          
-          // 5. Update orders in source sub-event
-          const sourceUpdates = sourceParties.map((p, i) => 
-            updateDoc(doc(db, 'events', eventId, 'subevents', sourceSubEventId, 'parties', p.id!), { order: i })
-          );
-          
-          // 6. Update orders in target sub-event
-          const targetUpdates = targetParties.map((p, i) => 
-            updateDoc(doc(db, 'events', eventId, 'subevents', targetSubEventId, 'parties', p.id!), { order: i })
-          );
-          
-          await Promise.all([...sourceUpdates, ...targetUpdates]);
-        } catch (error) {
-          handleFirestoreError(error, OperationType.UPDATE, `events/${eventId}/subevents/${targetSubEventId}/parties`);
-        }
-      }
-      return;
-    }
-
-    // Handle Sub-Event Reordering
-    if (active.id === over.id) return;
+    if (!over || active.id === over.id) return;
 
     const eventSubEvents = [...(subEvents[eventId] || [])];
     const oldIndex = eventSubEvents.findIndex((s) => s.id === active.id);
@@ -871,11 +788,15 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     // Update Firestore orders
     try {
       const updates = reordered.map((sub, index) => 
-        updateDoc(doc(db, 'events', eventId, 'subevents', sub.id!), { order: index })
+        fetchAPI(`/api/events/${eventId}/subevents/${sub.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ order: index })
+        })
       );
       await Promise.all(updates);
+      loadData();
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `events/${eventId}/subevents`);
+      console.error('Failed to reorder subevents:', error);
     }
   };
 
@@ -886,11 +807,15 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     // Update Firestore orders
     try {
       const updates = reorderedParties.map((party, index) => 
-        updateDoc(doc(db, 'events', eventId, 'subevents', subEventId, 'parties', party.id!), { order: index })
+        fetchAPI(`/api/events/${eventId}/subevents/${subEventId}/parties/${party.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ order: index })
+        })
       );
       await Promise.all(updates);
+      loadData();
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `events/${eventId}/subevents/${subEventId}/parties`);
+      console.error('Failed to reorder parties:', error);
     }
   };
 
@@ -901,11 +826,15 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     // Update Firestore orders
     try {
       const updates = reorderedAssignments.map((assignment, index) => 
-        updateDoc(doc(db, 'events', eventId, 'subevents', subEventId, 'parties', partyId, 'assignments', assignment.id!), { order: index })
+        fetchAPI(`/api/events/${eventId}/subevents/${subEventId}/parties/${partyId}/assignments/${assignment.id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ order: index })
+        })
       );
       await Promise.all(updates);
+      loadData();
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `events/${eventId}/subevents/${subEventId}/parties/${partyId}/assignments`);
+      console.error('Failed to reorder assignments:', error);
     }
   };
 

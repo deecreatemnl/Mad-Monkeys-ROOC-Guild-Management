@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { collection, onSnapshot, doc, query, orderBy, getDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { fetchAPI } from '../firebase';
 import { GuildEvent, Member, Assignment, Party, SubEvent, GuildSettings } from '../types';
 import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, ChevronDown, ChevronRight, Cross, Zap, Target, Skull, Hammer, FlaskConical, Music, Hand } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -63,11 +62,8 @@ export default function PublicEventPage() {
   const [guildSettings, setGuildSettings] = useState<GuildSettings | null>(null);
 
   useEffect(() => {
-    const settingsRef = doc(db, 'settings', 'guild_settings');
-    getDoc(settingsRef).then(docSnap => {
-      if (docSnap.exists()) {
-        setGuildSettings(docSnap.data() as GuildSettings);
-      }
+    fetchAPI('/api/settings/guild_settings').then(data => {
+      setGuildSettings(data);
     });
   }, []);
 
@@ -86,81 +82,40 @@ export default function PublicEventPage() {
   useEffect(() => {
     if (!eventId) return;
 
-    const fetchEvent = async () => {
+    const loadData = async () => {
       try {
-        const eventDoc = await getDoc(doc(db, 'events', eventId));
-        if (eventDoc.exists()) {
-          setEvent({ id: eventDoc.id, ...eventDoc.data() } as GuildEvent);
-        } else {
-          setError('Event not found.');
-          setLoading(false);
+        const [eventData, membersData] = await Promise.all([
+          fetchAPI(`/api/events/${eventId}`),
+          fetchAPI('/api/members')
+        ]);
+        
+        setEvent(eventData);
+        setMembers(membersData);
+        
+        const subEventsData = await fetchAPI(`/api/events/${eventId}/subevents`);
+        subEventsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
+        setSubEvents(subEventsData);
+        
+        for (const subEvent of subEventsData) {
+          const partiesData = await fetchAPI(`/api/events/${eventId}/subevents/${subEvent.id}/parties`);
+          partiesData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
+          setParties(prev => ({ ...prev, [subEvent.id!]: partiesData }));
+          
+          for (const party of partiesData) {
+            const assignmentsData = await fetchAPI(`/api/events/${eventId}/subevents/${subEvent.id}/parties/${party.id}/assignments`);
+            assignmentsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
+            setAssignments(prev => ({ ...prev, [party.id!]: assignmentsData }));
+          }
         }
+        setLoading(false);
       } catch (err) {
-        handleFirestoreError(err, OperationType.GET, `events/${eventId}`);
+        console.error('Error loading event data:', err);
         setError('Error loading event.');
         setLoading(false);
       }
     };
 
-    fetchEvent();
-
-    const membersQuery = query(collection(db, 'members'), orderBy('ign', 'asc'));
-    const unsubscribeMembers = onSnapshot(membersQuery, (snapshot) => {
-      const membersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Member));
-      setMembers(membersData);
-    }, (err) => {
-        handleFirestoreError(err, OperationType.LIST, 'members');
-    });
-
-    const subEventsRef = collection(db, 'events', eventId, 'subevents');
-    const unsubscribes: (() => void)[] = [];
-
-    const unsubscribeSubEvents = onSnapshot(subEventsRef, (snapshot) => {
-      const subEventsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SubEvent));
-      // Sort by order, fallback to name
-      subEventsData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
-      setSubEvents(subEventsData);
-      
-      // Clean up previous nested listeners
-      unsubscribes.forEach(unsub => unsub());
-      unsubscribes.length = 0;
-
-      subEventsData.forEach(subEvent => {
-        const partiesRef = collection(db, 'events', eventId, 'subevents', subEvent.id!, 'parties');
-        const unsubParties = onSnapshot(partiesRef, (snap) => {
-          const partiesData = snap.docs.map(d => ({ id: d.id, ...d.data() } as Party));
-          // Sort by order, fallback to name
-          partiesData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
-          setParties(prev => ({ ...prev, [subEvent.id!]: partiesData }));
-          
-          partiesData.forEach(party => {
-            const assignmentsRef = collection(db, 'events', eventId, 'subevents', subEvent.id!, 'parties', party.id!, 'assignments');
-            const unsubAssignments = onSnapshot(assignmentsRef, (aSnap) => {
-              const assignmentsData = aSnap.docs.map(ad => ({ id: ad.id, ...ad.data() } as Assignment));
-              // Sort by order
-              assignmentsData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-              setAssignments(prev => ({ ...prev, [party.id!]: assignmentsData }));
-            }, (err) => {
-                handleFirestoreError(err, OperationType.LIST, `events/${eventId}/subevents/${subEvent.id}/parties/${party.id}/assignments`);
-            });
-            unsubscribes.push(unsubAssignments);
-          });
-        }, (err) => {
-            handleFirestoreError(err, OperationType.LIST, `events/${eventId}/subevents/${subEvent.id}/parties`);
-        });
-        unsubscribes.push(unsubParties);
-      });
-      setLoading(false);
-    }, (err) => {
-        handleFirestoreError(err, OperationType.LIST, `events/${eventId}/subevents`);
-        setLoading(false);
-    });
-
-    return () => {
-      unsubscribeMembers();
-      unsubscribeSubEvents();
-      unsubscribes.forEach(unsub => unsub());
-    };
+    loadData();
   }, [eventId]);
 
   const getMemberName = (id: string) => members.find(m => m.id === id)?.ign || 'Unknown Member';
@@ -327,7 +282,7 @@ export default function PublicEventPage() {
 
         <footer className="mt-20 pt-8 border-t border-zinc-900 text-center">
           <p className="text-zinc-700 text-[10px] font-bold uppercase tracking-[0.2em]">
-            Mad Monkeys Guild Manager • {new Date().getFullYear()}
+            MadMonkeys Guild Manager • {new Date().getFullYear()}
           </p>
         </footer>
       </div>

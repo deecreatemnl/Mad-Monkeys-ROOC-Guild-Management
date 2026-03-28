@@ -1,13 +1,16 @@
-import { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy, getDocs, where, writeBatch } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { useState, useEffect, useCallback } from 'react';
+import { fetchAPI } from '../firebase';
 import { Job } from '../types';
 import { Plus, Edit2, Trash2, X, Check, Briefcase } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import ConfirmModal from '../components/ConfirmModal';
 
-export default function JobsPage() {
+interface JobsPageProps {
+  isAdmin?: boolean;
+}
+
+export default function JobsPage({ isAdmin = false }: JobsPageProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -26,49 +29,39 @@ export default function JobsPage() {
     onConfirm: () => {},
   });
 
-  useEffect(() => {
-    const q = query(collection(db, 'jobs'), orderBy('name', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const jobsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Job));
+  const loadJobs = useCallback(async () => {
+    try {
+      const jobsData = await fetchAPI('/api/jobs');
       setJobs(jobsData);
       setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'jobs');
+    } catch (error) {
+      console.error('Failed to load jobs:', error);
       setLoading(false);
-    });
-
-    return () => unsubscribe();
+    }
   }, []);
+
+  useEffect(() => {
+    loadJobs();
+  }, [loadJobs]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       if (editingJob) {
-        const oldName = editingJob.name;
-        const newName = formData.name;
-        
-        await updateDoc(doc(db, 'jobs', editingJob.id!), formData);
-        
-        // If name changed, update all members with this job
-        if (oldName !== newName) {
-          const membersRef = collection(db, 'members');
-          const q = query(membersRef, where('job', '==', oldName));
-          const querySnapshot = await getDocs(q);
-          
-          if (!querySnapshot.empty) {
-            const batch = writeBatch(db);
-            querySnapshot.docs.forEach((memberDoc) => {
-              batch.update(memberDoc.ref, { job: newName });
-            });
-            await batch.commit();
-          }
-        }
+        await fetchAPI(`/api/jobs/${editingJob.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(formData)
+        });
       } else {
-        await addDoc(collection(db, 'jobs'), formData);
+        await fetchAPI('/api/jobs', {
+          method: 'POST',
+          body: JSON.stringify(formData)
+        });
       }
+      loadJobs();
       closeModal();
     } catch (error) {
-      handleFirestoreError(error, editingJob ? OperationType.UPDATE : OperationType.CREATE, `jobs/${editingJob?.id || ''}`);
+      console.error('Failed to save job:', error);
     }
   };
 
@@ -79,9 +72,12 @@ export default function JobsPage() {
       message: 'Are you sure you want to delete this job? This may affect members assigned to this job.',
       onConfirm: async () => {
         try {
-          await deleteDoc(doc(db, 'jobs', id));
+          await fetchAPI(`/api/jobs/${id}`, {
+            method: 'DELETE'
+          });
+          loadJobs();
         } catch (error) {
-          handleFirestoreError(error, OperationType.DELETE, `jobs/${id}`);
+          console.error('Failed to delete job:', error);
         }
       }
     });

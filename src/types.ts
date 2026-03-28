@@ -45,9 +45,10 @@ export interface ChatMessage {
 
 export interface UserProfile {
   id: string;
-  email: string;
+  username: string;
+  email?: string;
   displayName: string;
-  role: 'user' | 'admin' | 'superadmin';
+  role: 'user' | 'admin' | 'superadmin' | 'member';
   createdAt: string;
   isPreAuthorized?: boolean;
   authUid?: string | null;

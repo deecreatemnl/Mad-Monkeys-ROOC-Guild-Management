@@ -49,7 +49,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     try {
       const [membersData, jobsData] = await Promise.all([
         fetchAPI('/api/members'),
-        fetchAPI('/api/settings').then(s => JSON.parse(s.jobs || '[]'))
+        fetchAPI('/api/jobs')
       ]);
       setMembers(membersData);
       setJobs(jobsData);

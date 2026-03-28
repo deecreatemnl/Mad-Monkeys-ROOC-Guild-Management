@@ -7,7 +7,11 @@ import { motion, AnimatePresence } from 'motion/react';
 
 const COLORS = ['#f97316', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4', '#14b8a6', '#6366f1'];
 
-export default function StatisticsPage() {
+interface StatisticsPageProps {
+  isAdmin?: boolean;
+}
+
+export default function StatisticsPage({ isAdmin = false }: StatisticsPageProps) {
   const [members, setMembers] = useState<Member[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,12 +21,12 @@ export default function StatisticsPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [membersData, settingsData] = await Promise.all([
+        const [membersData, jobsData] = await Promise.all([
           fetchAPI('/api/members'),
-          fetchAPI('/api/settings')
+          fetchAPI('/api/jobs')
         ]);
         setMembers(membersData);
-        setJobs(settingsData.jobs || []);
+        setJobs(jobsData || []);
       } catch (err) {
         console.error('Failed to load statistics data:', err);
       } finally {

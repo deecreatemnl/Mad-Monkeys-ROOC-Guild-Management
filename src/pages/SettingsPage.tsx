@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { fetchAPI } from '../firebase';
 import { GuildSettings } from '../types';
 import { Save, Globe, Type, Image as ImageIcon, Loader2, CheckCircle2, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -29,18 +28,17 @@ export default function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const settingsRef = doc(db, 'settings', 'guild_settings');
-    const unsubscribe = onSnapshot(settingsRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setSettings({ id: docSnap.id, ...docSnap.data() } as GuildSettings);
+    const loadSettings = async () => {
+      try {
+        const data = await fetchAPI('/api/settings');
+        setSettings(data);
+      } catch (error) {
+        console.error('Settings fetch error:', error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    }, (error) => {
-      console.error('Settings fetch error:', error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    };
+    loadSettings();
   }, []);
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -78,11 +76,14 @@ export default function SettingsPage() {
     setSaving(true);
     setSaveSuccess(false);
     try {
-      await setDoc(doc(db, 'settings', 'guild_settings'), settings);
+      await fetchAPI('/api/settings', {
+        method: 'POST',
+        body: JSON.stringify(settings),
+      });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'settings/guild_settings');
+      console.error('Save failed:', error);
     } finally {
       setSaving(false);
     }

@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
-import { collection, onSnapshot, updateDoc, doc, query, orderBy, deleteDoc } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { useState, useEffect, useCallback } from 'react';
+import { fetchAPI } from '../firebase';
 import { UserProfile } from '../types';
 import { Shield, ShieldAlert, Search, UserCheck, UserX, UserPlus, X, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -13,7 +12,7 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
-  const [addFormData, setAddFormData] = useState({ email: '', displayName: '', role: 'user' as 'admin' | 'user', password: '' });
+  const [addFormData, setAddFormData] = useState({ username: '', role: 'user' as 'admin' | 'user' | 'member', password: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const generatePassword = () => {
@@ -37,37 +36,34 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
     onConfirm: () => {},
   });
 
-  useEffect(() => {
-    const q = query(collection(db, 'users'), orderBy('email', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile));
+  const loadUsers = useCallback(async () => {
+    try {
+      const usersData = await fetchAPI('/api/users');
       setUsers(usersData);
       setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'users');
+    } catch (error) {
+      console.error('Failed to load users:', error);
       setLoading(false);
-    });
-    return () => unsubscribe();
+    }
   }, []);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const response = await fetch('/api/admins/create', {
+      await fetchAPI('/api/admins/create', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(addFormData),
       });
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create user');
-      }
-
       setIsAddModalOpen(false);
-      setAddFormData({ email: '', displayName: '', role: 'user', password: '' });
-      alert('User authorized successfully! They will appear in the list once they sign in, or as a pending entry if the system is configured correctly.');
+      setAddFormData({ username: '', role: 'user', password: '' });
+      loadUsers();
+      alert('User authorized successfully!');
     } catch (error: any) {
       console.error('Error adding user:', error);
       alert(error.message);
@@ -85,9 +81,13 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
       message: `Are you sure you want to change ${user.displayName}'s role to ${newRole}?`,
       onConfirm: async () => {
         try {
-          await updateDoc(doc(db, 'users', user.id), { role: newRole });
+          await fetchAPI(`/api/users/${user.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ role: newRole })
+          });
+          loadUsers();
         } catch (error) {
-          handleFirestoreError(error, OperationType.UPDATE, `users/${user.id}`);
+          console.error('Failed to update user role:', error);
         }
       }
     });
@@ -106,17 +106,20 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
       message: `Are you sure you want to delete ${user.displayName}? This action cannot be undone.`,
       onConfirm: async () => {
         try {
-          await deleteDoc(doc(db, 'users', user.id));
+          await fetchAPI(`/api/users/${user.id}`, {
+            method: 'DELETE'
+          });
+          loadUsers();
         } catch (error) {
-          handleFirestoreError(error, OperationType.DELETE, `users/${user.id}`);
+          console.error('Failed to delete user:', error);
         }
       }
     });
   };
 
   const filteredUsers = users.filter(user => 
-    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.displayName.toLowerCase().includes(searchTerm.toLowerCase())
+    (user.username || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (user.displayName || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -186,7 +189,7 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
                         <span className="text-[10px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-700 uppercase font-bold tracking-wider">Pending</span>
                       )}
                     </div>
-                    <p className="text-sm text-zinc-500 font-mono">{user.email}</p>
+                    <p className="text-sm text-zinc-500 font-mono">{user.username}</p>
                   </div>
                 </div>
 
@@ -258,40 +261,30 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
 
               <form onSubmit={handleAddUser} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Email Address</label>
-                  <input
-                    required
-                    type="email"
-                    value={addFormData.email}
-                    onChange={(e) => setAddFormData({ ...addFormData, email: e.target.value })}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                    placeholder="user@example.com"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Display Name</label>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">IGN (Username)</label>
                   <input
                     required
                     type="text"
-                    value={addFormData.displayName}
-                    onChange={(e) => setAddFormData({ ...addFormData, displayName: e.target.value })}
+                    value={addFormData.username}
+                    onChange={(e) => setAddFormData({ ...addFormData, username: e.target.value })}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                    placeholder="e.g. Guild Member"
+                    placeholder="e.g. PlayerName"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-zinc-400 mb-1.5">User Role</label>
                   <select
                     value={addFormData.role}
-                    onChange={(e) => setAddFormData({ ...addFormData, role: e.target.value as 'admin' | 'user' })}
+                    onChange={(e) => setAddFormData({ ...addFormData, role: e.target.value as 'admin' | 'user' | 'member' })}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none cursor-pointer"
                   >
-                    <option value="user">Guild Member (User)</option>
+                    <option value="member">Guild Member (Member)</option>
+                    <option value="user">Guild User (User)</option>
                     <option value="admin">Guild Admin (Admin)</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Password (Optional)</label>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Password</label>
                   <div className="flex gap-2">
                     <input
                       type="text"

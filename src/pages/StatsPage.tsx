@@ -16,12 +16,12 @@ export default function StatsPage({ isAdmin = false }: StatsPageProps) {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [membersData, settingsData] = await Promise.all([
+        const [membersData, jobsData] = await Promise.all([
           fetchAPI('/api/members'),
-          fetchAPI('/api/settings')
+          fetchAPI('/api/jobs')
         ]);
         setMembers(membersData);
-        setJobs(settingsData.jobs || []);
+        setJobs(jobsData || []);
       } catch (err) {
         console.error('Failed to load stats data:', err);
       } finally {
