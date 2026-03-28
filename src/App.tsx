@@ -11,6 +11,7 @@ import JobsPage from './pages/JobsPage';
 import StatisticsPage from './pages/StatisticsPage';
 import SettingsPage from './pages/SettingsPage';
 import PublicEventPage from './pages/PublicEventPage';
+import AccountPage from './pages/AccountPage';
 import { UserProfile, GuildSettings } from './types';
 
 export default function App() {
@@ -249,15 +250,19 @@ export default function App() {
                     </nav>
 
                     <div className="p-4 border-t border-zinc-800">
-                      <div className="flex items-center gap-3 px-4 py-3 mb-2">
-                        <div className="w-8 h-8 bg-zinc-800 rounded-full flex items-center justify-center text-xs font-bold text-orange-500 border border-zinc-700">
+                      <Link 
+                        to="/account" 
+                        onClick={() => setIsMenuOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3 mb-2 hover:bg-zinc-800 rounded-xl transition-all group"
+                      >
+                        <div className="w-8 h-8 bg-zinc-800 rounded-full flex items-center justify-center text-xs font-bold text-orange-500 border border-zinc-700 group-hover:border-orange-500/50 transition-colors">
                           {user.displayName?.charAt(0) || user.username?.charAt(0)}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-white truncate">{user.displayName || 'User'}</p>
+                          <p className="text-sm font-bold text-white truncate group-hover:text-orange-500 transition-colors">{user.displayName || 'User'}</p>
                           <p className="text-[10px] text-zinc-500 truncate uppercase tracking-wider">{user.role}</p>
                         </div>
-                      </div>
+                      </Link>
                       <button 
                         onClick={handleLogout}
                         className="w-full flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all group"
@@ -277,6 +282,7 @@ export default function App() {
                   <Route path="/events" element={<EventsPage isAdmin={isAdmin} />} />
                   <Route path="/jobs" element={<JobsPage isAdmin={isAdmin} />} />
                   <Route path="/statistics" element={<StatisticsPage isAdmin={isAdmin} />} />
+                  <Route path="/account" element={<AccountPage user={user} onUpdateUser={setUser} onLogout={handleLogout} />} />
                   {isAdmin && (
                     <>
                       <Route path="/admins" element={<AdminsPage isSuperAdmin={user?.role === 'superadmin'} />} />

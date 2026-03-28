@@ -278,7 +278,6 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
                     onChange={(e) => setAddFormData({ ...addFormData, role: e.target.value as 'admin' | 'user' | 'member' })}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50 appearance-none cursor-pointer"
                   >
-                    <option value="member">Guild Member (Member)</option>
                     <option value="user">Guild User (User)</option>
                     <option value="admin">Guild Admin (Admin)</option>
                   </select>
