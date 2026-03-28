@@ -21,13 +21,19 @@ export async function fetchAPI(path: string, options: RequestInit = {}) {
       if (response.status === 401) {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        // Only redirect if we are not already on the login page or root
         if (window.location.pathname !== '/' && window.location.pathname !== '/login') {
           window.location.href = '/';
         }
       }
-      const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-      throw new Error(error.error || 'API request failed');
+      
+      const text = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(text);
+      } catch (e) {
+        errorData = { error: `Server Error (${response.status}): ${text.slice(0, 200)}` };
+      }
+      throw new Error(errorData.error || 'API request failed');
     }
     return response.json();
   } catch (error) {

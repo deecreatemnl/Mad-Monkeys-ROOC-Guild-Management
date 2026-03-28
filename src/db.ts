@@ -83,14 +83,17 @@ export class SupabaseDatabase implements Database {
           await this.save(initialDb);
           return initialDb;
         }
+        if (error.code === '42P01') { // Table not found
+          throw new Error(`Supabase Table "${this.tableName}" not found. Please run the SQL script provided.`);
+        }
         console.error("Supabase Get Error:", error);
-        return initialDb;
+        throw new Error(`Supabase Error (${error.code}): ${error.message}`);
       }
 
       return data?.data || initialDb;
     } catch (e: any) {
       console.error("Supabase Exception in get():", e.message);
-      return initialDb;
+      throw e;
     }
   }
 

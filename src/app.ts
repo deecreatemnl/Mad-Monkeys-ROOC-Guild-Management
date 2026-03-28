@@ -443,7 +443,10 @@ export function createApp() {
   // Error handler
   app.use((err: any, req: any, res: any, next: any) => {
     console.error("Express Error Handler:", err);
-    res.status(500).json({ error: err.message || "Internal Server Error" });
+    res.status(500).json({ 
+      error: err.message || "Internal Server Error",
+      stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined
+    });
   });
 
   return app;
