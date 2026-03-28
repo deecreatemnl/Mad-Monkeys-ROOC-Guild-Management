@@ -77,10 +77,10 @@ app.post("/api/admins/create", async (req, res) => {
       const mailOptions = {
         from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
         to: emailId,
-        subject: `Welcome to the Guild Management System - ${targetRole === 'admin' ? 'Admin' : 'Member'} Access`,
+        subject: `Welcome to the Mad Monkeys Guild Manager - ${targetRole === 'admin' ? 'Admin' : 'Member'} Access`,
         html: `
           <h1>Welcome, ${displayName}!</h1>
-          <p>You have been authorized as a ${targetRole === 'admin' ? 'administrator' : 'member'} for the Guild Management System.</p>
+          <p>You have been authorized as a ${targetRole === 'admin' ? 'administrator' : 'member'} for the Mad Monkeys Guild Manager.</p>
           ${password ? `<p>Your account has been created with the following credentials:</p>
           <ul>
             <li><strong>Email:</strong> ${emailId}</li>

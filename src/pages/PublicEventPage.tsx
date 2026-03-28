@@ -327,7 +327,7 @@ export default function PublicEventPage() {
 
         <footer className="mt-20 pt-8 border-t border-zinc-900 text-center">
           <p className="text-zinc-700 text-[10px] font-bold uppercase tracking-[0.2em]">
-            MadMonkeys Guild Manager • {new Date().getFullYear()}
+            Mad Monkeys Guild Manager • {new Date().getFullYear()}
           </p>
         </footer>
       </div>

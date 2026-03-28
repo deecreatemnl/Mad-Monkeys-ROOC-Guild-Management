@@ -30,7 +30,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [guildSettings, setGuildSettings] = useState<GuildSettings>({
-    name: 'MadMonkeys',
+    name: 'Mad Monkeys',
     subtitle: 'Guild Management System',
     timezone: 'GMT+8 (Singapore/Manila)',
     logoUrl: '',
@@ -392,7 +392,7 @@ function AuthenticatedApp({ user, isAdmin, isSuperAdmin, guildSettings, handleGo
           <Route path="/statistics" element={<StatisticsPage />} />
           {isAdmin && (
             <>
-              <Route path="/users" element={<AdminsPage isAdmin={isAdmin} isSuperAdmin={isSuperAdmin} />} />
+              <Route path="/users" element={<AdminsPage isSuperAdmin={isSuperAdmin} />} />
               <Route path="/jobs" element={<JobsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </>
