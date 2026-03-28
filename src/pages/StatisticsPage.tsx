@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchAPI } from '../firebase';
+import { fetchAPI } from '../lib/api';
 import { Member, Job } from '../types';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { BarChart3, Users, Briefcase, Loader2, PieChart as PieChartIcon, X } from 'lucide-react';

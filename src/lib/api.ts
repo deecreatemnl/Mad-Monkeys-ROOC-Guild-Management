@@ -1,14 +1,3 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
-
-// Initialize Firebase SDK (Keeping it for now to avoid breaking imports, but we will mock the usage)
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
-
-// Mock Firestore/Auth for local usage if needed, but we prefer fetchAPI
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
@@ -48,9 +37,6 @@ export async function fetchAPI(path: string, options: RequestInit = {}) {
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  console.error(`Firestore Error (${operationType}) at ${path}: `, error);
-  // We can show a toast or alert here if needed
+  console.error(`API Error (${operationType}) at ${path}: `, error);
   throw error;
 }
-
-export default app;

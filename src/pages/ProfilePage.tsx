@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchAPI } from '../firebase';
+import { fetchAPI } from '../lib/api';
 import { User, Lock, Mail, Trash2, AlertTriangle, Loader2, CheckCircle2, User as UserIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { fetchAPI } from '../firebase';
+import { fetchAPI } from '../lib/api';
 import { GuildEvent, Member, Assignment, Party, SubEvent, GuildSettings } from '../types';
 import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, ChevronDown, ChevronRight, Cross, Zap, Target, Skull, Hammer, FlaskConical, Music, Hand } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';

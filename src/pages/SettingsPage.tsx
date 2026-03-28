@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchAPI } from '../firebase';
+import { fetchAPI } from '../lib/api';
 import { GuildSettings } from '../types';
 import { Save, Globe, Type, Image as ImageIcon, Loader2, CheckCircle2, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -16,7 +16,7 @@ const TIMEZONES = [
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<GuildSettings>({
-    name: 'Mad Monkeys',
+    name: 'MadMonkeys',
     subtitle: 'Guild Management System',
     timezone: 'GMT+8 (Singapore/Manila)',
     logoUrl: '',
@@ -30,14 +30,17 @@ export default function SettingsPage() {
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const data = await fetchAPI('/api/settings');
-        setSettings(data);
+        const data = await fetchAPI('/api/settings/guild_settings');
+        if (data && Object.keys(data).length > 0) {
+          setSettings(data as GuildSettings);
+        }
       } catch (error) {
         console.error('Settings fetch error:', error);
       } finally {
         setLoading(false);
       }
     };
+
     loadSettings();
   }, []);
 
@@ -45,9 +48,8 @@ export default function SettingsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check file size (e.g., 500KB limit for Base64 storage in Firestore)
     if (file.size > 500 * 1024) {
-      alert('Logo file is too large. Please use an image smaller than 500KB for the guild logo.');
+      alert('Logo file is too large. Please use an image smaller than 500KB.');
       return;
     }
 
@@ -60,13 +62,13 @@ export default function SettingsPage() {
         setUploading(false);
       };
       reader.onerror = () => {
-        alert('Failed to read file. Please try another image.');
+        alert('Failed to read file.');
         setUploading(false);
       };
       reader.readAsDataURL(file);
     } catch (error: any) {
       console.error('Logo processing error:', error);
-      alert('Failed to process logo. Please try again.');
+      alert('Failed to process logo.');
       setUploading(false);
     }
   };
@@ -76,14 +78,14 @@ export default function SettingsPage() {
     setSaving(true);
     setSaveSuccess(false);
     try {
-      await fetchAPI('/api/settings', {
+      await fetchAPI('/api/settings/guild_settings', {
         method: 'POST',
-        body: JSON.stringify(settings),
+        body: JSON.stringify(settings)
       });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
-      console.error('Save failed:', error);
+      console.error('Failed to save settings:', error);
     } finally {
       setSaving(false);
     }
@@ -111,7 +113,6 @@ export default function SettingsPage() {
       >
         <form onSubmit={handleSubmit} className="p-8 space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Guild Identity */}
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <Type className="w-5 h-5 text-orange-500" />
@@ -127,7 +128,7 @@ export default function SettingsPage() {
                     value={settings.name}
                     onChange={(e) => setSettings({ ...settings, name: e.target.value })}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
-                    placeholder="e.g. Mad Monkeys"
+                    placeholder="e.g. MadMonkeys"
                   />
                 </div>
 
@@ -145,7 +146,6 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Logo & Visuals */}
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <ImageIcon className="w-5 h-5 text-orange-500" />
@@ -203,7 +203,6 @@ export default function SettingsPage() {
           </div>
 
           <div className="pt-8 border-t border-zinc-800 grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Localization */}
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <Globe className="w-5 h-5 text-orange-500" />

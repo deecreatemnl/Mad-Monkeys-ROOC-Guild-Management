@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchAPI } from '../firebase';
+import { fetchAPI } from '../lib/api';
 import { Job } from '../types';
 import { Plus, Edit2, Trash2, X, Check, Briefcase } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';

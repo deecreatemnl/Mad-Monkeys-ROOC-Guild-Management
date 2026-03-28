@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { fetchAPI } from '../firebase';
+import { fetchAPI } from '../lib/api';
 import { UserProfile } from '../types';
 import { Shield, ShieldAlert, Search, UserCheck, UserX, UserPlus, X, RefreshCw, Trash2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';

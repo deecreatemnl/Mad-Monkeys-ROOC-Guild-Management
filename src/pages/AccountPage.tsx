@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import { User, Lock, Trash2, AlertTriangle, CheckCircle2, XCircle, Shield } from 'lucide-react';
-import { fetchAPI } from '../firebase';
+import { fetchAPI } from '../lib/api';
 import { UserProfile } from '../types';
 import { cn } from '../lib/utils';
 
