@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { fetchAPI } from '../firebase';
 import { Member, Job } from '../types';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { BarChart3, Users, Briefcase, Loader2, PieChart as PieChartIcon, X } from 'lucide-react';
@@ -16,41 +15,21 @@ export default function StatisticsPage() {
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
-    let membersLoaded = false;
-    let jobsLoaded = false;
-
-    const checkLoading = () => {
-      if (membersLoaded && jobsLoaded) {
+    const loadData = async () => {
+      try {
+        const [membersData, settingsData] = await Promise.all([
+          fetchAPI('/api/members'),
+          fetchAPI('/api/settings')
+        ]);
+        setMembers(membersData);
+        setJobs(settingsData.jobs || []);
+      } catch (err) {
+        console.error('Failed to load statistics data:', err);
+      } finally {
         setLoading(false);
       }
     };
-
-    const membersUnsubscribe = onSnapshot(collection(db, 'members'), (snapshot) => {
-      const membersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Member));
-      setMembers(membersData);
-      membersLoaded = true;
-      checkLoading();
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'members');
-      membersLoaded = true;
-      checkLoading();
-    });
-
-    const jobsUnsubscribe = onSnapshot(collection(db, 'jobs'), (snapshot) => {
-      const jobsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Job));
-      setJobs(jobsData);
-      jobsLoaded = true;
-      checkLoading();
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'jobs');
-      jobsLoaded = true;
-      checkLoading();
-    });
-
-    return () => {
-      membersUnsubscribe();
-      jobsUnsubscribe();
-    };
+    loadData();
   }, []);
 
   const jobStats = jobs.map(job => ({

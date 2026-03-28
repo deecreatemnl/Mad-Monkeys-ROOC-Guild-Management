@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy, setDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { GuildEvent, Member, Assignment, Party, SubEvent } from '../types';
-import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Shield, Sword, Heart, Star, Share2, Check, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Shield, Sword, Heart, Star, Share2, Check, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search, Zap, Target, Music, Hammer, FlaskConical, Hand, Cross, Skull } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import ConfirmModal from '../components/ConfirmModal';
@@ -20,19 +20,271 @@ import {
   SortableContext,
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
+  rectSortingStrategy,
   useSortable,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
 const ROLES = [
-  { name: 'Main DPS', color: 'text-red-500', bg: 'bg-red-500/10', border: 'border-red-500/20', icon: <Star className="w-3 h-3" /> },
+  { name: 'DPS', color: 'text-zinc-400', bg: 'bg-zinc-400/10', border: 'border-zinc-400/20', icon: <Sword className="w-3 h-3" /> },
   { name: 'Support', color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20', icon: <Heart className="w-3 h-3" /> },
   { name: 'Tank', color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/20', icon: <Shield className="w-3 h-3" /> },
-  { name: 'DPS', color: 'text-zinc-400', bg: 'bg-zinc-400/10', border: 'border-zinc-400/20', icon: <Sword className="w-3 h-3" /> },
 ];
+
+const getMemberCategory = (job: string) => {
+  const supports = ['Gypsy', 'Minstrel', 'High Priest', 'Minstrel (M)', 'Gypsy (F)'];
+  const tanks = ['Paladin'];
+  
+  if (supports.includes(job)) return 'Support';
+  if (tanks.includes(job)) return 'Tank';
+  return 'DPS';
+};
+
+const getCategoryColor = (category: string) => {
+  switch (category) {
+    case 'Support': return 'text-blue-400';
+    case 'Tank': return 'text-orange-400';
+    default: return 'text-zinc-400';
+  }
+};
+
+const getJobIcon = (job: string) => {
+  const j = job.toLowerCase();
+  const category = getMemberCategory(job);
+  const color = getCategoryColor(category);
+  
+  let icon = <Star className="w-4 h-4" />;
+  if (j.includes('knight')) icon = <Sword className="w-4 h-4" />;
+  if (j.includes('paladin')) icon = <Shield className="w-4 h-4" />;
+  if (j.includes('priest')) icon = <Cross className="w-4 h-4" />;
+  if (j.includes('wizard')) icon = <Zap className="w-4 h-4" />;
+  if (j.includes('sniper')) icon = <Target className="w-4 h-4" />;
+  if (j.includes('assassin')) icon = <Skull className="w-4 h-4" />;
+  if (j.includes('whitesmith')) icon = <Hammer className="w-4 h-4" />;
+  if (j.includes('creator')) icon = <FlaskConical className="w-4 h-4" />;
+  if (j.includes('gypsy') || j.includes('minstrel')) icon = <Music className="w-4 h-4" />;
+  if (j.includes('champion')) icon = <Hand className="w-4 h-4" />;
+  
+  return <div className={color}>{icon}</div>;
+};
 
 interface EventsPageProps {
   isAdmin?: boolean;
+}
+
+interface SortableAssignmentItemProps {
+  assignment: Assignment;
+  member: Member | undefined;
+  roleStyle: any;
+  isAdmin: boolean;
+  onUnassign: () => void;
+}
+
+function SortableAssignmentItem({
+  assignment,
+  member,
+  roleStyle,
+  isAdmin,
+  onUnassign,
+}: SortableAssignmentItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: assignment.id! });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className={cn("flex items-center justify-between p-2 rounded-lg bg-zinc-900/50 border border-zinc-800/50 group", isDragging && "opacity-50")}>
+      <div className="flex items-center gap-3">
+        {isAdmin && (
+          <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-400">
+            <GripVertical className="w-3.5 h-3.5" />
+          </div>
+        )}
+        <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center bg-zinc-800")}>
+          {member ? getJobIcon(member.job) : <Star className="w-4 h-4 text-zinc-500" />}
+        </div>
+        <div>
+          <p className="text-sm font-bold text-white leading-none">{member?.ign}</p>
+          <div className="flex items-center gap-2 mt-1">
+            <div className={cn("flex items-center gap-1 text-[9px] font-bold uppercase", roleStyle.color)}>
+              {roleStyle.icon}
+              {assignment.role}
+            </div>
+            <span className="text-[9px] text-zinc-600 font-bold uppercase tracking-wider">• {member?.job}</span>
+          </div>
+        </div>
+      </div>
+      {isAdmin && (
+        <button
+          onClick={onUnassign}
+          className="p-1 text-zinc-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+        >
+          <UserMinus className="w-3.5 h-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+interface SortablePartyItemProps {
+  party: Party;
+  event: GuildEvent;
+  subEvent: SubEvent;
+  isAdmin: boolean;
+  assignments: Record<string, Assignment[]>;
+  members: Member[];
+  openAssignModal: (eventId: string, subEventId: string, partyId: string) => void;
+  openPartyModal: (eventId: string, subEventId: string, party?: Party) => void;
+  deleteParty: (eventId: string, subEventId: string, partyId: string) => void;
+  unassignMember: (eventId: string, subEventId: string, partyId: string, assignmentId: string) => void;
+  getRoleStyle: (roleName: string) => any;
+  onReorderAssignments: (eventId: string, subEventId: string, partyId: string, reorderedAssignments: Assignment[]) => void;
+}
+
+function SortablePartyItem({
+  party,
+  event,
+  subEvent,
+  isAdmin,
+  assignments,
+  members,
+  openAssignModal,
+  openPartyModal,
+  deleteParty,
+  unassignMember,
+  getRoleStyle,
+  onReorderAssignments,
+}: SortablePartyItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ 
+    id: party.id!,
+    data: {
+      type: 'party',
+      party,
+      subEventId: subEvent.id,
+      eventId: event.id
+    }
+  });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleAssignmentDragEnd = (eventDnd: DragEndEvent) => {
+    const { active, over } = eventDnd;
+    if (!over || active.id === over.id) return;
+
+    const partyAssignments = assignments[party.id!] || [];
+    const oldIndex = partyAssignments.findIndex((a) => a.id === active.id);
+    const newIndex = partyAssignments.findIndex((a) => a.id === over.id);
+
+    const reordered = arrayMove(partyAssignments, oldIndex, newIndex);
+    onReorderAssignments(event.id!, subEvent.id!, party.id!, reordered);
+  };
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 10 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className={cn("bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden h-full", isDragging && "opacity-50")}>
+      <div className="p-3 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-400">
+              <GripVertical className="w-3.5 h-3.5" />
+            </div>
+          )}
+          <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
+          <h5 className="font-bold text-sm text-white uppercase tracking-wider">{party.name}</h5>
+          <span className="text-[10px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded">
+            {assignments[party.id!]?.length || 0}/5
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          {isAdmin && (
+            <>
+              <button
+                onClick={() => openAssignModal(event.id!, subEvent.id!, party.id!)}
+                className="p-1.5 text-zinc-400 hover:text-orange-500 transition-colors"
+                title="Assign Member"
+              >
+                <UserPlus className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => openPartyModal(event.id!, subEvent.id!, party)}
+                className="p-1.5 text-zinc-500 hover:text-white transition-colors"
+                title="Edit Party Name"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => deleteParty(event.id!, subEvent.id!, party.id!)}
+                className="p-1.5 text-zinc-500 hover:text-red-500 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="p-3">
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleAssignmentDragEnd}
+        >
+          <SortableContext
+            items={assignments[party.id!]?.map(a => a.id!) || []}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-2">
+              {assignments[party.id!]?.map((assignment) => {
+                const member = members.find(m => m.id === assignment.memberId);
+                const roleStyle = getRoleStyle(assignment.role);
+                return (
+                  <SortableAssignmentItem
+                    key={assignment.id}
+                    assignment={assignment}
+                    member={member}
+                    roleStyle={roleStyle}
+                    isAdmin={isAdmin}
+                    onUnassign={() => unassignMember(event.id!, subEvent.id!, party.id!, assignment.id!)}
+                  />
+                );
+              })}
+              {(!assignments[party.id!] || assignments[party.id!].length === 0) && (
+                <div className="py-4 text-center text-zinc-700 text-xs italic">
+                  Empty Party
+                </div>
+              )}
+            </div>
+          </SortableContext>
+        </DndContext>
+      </div>
+    </div>
+  );
 }
 
 interface SortableSubEventItemProps {
@@ -51,6 +303,8 @@ interface SortableSubEventItemProps {
   unassignMember: (eventId: string, subEventId: string, partyId: string, assignmentId: string) => void;
   deleteParty: (eventId: string, subEventId: string, partyId: string) => void;
   getRoleStyle: (roleName: string) => any;
+  onReorderParties: (eventId: string, subEventId: string, reorderedParties: Party[]) => void;
+  onReorderAssignments: (eventId: string, subEventId: string, partyId: string, reorderedAssignments: Assignment[]) => void;
 }
 
 function SortableSubEventItem({
@@ -69,6 +323,8 @@ function SortableSubEventItem({
   unassignMember,
   deleteParty,
   getRoleStyle,
+  onReorderParties,
+  onReorderAssignments,
 }: SortableSubEventItemProps) {
   const {
     attributes,
@@ -77,7 +333,21 @@ function SortableSubEventItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: subEvent.id! });
+  } = useSortable({ 
+    id: subEvent.id!,
+    data: {
+      type: 'subevent',
+      subEvent,
+      eventId: event.id
+    }
+  });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -141,87 +411,35 @@ function SortableSubEventItem({
             transition={{ duration: 0.2, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {parties.map((party) => (
-                <div key={party.id} className="bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden">
-                  <div className="p-3 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
-                      <h5 className="font-bold text-sm text-white uppercase tracking-wider">{party.name}</h5>
-                      <span className="text-[10px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded">
-                        {assignments[party.id!]?.length || 0}/5
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {isAdmin && (
-                        <>
-                          <button
-                            onClick={() => openAssignModal(event.id!, subEvent.id!, party.id!)}
-                            className="p-1.5 text-zinc-400 hover:text-orange-500 transition-colors"
-                            title="Assign Member"
-                          >
-                            <UserPlus className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => openPartyModal(event.id!, subEvent.id!, party)}
-                            className="p-1.5 text-zinc-500 hover:text-white transition-colors"
-                            title="Edit Party Name"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => deleteParty(event.id!, subEvent.id!, party.id!)}
-                            className="p-1.5 text-zinc-500 hover:text-red-500 transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      )}
-                    </div>
+            <SortableContext
+              items={parties.map(p => p.id!)}
+              strategy={rectSortingStrategy}
+            >
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {parties.map((party) => (
+                  <SortablePartyItem
+                    key={party.id}
+                    party={party}
+                    event={event}
+                    subEvent={subEvent}
+                    isAdmin={isAdmin}
+                    assignments={assignments}
+                    members={members}
+                    openAssignModal={openAssignModal}
+                    openPartyModal={openPartyModal}
+                    deleteParty={deleteParty}
+                    unassignMember={unassignMember}
+                    getRoleStyle={getRoleStyle}
+                    onReorderAssignments={onReorderAssignments}
+                  />
+                ))}
+                {parties.length === 0 && (
+                  <div className="col-span-full py-4 text-center border border-dashed border-zinc-800 rounded-xl text-zinc-700 text-xs">
+                    No parties created for this sub event
                   </div>
-                  <div className="p-3 space-y-2">
-                    {assignments[party.id!]?.map((assignment) => {
-                      const member = members.find(m => m.id === assignment.memberId);
-                      const roleStyle = getRoleStyle(assignment.role);
-                      return (
-                        <div key={assignment.id} className="flex items-center justify-between p-2 rounded-lg bg-zinc-900/50 border border-zinc-800/50 group">
-                          <div className="flex items-center gap-3">
-                            <div className={cn("w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold", roleStyle.bg, roleStyle.color)}>
-                              {member?.ign.charAt(0)}
-                            </div>
-                            <div>
-                              <p className="text-sm font-bold text-white leading-none">{member?.ign}</p>
-                              <div className={cn("flex items-center gap-1 text-[9px] font-bold uppercase mt-1", roleStyle.color)}>
-                                {roleStyle.icon}
-                                {assignment.role}
-                              </div>
-                            </div>
-                          </div>
-                          {isAdmin && (
-                            <button
-                              onClick={() => unassignMember(event.id!, subEvent.id!, party.id!, assignment.id!)}
-                              className="p-1 text-zinc-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
-                            >
-                              <UserMinus className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {(!assignments[party.id!] || assignments[party.id!].length === 0) && (
-                      <div className="py-4 text-center text-zinc-700 text-xs italic">
-                        Empty Party
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {parties.length === 0 && (
-                <div className="col-span-full py-4 text-center border border-dashed border-zinc-800 rounded-xl text-zinc-700 text-xs">
-                  No parties created for this sub event
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            </SortableContext>
           </motion.div>
         )}
       </AnimatePresence>
@@ -265,6 +483,9 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   
   const [collapsedEvents, setCollapsedEvents] = useState<Set<string>>(new Set());
   const [collapsedSubEvents, setCollapsedSubEvents] = useState<Set<string>>(new Set());
+  
+  const [memberSearchTerm, setMemberSearchTerm] = useState('');
+  const [memberRoleFilter, setMemberRoleFilter] = useState<'All' | 'DPS' | 'Support' | 'Tank'>('All');
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -291,7 +512,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     });
   };
   
-  const [eventFormData, setEventFormData] = useState({ name: '', description: '' });
+  const [eventFormData, setEventFormData] = useState({ name: '', description: '', instructions: '' });
   const [subEventFormData, setSubEventFormData] = useState({ name: '' });
   const [partyFormData, setPartyFormData] = useState({ name: '' });
   const [assignFormData, setAssignFormData] = useState({ memberId: '', role: ROLES[0].name });
@@ -337,6 +558,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           const partiesRef = collection(db, 'events', event.id!, 'subevents', subEvent.id!, 'parties');
           const unsubParties = onSnapshot(partiesRef, (snapshot) => {
             const partiesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Party));
+            // Sort by order, fallback to name
+            partiesData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
             setParties(prev => ({ ...prev, [subEvent.id!]: partiesData }));
             
             // For each party, fetch assignments
@@ -344,6 +567,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
               const assignmentsRef = collection(db, 'events', event.id!, 'subevents', subEvent.id!, 'parties', party.id!, 'assignments');
               const unsubAssignments = onSnapshot(assignmentsRef, (snapshot) => {
                 const assignmentsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Assignment));
+                // Sort by order
+                assignmentsData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
                 setAssignments(prev => ({ ...prev, [party.id!]: assignmentsData }));
               }, (error) => {
                 handleFirestoreError(error, OperationType.LIST, `events/${event.id}/subevents/${subEvent.id}/parties/${party.id}/assignments`);
@@ -415,10 +640,15 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       if (editingParty) {
         await updateDoc(doc(db, 'events', activeEventId, 'subevents', activeSubEventId, 'parties', editingParty.id!), partyFormData);
       } else {
+        const currentParties = parties[activeSubEventId] || [];
+        const nextOrder = currentParties.length > 0 
+          ? Math.max(...currentParties.map(p => p.order ?? 0)) + 1 
+          : 0;
         await addDoc(collection(db, 'events', activeEventId, 'subevents', activeSubEventId, 'parties'), {
           ...partyFormData,
           eventId: activeEventId,
-          subEventId: activeSubEventId
+          subEventId: activeSubEventId,
+          order: nextOrder
         });
       }
       setIsPartyModalOpen(false);
@@ -440,6 +670,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       return;
     }
 
+    const nextOrder = currentAssignments.length;
     const assignmentId = `${activePartyId}_${assignFormData.memberId}`;
     try {
       await setDoc(doc(db, 'events', activeEventId, 'subevents', activeSubEventId, 'parties', activePartyId, 'assignments', assignmentId), {
@@ -447,7 +678,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         role: assignFormData.role,
         eventId: activeEventId,
         subEventId: activeSubEventId,
-        partyId: activePartyId
+        partyId: activePartyId,
+        order: nextOrder
       });
       setIsAssignModalOpen(false);
       setAssignFormData({ memberId: '', role: ROLES[0].name });
@@ -530,7 +762,102 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
 
   const handleDragEnd = async (event: DragEndEvent, eventId: string) => {
     const { active, over } = event;
-    if (!over || active.id === over.id) return;
+    if (!over) return;
+
+    const activeData = active.data.current;
+    const overData = over.data.current;
+
+    // Handle Party Dragging (Transfer or Reorder)
+    if (activeData?.type === 'party') {
+      const activePartyId = active.id as string;
+      const sourceSubEventId = activeData.subEventId;
+      
+      // Determine target sub-event
+      let targetSubEventId = overData?.subEventId;
+      if (!targetSubEventId && overData?.type === 'subevent') {
+        targetSubEventId = over.id as string;
+      }
+      
+      if (!targetSubEventId) return;
+
+      const sourceParties = [...(parties[sourceSubEventId] || [])];
+      const targetParties = sourceSubEventId === targetSubEventId 
+        ? sourceParties 
+        : [...(parties[targetSubEventId] || [])];
+
+      const oldIndex = sourceParties.findIndex(p => p.id === activePartyId);
+      let newIndex = targetParties.findIndex(p => p.id === over.id);
+      
+      if (newIndex === -1) {
+        newIndex = targetParties.length;
+      }
+
+      if (sourceSubEventId === targetSubEventId) {
+        // Reorder within same sub-event
+        if (oldIndex === newIndex) return;
+        const reordered = arrayMove(sourceParties, oldIndex, newIndex);
+        handlePartyReorder(eventId, sourceSubEventId, reordered);
+      } else {
+        // Transfer between sub-events
+        const [movedParty] = sourceParties.splice(oldIndex, 1);
+        const updatedParty = { ...movedParty, subEventId: targetSubEventId };
+        targetParties.splice(newIndex, 0, updatedParty);
+        
+        // Update state immediately for smooth UI
+        setParties(prev => ({
+          ...prev,
+          [sourceSubEventId]: sourceParties,
+          [targetSubEventId]: targetParties
+        }));
+
+        // Update Firestore
+        try {
+          const partyAssignments = assignments[activePartyId] || [];
+          
+          // 1. Create party in new location
+          await setDoc(doc(db, 'events', eventId, 'subevents', targetSubEventId, 'parties', activePartyId), {
+            ...updatedParty,
+            order: newIndex
+          });
+          
+          // 2. Create assignments in new location
+          const assignmentPromises = partyAssignments.map(a => 
+            setDoc(doc(db, 'events', eventId, 'subevents', targetSubEventId, 'parties', activePartyId, 'assignments', a.id!), {
+              ...a,
+              subEventId: targetSubEventId
+            })
+          );
+          await Promise.all(assignmentPromises);
+          
+          // 3. Delete assignments from old location
+          const deleteAssignmentPromises = partyAssignments.map(a => 
+            deleteDoc(doc(db, 'events', eventId, 'subevents', sourceSubEventId, 'parties', activePartyId, 'assignments', a.id!))
+          );
+          await Promise.all(deleteAssignmentPromises);
+          
+          // 4. Delete party from old location
+          await deleteDoc(doc(db, 'events', eventId, 'subevents', sourceSubEventId, 'parties', activePartyId));
+          
+          // 5. Update orders in source sub-event
+          const sourceUpdates = sourceParties.map((p, i) => 
+            updateDoc(doc(db, 'events', eventId, 'subevents', sourceSubEventId, 'parties', p.id!), { order: i })
+          );
+          
+          // 6. Update orders in target sub-event
+          const targetUpdates = targetParties.map((p, i) => 
+            updateDoc(doc(db, 'events', eventId, 'subevents', targetSubEventId, 'parties', p.id!), { order: i })
+          );
+          
+          await Promise.all([...sourceUpdates, ...targetUpdates]);
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `events/${eventId}/subevents/${targetSubEventId}/parties`);
+        }
+      }
+      return;
+    }
+
+    // Handle Sub-Event Reordering
+    if (active.id === over.id) return;
 
     const eventSubEvents = [...(subEvents[eventId] || [])];
     const oldIndex = eventSubEvents.findIndex((s) => s.id === active.id);
@@ -552,13 +879,47 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     }
   };
 
+  const handlePartyReorder = async (eventId: string, subEventId: string, reorderedParties: Party[]) => {
+    // Update state immediately for smooth UI
+    setParties(prev => ({ ...prev, [subEventId]: reorderedParties }));
+
+    // Update Firestore orders
+    try {
+      const updates = reorderedParties.map((party, index) => 
+        updateDoc(doc(db, 'events', eventId, 'subevents', subEventId, 'parties', party.id!), { order: index })
+      );
+      await Promise.all(updates);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `events/${eventId}/subevents/${subEventId}/parties`);
+    }
+  };
+
+  const handleAssignmentReorder = async (eventId: string, subEventId: string, partyId: string, reorderedAssignments: Assignment[]) => {
+    // Update state immediately for smooth UI
+    setAssignments(prev => ({ ...prev, [partyId]: reorderedAssignments }));
+
+    // Update Firestore orders
+    try {
+      const updates = reorderedAssignments.map((assignment, index) => 
+        updateDoc(doc(db, 'events', eventId, 'subevents', subEventId, 'parties', partyId, 'assignments', assignment.id!), { order: index })
+      );
+      await Promise.all(updates);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `events/${eventId}/subevents/${subEventId}/parties/${partyId}/assignments`);
+    }
+  };
+
   const openEventModal = (event?: GuildEvent) => {
     if (event) {
       setEditingEvent(event);
-      setEventFormData({ name: event.name, description: event.description || '' });
+      setEventFormData({ 
+        name: event.name, 
+        description: event.description || '',
+        instructions: event.instructions || ''
+      });
     } else {
       setEditingEvent(null);
-      setEventFormData({ name: '', description: '' });
+      setEventFormData({ name: '', description: '', instructions: '' });
     }
     setIsEventModalOpen(true);
   };
@@ -601,8 +962,35 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   };
 
   const getRoleStyle = (roleName: string) => {
-    return ROLES.find(r => r.name === roleName) || ROLES[3];
+    return ROLES.find(r => r.name === roleName) || ROLES[0];
   };
+
+  const getAutoRole = (job: string) => {
+    const category = getMemberCategory(job);
+    return category;
+  };
+
+  const filteredMembersForAssign = members
+    .filter(m => {
+      // Filter out members already assigned to ANY party in ANY sub-event of the current event
+      const eventSubEvents = subEvents[activeEventId!] || [];
+      const assignedMemberIds = eventSubEvents
+        .flatMap(se => parties[se.id!] || [])
+        .flatMap(p => assignments[p.id!] || [])
+        .map(a => a.memberId);
+      return !assignedMemberIds.includes(m.id!);
+    })
+    .filter(m => {
+      // Search term filter
+      if (!memberSearchTerm) return true;
+      return m.ign.toLowerCase().includes(memberSearchTerm.toLowerCase()) || 
+             m.job.toLowerCase().includes(memberSearchTerm.toLowerCase());
+    })
+    .filter(m => {
+      // Role filter
+      if (memberRoleFilter === 'All') return true;
+      return getMemberCategory(m.job) === memberRoleFilter;
+    });
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -651,6 +1039,17 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                       <Info className="w-3.5 h-3.5" />
                       {event.description || 'Regular weekly event'}
                     </p>
+                    {event.instructions && (
+                      <div className="mt-3 p-3 bg-orange-500/5 border border-orange-500/10 rounded-xl">
+                        <p className="text-xs font-bold text-orange-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                          <Zap className="w-3 h-3" />
+                          Instructions / Notes
+                        </p>
+                        <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">
+                          {event.instructions}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -729,6 +1128,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                               unassignMember={unassignMember}
                               deleteParty={deleteParty}
                               getRoleStyle={getRoleStyle}
+                              onReorderParties={handlePartyReorder}
+                              onReorderAssignments={handleAssignmentReorder}
                             />
                           ))}
                         </SortableContext>
@@ -763,6 +1164,10 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                 <div>
                   <label className="block text-sm font-medium text-zinc-400 mb-1.5">Description</label>
                   <textarea value={eventFormData.description} onChange={(e) => setEventFormData({ ...eventFormData, description: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white h-24 resize-none" placeholder="Regular weekly schedule..." />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Instructions / Notes (Visible Publicly)</label>
+                  <textarea value={eventFormData.instructions} onChange={(e) => setEventFormData({ ...eventFormData, instructions: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white h-32 resize-none" placeholder="Add specific instructions for this event..." />
                 </div>
                 <div className="pt-4 flex gap-3">
                   <button type="button" onClick={closeEventModal} className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 font-medium hover:bg-zinc-800">Cancel</button>
@@ -823,52 +1228,109 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         {isAssignModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsAssignModalOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-h-[90vh] flex flex-col">
               <h2 className="text-2xl font-bold text-white mb-6">Assign to {parties[activeSubEventId!]?.find(p => p.id === activePartyId)?.name}</h2>
-              <form onSubmit={handleAssignSubmit} className="space-y-4">
+              
+              <div className="space-y-4 flex-1 overflow-hidden flex flex-col">
                 <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Select Member</label>
-                  <select required value={assignFormData.memberId} onChange={(e) => setAssignFormData({ ...assignFormData, memberId: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white">
-                    <option value="">Choose a member...</option>
-                    {members
-                      .filter(m => {
-                        // Filter out members already assigned to ANY party in this sub event
-                        const assignedMemberIds = (parties[activeSubEventId!] || [])
-                          .flatMap(p => assignments[p.id!] || [])
-                          .map(a => a.memberId);
-                        return !assignedMemberIds.includes(m.id!);
-                      })
-                      .map(m => (
-                        <option key={m.id} value={m.id}>{m.ign} ({m.job})</option>
-                      ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Role</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {ROLES.map(role => (
+                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Search & Filter Members</label>
+                  <div className="relative mb-3">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                    <input
+                      type="text"
+                      placeholder="Search name or job..."
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2 pl-10 pr-4 text-white text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                      value={memberSearchTerm}
+                      onChange={(e) => setMemberSearchTerm(e.target.value)}
+                    />
+                  </div>
+                  
+                  <div className="flex gap-1 mb-4">
+                    {['All', 'DPS', 'Support', 'Tank'].map((filter) => (
                       <button
-                        key={role.name}
+                        key={filter}
                         type="button"
-                        onClick={() => setAssignFormData({ ...assignFormData, role: role.name })}
+                        onClick={() => setMemberRoleFilter(filter as any)}
                         className={cn(
-                          "flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-bold transition-all",
-                          assignFormData.role === role.name 
-                            ? cn(role.bg, role.color, "border-orange-500/50") 
+                          "flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all",
+                          memberRoleFilter === filter 
+                            ? "bg-orange-500/10 text-orange-500 border-orange-500/20" 
                             : "bg-zinc-800 border-zinc-700 text-zinc-500 hover:border-zinc-600"
                         )}
                       >
-                        {role.icon}
-                        {role.name}
+                        {filter}
                       </button>
                     ))}
                   </div>
                 </div>
-                <div className="pt-4 flex gap-3">
-                  <button type="button" onClick={() => setIsAssignModalOpen(false)} className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 font-medium hover:bg-zinc-800">Cancel</button>
-                  <button type="submit" className="flex-1 px-4 py-2.5 rounded-xl bg-orange-500 text-white font-bold hover:bg-orange-600 shadow-lg shadow-orange-500/20">Assign</button>
+
+                <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar space-y-2 min-h-[200px]">
+                  {filteredMembersForAssign.length === 0 ? (
+                    <div className="py-8 text-center text-zinc-600 text-sm italic">
+                      No members found
+                    </div>
+                  ) : (
+                    filteredMembersForAssign.map(m => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          setAssignFormData({ 
+                            ...assignFormData, 
+                            memberId: m.id!,
+                            role: getAutoRole(m.job)
+                          });
+                        }}
+                        className={cn(
+                          "w-full flex items-center justify-between p-3 rounded-xl border transition-all text-left group",
+                          assignFormData.memberId === m.id 
+                            ? "bg-orange-500/10 border-orange-500/50" 
+                            : "bg-zinc-800/50 border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800"
+                        )}
+                      >
+                        <div>
+                          <p className="font-bold text-white text-sm group-hover:text-orange-500 transition-colors">{m.ign}</p>
+                          <p className="text-xs text-zinc-500">{m.job}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border",
+                            getMemberCategory(m.job) === 'Support' ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
+                            getMemberCategory(m.job) === 'Tank' ? "bg-orange-500/10 text-orange-500 border-orange-500/20" :
+                            "bg-zinc-700 text-zinc-400 border-zinc-600"
+                          )}>
+                            {getMemberCategory(m.job)}
+                          </span>
+                          {assignFormData.memberId === m.id && <Check className="w-4 h-4 text-orange-500" />}
+                        </div>
+                      </button>
+                    ))
+                  )}
                 </div>
-              </form>
+
+                <form onSubmit={handleAssignSubmit} className="space-y-4 pt-4 border-t border-zinc-800">
+                  <div className="flex gap-3">
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setIsAssignModalOpen(false);
+                        setMemberSearchTerm('');
+                        setMemberRoleFilter('All');
+                      }} 
+                      className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 font-medium hover:bg-zinc-800"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="submit" 
+                      disabled={!assignFormData.memberId}
+                      className="flex-1 px-4 py-2.5 rounded-xl bg-orange-500 text-white font-bold hover:bg-orange-600 shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Assign
+                    </button>
+                  </div>
+                </form>
+              </div>
             </motion.div>
           </div>
         )}

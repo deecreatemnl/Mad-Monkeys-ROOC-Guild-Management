@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { fetchAPI } from '../firebase';
 import { GuildSettings } from '../types';
 import { Save, Globe, Type, Image as ImageIcon, Loader2, CheckCircle2, Upload } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -29,27 +28,28 @@ export default function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const settingsRef = doc(db, 'settings', 'guild_settings');
-    const unsubscribe = onSnapshot(settingsRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setSettings({ id: docSnap.id, ...docSnap.data() } as GuildSettings);
+    const loadSettings = async () => {
+      try {
+        const data = await fetchAPI('/api/settings/guild_settings');
+        if (data && Object.keys(data).length > 0) {
+          setSettings(data as GuildSettings);
+        }
+      } catch (error) {
+        console.error('Settings fetch error:', error);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    }, (error) => {
-      console.error('Settings fetch error:', error);
-      setLoading(false);
-    });
+    };
 
-    return () => unsubscribe();
+    loadSettings();
   }, []);
 
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check file size (e.g., 500KB limit for Base64 storage in Firestore)
     if (file.size > 500 * 1024) {
-      alert('Logo file is too large. Please use an image smaller than 500KB for the guild logo.');
+      alert('Logo file is too large. Please use an image smaller than 500KB.');
       return;
     }
 
@@ -62,13 +62,13 @@ export default function SettingsPage() {
         setUploading(false);
       };
       reader.onerror = () => {
-        alert('Failed to read file. Please try another image.');
+        alert('Failed to read file.');
         setUploading(false);
       };
       reader.readAsDataURL(file);
     } catch (error: any) {
       console.error('Logo processing error:', error);
-      alert('Failed to process logo. Please try again.');
+      alert('Failed to process logo.');
       setUploading(false);
     }
   };
@@ -78,11 +78,14 @@ export default function SettingsPage() {
     setSaving(true);
     setSaveSuccess(false);
     try {
-      await setDoc(doc(db, 'settings', 'guild_settings'), settings);
+      await fetchAPI('/api/settings/guild_settings', {
+        method: 'POST',
+        body: JSON.stringify(settings)
+      });
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'settings/guild_settings');
+      console.error('Failed to save settings:', error);
     } finally {
       setSaving(false);
     }
@@ -110,7 +113,6 @@ export default function SettingsPage() {
       >
         <form onSubmit={handleSubmit} className="p-8 space-y-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Guild Identity */}
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <Type className="w-5 h-5 text-orange-500" />
@@ -144,7 +146,6 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Logo & Visuals */}
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <ImageIcon className="w-5 h-5 text-orange-500" />
@@ -202,7 +203,6 @@ export default function SettingsPage() {
           </div>
 
           <div className="pt-8 border-t border-zinc-800 grid grid-cols-1 md:grid-cols-2 gap-8">
-            {/* Localization */}
             <div className="space-y-6">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <Globe className="w-5 h-5 text-orange-500" />

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { db } from '../firebase';
+import { fetchAPI } from '../firebase';
 import { Member, Job } from '../types';
 import { BarChart3, Users, Loader2, TrendingUp, PieChart } from 'lucide-react';
 import { motion } from 'motion/react';
@@ -15,33 +14,21 @@ export default function StatsPage({ isAdmin = false }: StatsPageProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let membersLoaded = false;
-    let jobsLoaded = false;
-
-    const checkLoading = () => {
-      if (membersLoaded && jobsLoaded) {
+    const loadData = async () => {
+      try {
+        const [membersData, settingsData] = await Promise.all([
+          fetchAPI('/api/members'),
+          fetchAPI('/api/settings')
+        ]);
+        setMembers(membersData);
+        setJobs(settingsData.jobs || []);
+      } catch (err) {
+        console.error('Failed to load stats data:', err);
+      } finally {
         setLoading(false);
       }
     };
-
-    const unsubscribeMembers = onSnapshot(collection(db, 'members'), (snapshot) => {
-      const membersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Member));
-      setMembers(membersData);
-      membersLoaded = true;
-      checkLoading();
-    });
-
-    const unsubscribeJobs = onSnapshot(collection(db, 'jobs'), (snapshot) => {
-      const jobsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Job));
-      setJobs(jobsData);
-      jobsLoaded = true;
-      checkLoading();
-    });
-
-    return () => {
-      unsubscribeMembers();
-      unsubscribeJobs();
-    };
+    loadData();
   }, []);
 
   // Calculate stats
@@ -133,7 +120,7 @@ export default function StatsPage({ isAdmin = false }: StatsPageProps) {
           </div>
           <div className="p-6 space-y-6">
             {jobStats.map((stat, index) => (
-              <div key={stat.id} className="space-y-2">
+              <div key={stat.id || stat.name} className="space-y-2">
                 <div className="flex justify-between items-end">
                   <div className="flex items-center gap-2">
                     <span className="text-xs font-bold text-zinc-600 w-6">{(index + 1).toString().padStart(2, '0')}</span>
@@ -182,7 +169,7 @@ export default function StatsPage({ isAdmin = false }: StatsPageProps) {
               </thead>
               <tbody>
                 {jobStats.map((stat) => (
-                  <tr key={stat.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
+                  <tr key={stat.id || stat.name} className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors">
                     <td className="p-4 font-bold text-zinc-200">{stat.name}</td>
                     <td className="p-4 text-center">
                       <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-zinc-800 text-white font-bold">

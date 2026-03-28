@@ -55,20 +55,32 @@ export default function App() {
         
         if (!userSnap.exists() && user.email) {
           // Check if there's a pending admin doc with this email
-          const emailRef = doc(db, 'users', user.email.toLowerCase());
+          const emailId = user.email.toLowerCase().trim();
+          const emailRef = doc(db, 'users', emailId);
           const emailSnap = await getDoc(emailRef);
+          
           if (emailSnap.exists()) {
             const pendingData = emailSnap.data();
+            console.log("Found pending authorization for:", emailId);
+            
             const profile: UserProfile = {
               id: user.uid,
               email: user.email,
               displayName: pendingData.displayName || user.displayName || user.email.split('@')[0],
               role: pendingData.role || 'user',
-              createdAt: new Date().toISOString()
+              createdAt: pendingData.createdAt || new Date().toISOString(),
+              authUid: user.uid,
+              isPreAuthorized: false // No longer pending
             };
-            await setDoc(userRef, profile);
-            await deleteDoc(emailRef);
-            userSnap = await getDoc(userRef);
+            
+            try {
+              await setDoc(userRef, profile);
+              await deleteDoc(emailRef);
+              userSnap = await getDoc(userRef);
+              console.log("Successfully converted pending authorization to user profile");
+            } catch (err) {
+              console.error("Error converting pending authorization:", err);
+            }
           }
         }
 
@@ -380,7 +392,7 @@ function AuthenticatedApp({ user, isAdmin, isSuperAdmin, guildSettings, handleGo
           <Route path="/statistics" element={<StatisticsPage />} />
           {isAdmin && (
             <>
-              <Route path="/users" element={<AdminsPage isSuperAdmin={isSuperAdmin} />} />
+              <Route path="/users" element={<AdminsPage isAdmin={isAdmin} isSuperAdmin={isSuperAdmin} />} />
               <Route path="/jobs" element={<JobsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </>

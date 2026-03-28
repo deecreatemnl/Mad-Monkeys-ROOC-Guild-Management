@@ -30,9 +30,15 @@ service cloud.firestore {
     //   - memberId: string (required)
     //   - role: string (required)
     //
-    // Collection: jobs
+    // Collection: users
     // Fields:
-    //   - name: string (required)
+    //   - email: string (required)
+    //   - displayName: string (required)
+    //   - role: string (required)
+    //   - createdAt: string (required)
+    //   - isPreAuthorized: boolean (optional)
+    //   - authUid: string (optional)
+    //   - passwordHash: string (optional)
     //
     // ===============================================================
 
@@ -125,9 +131,9 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
-      allow update: if isAuthenticated() && (request.auth.uid == userId || isSuperAdmin());
-      allow delete: if isAuthenticated() && isSuperAdmin();
+      allow create: if isAuthenticated() && (request.auth.uid == userId || isAdmin() || request.auth.token.email.lower() == userId.lower());
+      allow update: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAuthenticated() && (isSuperAdmin() || (exists(/databases/$(database)/documents/users/$(userId)) && get(/databases/$(database)/documents/users/$(userId)).data.email.lower() == request.auth.token.email.lower()));
     }
   }
 }

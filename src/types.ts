@@ -10,6 +10,7 @@ export interface GuildEvent {
   id?: string;
   name: string;
   description?: string;
+  instructions?: string;
 }
 
 export interface SubEvent {
@@ -24,6 +25,7 @@ export interface Party {
   eventId: string;
   subEventId: string;
   name: string;
+  order: number;
 }
 
 export interface Assignment {
@@ -33,6 +35,7 @@ export interface Assignment {
   partyId: string;
   memberId: string;
   role: string;
+  order: number;
 }
 
 export interface ChatMessage {
@@ -46,6 +49,8 @@ export interface UserProfile {
   displayName: string;
   role: 'user' | 'admin' | 'superadmin';
   createdAt: string;
+  isPreAuthorized?: boolean;
+  authUid?: string | null;
 }
 
 export interface Job {

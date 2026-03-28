@@ -1,13 +1,11 @@
-import { useState } from 'react';
-import { auth, db } from '../firebase';
-import { updatePassword, updateProfile, deleteUser, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { doc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { User, Lock, Mail, Trash2, Shield, AlertTriangle, Loader2, CheckCircle2, User as UserIcon } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { fetchAPI } from '../firebase';
+import { User, Lock, Mail, Trash2, AlertTriangle, Loader2, CheckCircle2, User as UserIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export default function ProfilePage() {
-  const user = auth.currentUser;
-  const [displayName, setDisplayName] = useState(user?.displayName || '');
+  const [user, setUser] = useState<any>(null);
+  const [displayName, setDisplayName] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -17,9 +15,24 @@ export default function ProfilePage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
 
-  if (!user) return null;
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        const data = await fetchAPI('/api/auth/me');
+        setUser(data);
+        setDisplayName(data.displayName || '');
+      } catch (err) {
+        console.error('Failed to load user:', err);
+      }
+    };
+    loadUser();
+  }, []);
 
-  const isGoogleUser = user.providerData.some(p => p.providerId === 'google.com');
+  if (!user) return (
+    <div className="flex items-center justify-center min-h-[400px]">
+      <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+    </div>
+  );
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,8 +40,10 @@ export default function ProfilePage() {
     setError(null);
     setSuccess(null);
     try {
-      await updateProfile(user, { displayName });
-      await updateDoc(doc(db, 'users', user.uid), { displayName });
+      await fetchAPI('/api/auth/profile', {
+        method: 'PUT',
+        body: JSON.stringify({ displayName })
+      });
       setSuccess('Profile updated successfully');
     } catch (err: any) {
       setError(err.message);
@@ -47,10 +62,10 @@ export default function ProfilePage() {
     setError(null);
     setSuccess(null);
     try {
-      // Re-authenticate first
-      const credential = EmailAuthProvider.credential(user.email!, currentPassword);
-      await reauthenticateWithCredential(user, credential);
-      await updatePassword(user, newPassword);
+      await fetchAPI('/api/auth/password', {
+        method: 'PUT',
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
       setSuccess('Password updated successfully');
       setCurrentPassword('');
       setNewPassword('');
@@ -66,35 +81,11 @@ export default function ProfilePage() {
     setLoading(true);
     setError(null);
     try {
-      if (!isGoogleUser) {
-        const credential = EmailAuthProvider.credential(user.email!, deletePassword);
-        await reauthenticateWithCredential(user, credential);
-      }
-      
-      // Call server to delete user data and auth account
-      const token = await user.getIdToken();
-      const response = await fetch(`/api/users/${user.uid}`, {
+      await fetchAPI(`/api/users/${user.id}`, {
         method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        }
+        body: JSON.stringify({ password: deletePassword })
       });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to delete account');
-      }
-
-      // Finally delete from client side if server succeeded
-      try {
-        await deleteUser(user);
-      } catch (clientErr: any) {
-        // If user already deleted from Auth by server, ignore the error
-        if (clientErr.code !== 'auth/user-not-found' && clientErr.code !== 'auth/user-token-expired') {
-          console.error('Client-side deleteUser error:', clientErr);
-        }
-      }
+      localStorage.removeItem('token');
       window.location.href = '/';
     } catch (err: any) {
       setError(err.message);
@@ -127,7 +118,6 @@ export default function ProfilePage() {
               <div className="flex items-center gap-2 bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-zinc-400">
                 <Mail className="w-4 h-4" />
                 <span>{user.email}</span>
-                {isGoogleUser && <span className="ml-auto text-[10px] bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full border border-blue-500/20">Google</span>}
               </div>
             </div>
 
@@ -153,63 +143,61 @@ export default function ProfilePage() {
         </motion.div>
 
         {/* Password Management */}
-        {!isGoogleUser && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1 }}
-            className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-xl space-y-6"
-          >
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <Lock className="w-5 h-5 text-orange-500" />
-              Change Password
-            </h2>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 shadow-xl space-y-6"
+        >
+          <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <Lock className="w-5 h-5 text-orange-500" />
+            Change Password
+          </h2>
 
-            <form onSubmit={handleChangePassword} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Current Password</label>
-                <input
-                  required
-                  type="password"
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
-                  placeholder="••••••••"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">New Password</label>
-                <input
-                  required
-                  type="password"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
-                  placeholder="••••••••"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Confirm New Password</label>
-                <input
-                  required
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
-                  placeholder="••••••••"
-                />
-              </div>
+          <form onSubmit={handleChangePassword} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Current Password</label>
+              <input
+                required
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                placeholder="••••••••"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">New Password</label>
+              <input
+                required
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                placeholder="••••••••"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Confirm New Password</label>
+              <input
+                required
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                placeholder="••••••••"
+              />
+            </div>
 
-              <button
-                disabled={loading}
-                type="submit"
-                className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20"
-              >
-                {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Update Password'}
-              </button>
-            </form>
-          </motion.div>
-        )}
+            <button
+              disabled={loading}
+              type="submit"
+              className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all active:scale-95 flex items-center justify-center gap-2 shadow-lg shadow-orange-500/20"
+            >
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Update Password'}
+            </button>
+          </form>
+        </motion.div>
 
         {/* Danger Zone */}
         <motion.div
@@ -289,18 +277,16 @@ export default function ProfilePage() {
                 <p className="text-zinc-400">This action cannot be undone. This will permanently delete your account and remove your data from our servers.</p>
               </div>
 
-              {!isGoogleUser && (
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider">Confirm Password</label>
-                  <input
-                    type="password"
-                    value={deletePassword}
-                    onChange={(e) => setDeletePassword(e.target.value)}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-red-500/50 outline-none transition-all"
-                    placeholder="Enter your password to confirm"
-                  />
-                </div>
-              )}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider">Confirm Password</label>
+                <input
+                  type="password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-red-500/50 outline-none transition-all"
+                  placeholder="Enter your password to confirm"
+                />
+              </div>
 
               <div className="flex gap-4">
                 <button
@@ -311,7 +297,7 @@ export default function ProfilePage() {
                 </button>
                 <button
                   onClick={handleDeleteAccount}
-                  disabled={loading || (!isGoogleUser && !deletePassword)}
+                  disabled={loading || !deletePassword}
                   className="flex-1 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all shadow-lg shadow-red-500/20"
                 >
                   {loading ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Yes, Delete'}

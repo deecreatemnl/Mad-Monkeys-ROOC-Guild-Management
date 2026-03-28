@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy, getDocs, where, writeBatch } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { Job } from '../types';
 import { Plus, Edit2, Trash2, X, Check, Briefcase } from 'lucide-react';
@@ -44,7 +44,25 @@ export default function JobsPage() {
     e.preventDefault();
     try {
       if (editingJob) {
+        const oldName = editingJob.name;
+        const newName = formData.name;
+        
         await updateDoc(doc(db, 'jobs', editingJob.id!), formData);
+        
+        // If name changed, update all members with this job
+        if (oldName !== newName) {
+          const membersRef = collection(db, 'members');
+          const q = query(membersRef, where('job', '==', oldName));
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const batch = writeBatch(db);
+            querySnapshot.docs.forEach((memberDoc) => {
+              batch.update(memberDoc.ref, { job: newName });
+            });
+            await batch.commit();
+          }
+        }
       } else {
         await addDoc(collection(db, 'jobs'), formData);
       }

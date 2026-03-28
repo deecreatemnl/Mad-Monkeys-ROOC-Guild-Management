@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, updateDoc, doc, query, orderBy, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, updateDoc, doc, query, orderBy, deleteDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { UserProfile } from '../types';
 import { Shield, ShieldAlert, Search, UserCheck, UserX, UserPlus, X, RefreshCw, Trash2, Loader2 } from 'lucide-react';
@@ -40,12 +40,7 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
   useEffect(() => {
     const q = query(collection(db, 'users'), orderBy('email', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      console.log(`Users snapshot received. Count: ${snapshot.docs.length}`);
-      const usersData = snapshot.docs.map(doc => {
-        const data = doc.data();
-        console.log(`User doc: ${doc.id}`, data);
-        return { id: doc.id, ...data } as UserProfile;
-      });
+      const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as UserProfile));
       setUsers(usersData);
       setLoading(false);
     }, (error) => {
@@ -65,14 +60,14 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
         body: JSON.stringify(addFormData),
       });
 
+      const data = await response.json();
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to create user');
+        throw new Error(data.error || 'Failed to create user');
       }
 
       setIsAddModalOpen(false);
       setAddFormData({ email: '', displayName: '', role: 'user', password: '' });
-      alert('User authorized successfully! ' + (addFormData.password ? 'They can now sign in with the provided password or their Google account.' : 'They can now sign in with their Google account.'));
+      alert('User authorized successfully! They will appear in the list once they sign in, or as a pending entry if the system is configured correctly.');
     } catch (error: any) {
       console.error('Error adding user:', error);
       alert(error.message);
@@ -99,10 +94,7 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
   };
 
   const handleDeleteUser = async (user: UserProfile) => {
-    // SuperAdmin can delete anyone except themselves (handled by UI)
-    // Admin can only delete normal users
     const canDelete = isSuperAdmin || (user.role === 'user');
-    
     if (!canDelete) {
       alert('You do not have permission to delete this user.');
       return;
@@ -137,15 +129,17 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
           </h1>
           <p className="text-zinc-400 mt-1">Manage guild members and administrators.</p>
         </div>
-        {isSuperAdmin && (
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl transition-all active:scale-95 shadow-lg shadow-blue-600/20"
-          >
-            <UserPlus className="w-5 h-5" />
-            Add User
-          </button>
-        )}
+        <div className="flex gap-2">
+          {isSuperAdmin && (
+            <button
+              onClick={() => setIsAddModalOpen(true)}
+              className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-5 rounded-xl transition-all active:scale-95 shadow-lg shadow-blue-600/20"
+            >
+              <UserPlus className="w-5 h-5" />
+              Add User
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="relative mb-6">
@@ -188,11 +182,8 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-bold text-zinc-100">{user.displayName}</h3>
-                      {((user as any).isPending || (user as any).isPreAuthorized) && (
+                      {((user as any).isPreAuthorized) && (
                         <span className="text-[10px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-700 uppercase font-bold tracking-wider">Pending</span>
-                      )}
-                      {user.role === 'superadmin' && (
-                        <span className="text-[10px] bg-orange-500/10 text-orange-500 px-1.5 py-0.5 rounded border border-orange-500/20 uppercase font-bold tracking-wider">SuperAdmin</span>
                       )}
                     </div>
                     <p className="text-sm text-zinc-500 font-mono">{user.email}</p>
@@ -307,7 +298,7 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
                       value={addFormData.password}
                       onChange={(e) => setAddFormData({ ...addFormData, password: e.target.value })}
                       className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                      placeholder="Leave blank for Google login only"
+                      placeholder="Min 6 chars for password login"
                     />
                     <button
                       type="button"
@@ -318,7 +309,7 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
                       <RefreshCw className="w-5 h-5" />
                     </button>
                   </div>
-                  <p className="text-[10px] text-zinc-500 mt-1">If provided, the user can log in with this password.</p>
+                  <p className="text-[10px] text-zinc-500 mt-1">If provided (min 6 chars), the user can log in with this password.</p>
                 </div>
                 <div className="pt-4 flex gap-3">
                   <button

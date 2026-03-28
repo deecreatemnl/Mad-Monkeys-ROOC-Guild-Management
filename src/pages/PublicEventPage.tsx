@@ -3,16 +3,52 @@ import { useParams } from 'react-router-dom';
 import { collection, onSnapshot, doc, query, orderBy, getDoc } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { GuildEvent, Member, Assignment, Party, SubEvent, GuildSettings } from '../types';
-import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, ChevronDown, ChevronRight } from 'lucide-react';
+import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, ChevronDown, ChevronRight, Cross, Zap, Target, Skull, Hammer, FlaskConical, Music, Hand } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
 const ROLES = [
-  { name: 'Main DPS', color: 'text-red-500', bg: 'bg-red-500/10', border: 'border-red-500/20', icon: <Star className="w-3 h-3" /> },
+  { name: 'DPS', color: 'text-zinc-400', bg: 'bg-zinc-400/10', border: 'border-zinc-400/20', icon: <Sword className="w-3 h-3" /> },
   { name: 'Support', color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20', icon: <Heart className="w-3 h-3" /> },
   { name: 'Tank', color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/20', icon: <Shield className="w-3 h-3" /> },
-  { name: 'DPS', color: 'text-zinc-400', bg: 'bg-zinc-400/10', border: 'border-zinc-400/20', icon: <Sword className="w-3 h-3" /> },
 ];
+
+const getMemberCategory = (job: string) => {
+  const supports = ['Gypsy', 'Minstrel', 'High Priest', 'Minstrel (M)', 'Gypsy (F)'];
+  const tanks = ['Paladin'];
+  
+  if (supports.includes(job)) return 'Support';
+  if (tanks.includes(job)) return 'Tank';
+  return 'DPS';
+};
+
+const getCategoryColor = (category: string) => {
+  switch (category) {
+    case 'Support': return 'text-blue-400';
+    case 'Tank': return 'text-orange-400';
+    default: return 'text-zinc-400';
+  }
+};
+
+const getJobIcon = (job: string) => {
+  const j = job.toLowerCase();
+  const category = getMemberCategory(job);
+  const color = getCategoryColor(category);
+  
+  let icon = <Star className="w-4 h-4" />;
+  if (j.includes('knight')) icon = <Sword className="w-4 h-4" />;
+  if (j.includes('paladin')) icon = <Shield className="w-4 h-4" />;
+  if (j.includes('priest')) icon = <Cross className="w-4 h-4" />;
+  if (j.includes('wizard')) icon = <Zap className="w-4 h-4" />;
+  if (j.includes('sniper')) icon = <Target className="w-4 h-4" />;
+  if (j.includes('assassin')) icon = <Skull className="w-4 h-4" />;
+  if (j.includes('whitesmith')) icon = <Hammer className="w-4 h-4" />;
+  if (j.includes('creator')) icon = <FlaskConical className="w-4 h-4" />;
+  if (j.includes('gypsy') || j.includes('minstrel')) icon = <Music className="w-4 h-4" />;
+  if (j.includes('champion')) icon = <Hand className="w-4 h-4" />;
+  
+  return <div className={color}>{icon}</div>;
+};
 
 export default function PublicEventPage() {
   const { eventId } = useParams<{ eventId: string }>();
@@ -93,12 +129,16 @@ export default function PublicEventPage() {
         const partiesRef = collection(db, 'events', eventId, 'subevents', subEvent.id!, 'parties');
         const unsubParties = onSnapshot(partiesRef, (snap) => {
           const partiesData = snap.docs.map(d => ({ id: d.id, ...d.data() } as Party));
+          // Sort by order, fallback to name
+          partiesData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
           setParties(prev => ({ ...prev, [subEvent.id!]: partiesData }));
           
           partiesData.forEach(party => {
             const assignmentsRef = collection(db, 'events', eventId, 'subevents', subEvent.id!, 'parties', party.id!, 'assignments');
             const unsubAssignments = onSnapshot(assignmentsRef, (aSnap) => {
               const assignmentsData = aSnap.docs.map(ad => ({ id: ad.id, ...ad.data() } as Assignment));
+              // Sort by order
+              assignmentsData.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
               setAssignments(prev => ({ ...prev, [party.id!]: assignmentsData }));
             }, (err) => {
                 handleFirestoreError(err, OperationType.LIST, `events/${eventId}/subevents/${subEvent.id}/parties/${party.id}/assignments`);
@@ -125,7 +165,7 @@ export default function PublicEventPage() {
 
   const getMemberName = (id: string) => members.find(m => m.id === id)?.ign || 'Unknown Member';
   const getMemberJob = (id: string) => members.find(m => m.id === id)?.job || 'Unknown Job';
-  const getRoleConfig = (roleName: string) => ROLES.find(r => r.name === roleName) || ROLES[3];
+  const getRoleConfig = (roleName: string) => ROLES.find(r => r.name === roleName) || ROLES[0];
 
   if (loading) {
     return (
@@ -165,6 +205,21 @@ export default function PublicEventPage() {
           <p className="text-zinc-500 max-w-2xl mx-auto text-lg">
             {event.description || guildSettings?.subtitle}
           </p>
+          {event.instructions && (
+            <motion.div 
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mt-6 max-w-2xl mx-auto p-4 bg-orange-500/5 border border-orange-500/10 rounded-2xl text-left"
+            >
+              <h4 className="text-xs font-bold text-orange-500 uppercase tracking-widest mb-2 flex items-center gap-2">
+                <Zap className="w-3 h-3" />
+                Special Instructions
+              </h4>
+              <p className="text-sm text-zinc-400 whitespace-pre-wrap leading-relaxed">
+                {event.instructions}
+              </p>
+            </motion.div>
+          )}
         </header>
 
         <div className="space-y-12">
@@ -217,22 +272,26 @@ export default function PublicEventPage() {
                             <div className="space-y-3">
                               {assignments[party.id!]?.map((assignment) => {
                                 const role = getRoleConfig(assignment.role);
+                                const member = members.find(m => m.id === assignment.memberId);
                                 return (
                                   <div
                                     key={assignment.id}
                                     className="flex items-center justify-between p-3 rounded-xl bg-zinc-900 border border-zinc-800 group"
                                   >
                                     <div className="flex items-center gap-3">
-                                      <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center border", role.bg, role.border, role.color)}>
-                                        {role.icon}
+                                      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-800 border border-zinc-700")}>
+                                        {member ? getJobIcon(member.job) : <Star className="w-5 h-5 text-zinc-500" />}
                                       </div>
                                       <div>
-                                        <div className="font-bold text-zinc-100 text-sm">{getMemberName(assignment.memberId)}</div>
-                                        <div className="text-[10px] text-zinc-500 uppercase tracking-wider font-medium">{getMemberJob(assignment.memberId)}</div>
+                                        <div className="font-bold text-zinc-100 text-sm">{member?.ign || 'Unknown'}</div>
+                                        <div className="flex items-center gap-2 mt-1">
+                                          <div className={cn("flex items-center gap-1 text-[9px] font-bold uppercase", role.color)}>
+                                            {role.icon}
+                                            {assignment.role}
+                                          </div>
+                                          <span className="text-[9px] text-zinc-600 font-bold uppercase tracking-wider">• {member?.job || 'Unknown'}</span>
+                                        </div>
                                       </div>
-                                    </div>
-                                    <div className={cn("text-[10px] font-black uppercase px-2 py-1 rounded border", role.bg, role.border, role.color)}>
-                                      {assignment.role}
                                     </div>
                                   </div>
                                 );

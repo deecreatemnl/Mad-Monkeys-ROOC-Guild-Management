@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import { fetchAPI } from '../firebase';
 import { Member, Job } from '../types';
 import { 
   Plus, 
@@ -45,70 +44,58 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     onConfirm: () => {},
   });
 
-  useEffect(() => {
-    let membersLoaded = false;
-    let jobsLoaded = false;
-
-    const checkLoading = () => {
-      if (membersLoaded && jobsLoaded) {
-        setLoading(false);
-      }
-    };
-
-    const q = query(collection(db, 'members'), orderBy('ign', 'asc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const membersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Member));
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [membersData, jobsData] = await Promise.all([
+        fetchAPI('/api/members'),
+        fetchAPI('/api/settings').then(s => JSON.parse(s.jobs || '[]'))
+      ]);
       setMembers(membersData);
-      membersLoaded = true;
-      checkLoading();
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'members');
-      membersLoaded = true;
-      checkLoading();
-    });
-
-    const jobsQ = query(collection(db, 'jobs'), orderBy('name', 'asc'));
-    const unsubscribeJobs = onSnapshot(jobsQ, (snapshot) => {
-      const jobsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Job));
       setJobs(jobsData);
-      jobsLoaded = true;
-      checkLoading();
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'jobs');
-      jobsLoaded = true;
-      checkLoading();
-    });
+    } catch (err) {
+      console.error('Failed to load members:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return () => {
-      unsubscribe();
-      unsubscribeJobs();
-    };
+  useEffect(() => {
+    loadData();
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       if (editingMember) {
-        await updateDoc(doc(db, 'members', editingMember.id!), formData);
+        await fetchAPI(`/api/members/${editingMember.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(formData),
+        });
       } else {
-        await addDoc(collection(db, 'members'), formData);
+        await fetchAPI('/api/members', {
+          method: 'POST',
+          body: JSON.stringify(formData),
+        });
       }
       closeModal();
+      loadData();
     } catch (error) {
-      handleFirestoreError(error, editingMember ? OperationType.UPDATE : OperationType.CREATE, `members/${editingMember?.id || ''}`);
+      console.error('Save failed:', error);
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: number | string) => {
     setConfirmModal({
       isOpen: true,
       title: 'Delete Member',
       message: 'Are you sure you want to delete this member? This action cannot be undone.',
       onConfirm: async () => {
         try {
-          await deleteDoc(doc(db, 'members', id));
+          await fetchAPI(`/api/members/${id}`, { method: 'DELETE' });
+          loadData();
         } catch (error) {
-          handleFirestoreError(error, OperationType.DELETE, `members/${id}`);
+          console.error('Delete failed:', error);
         }
       }
     });
