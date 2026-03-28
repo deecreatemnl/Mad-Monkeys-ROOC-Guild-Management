@@ -1,26 +1,31 @@
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
-import bcrypt from "bcryptjs";
+import * as bcrypt from "bcryptjs";
 
 dotenv.config();
 
-const url = process.env.SUPABASE_URL;
-const key = process.env.SUPABASE_ANON_KEY;
+const url = process.env.SUPABASE_URL || "";
+const key = process.env.SUPABASE_ANON_KEY || "";
 
-if (!url || !key) {
-  throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY must be provided");
+// Only create client if credentials exist to avoid module-level throw
+export const supabase = (url && key) 
+  ? createClient(url, key) 
+  : null as any;
+
+if (!supabase) {
+  console.warn("WARNING: Supabase credentials missing. API will fail.");
 }
-
-export const supabase = createClient(url, key);
 
 // Password Hashing Utilities
 export const hashPassword = async (password: string): Promise<string> => {
-  const salt = await bcrypt.genSalt(10);
-  return bcrypt.hash(password, salt);
+  const b = (bcrypt as any).default || bcrypt;
+  const salt = await b.genSalt(10);
+  return b.hash(password, salt);
 };
 
 export const comparePassword = async (password: string, hash: string): Promise<boolean> => {
-  return bcrypt.compare(password, hash);
+  const b = (bcrypt as any).default || bcrypt;
+  return b.compare(password, hash);
 };
 
 // Database Interface (Legacy - will be removed after app.ts update)

@@ -12,6 +12,17 @@ export function createApp() {
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
 
+  // Check if Supabase is initialized
+  app.use((req, res, next) => {
+    if (!supabase) {
+      if (req.path === '/api/health') return next();
+      return res.status(500).json({ 
+        error: "Supabase client not initialized. Please set SUPABASE_URL and SUPABASE_ANON_KEY in your environment variables." 
+      });
+    }
+    next();
+  });
+
   // Health check
   app.get("/api/health", (req, res) => {
     res.json({ 
@@ -21,16 +32,44 @@ export function createApp() {
     });
   });
 
+  // Seed Superadmin
+  const seedSuperadmin = async () => {
+    if (!supabase) return;
+    try {
+      const { data: existing } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('username', 'readyhit')
+        .single();
+      
+      if (!existing) {
+        console.log("Seeding superadmin 'readyhit'...");
+        const hashedPassword = await hashPassword('Nihsvxcuhyu47I');
+        await supabase.from('profiles').insert([{
+          username: 'readyhit',
+          display_name: 'Superadmin',
+          role: 'superadmin',
+          password_hash: hashedPassword
+        }]);
+        console.log("Superadmin 'readyhit' seeded successfully.");
+      }
+    } catch (e) {
+      console.error("Failed to seed superadmin:", e);
+    }
+  };
+  seedSuperadmin();
+
   // Admin Management
   app.post("/api/admins/create", asyncHandler(async (req: any, res: any) => {
     const { username, displayName, role, password } = req.body;
     const targetRole = role || "admin";
+    const lowerUsername = username.trim().toLowerCase();
     const hashedPassword = await hashPassword(password || "password123");
 
     const { data, error } = await supabase
       .from('profiles')
       .insert([{
-        username: username.trim(),
+        username: lowerUsername,
         display_name: displayName || username.trim(),
         role: targetRole,
         password_hash: hashedPassword
@@ -114,10 +153,11 @@ export function createApp() {
 
   app.post("/api/members", asyncHandler(async (req: any, res: any) => {
     const { ign, job } = req.body;
+    const lowerIgn = ign.trim().toLowerCase();
     const { data, error } = await supabase
       .from('members')
       .insert([{
-        name: ign,
+        name: lowerIgn,
         job_name: job, // For simplicity, we'll store job name directly or handle ID mapping
         created_at: new Date().toISOString()
       }])
@@ -134,10 +174,11 @@ export function createApp() {
 
   app.put("/api/members/:id", asyncHandler(async (req: any, res: any) => {
     const { ign, job } = req.body;
+    const lowerIgn = ign.trim().toLowerCase();
     const { data, error } = await supabase
       .from('members')
       .update({
-        name: ign,
+        name: lowerIgn,
         job_name: job
       })
       .eq('id', req.params.id)
@@ -406,10 +447,11 @@ export function createApp() {
   // Auth API
   app.post("/api/auth/login", asyncHandler(async (req: any, res: any) => {
     const { username, password } = req.body;
+    const lowerUsername = username.trim().toLowerCase();
     const { data: user, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('username', username.trim())
+      .eq('username', lowerUsername)
       .single();
 
     if (error || !user) {
@@ -436,6 +478,7 @@ export function createApp() {
 
   app.post("/api/auth/signup", asyncHandler(async (req: any, res: any) => {
     const { username, password } = req.body;
+    const lowerUsername = username.trim().toLowerCase();
     const hashedPassword = await hashPassword(password);
     
     // Check if first user
@@ -448,7 +491,7 @@ export function createApp() {
     const { data: newUser, error } = await supabase
       .from('profiles')
       .insert([{
-        username: username.trim(),
+        username: lowerUsername,
         display_name: username.trim(),
         role: role,
         password_hash: hashedPassword
@@ -476,11 +519,12 @@ export function createApp() {
 
   app.post("/api/auth/change-password", asyncHandler(async (req: any, res: any) => {
     const { username, currentPassword, newPassword } = req.body;
+    const lowerUsername = username.trim().toLowerCase();
     
     const { data: user, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('username', username)
+      .eq('username', lowerUsername)
       .single();
 
     if (error || !user) {
