@@ -1,4 +1,3 @@
-import fs from "fs";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 
@@ -10,8 +9,7 @@ export interface Database {
   save: (data: any) => Promise<void>;
 }
 
-// File-based Database Implementation
-const DB_FILE = "./db.json";
+// Initial Database Structure
 export const initialDb = {
   users: {
     "ReadyHit": {
@@ -49,28 +47,6 @@ export const initialDb = {
     }
   }
 };
-
-export class FileDatabase implements Database {
-  constructor() {
-    if (!fs.existsSync(DB_FILE)) {
-      fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2));
-    }
-  }
-  async get() {
-    try {
-      if (fs.existsSync(DB_FILE)) {
-        const data = fs.readFileSync(DB_FILE, "utf-8");
-        return JSON.parse(data);
-      }
-      return initialDb;
-    } catch (e) {
-      return initialDb;
-    }
-  }
-  async save(data: any) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-  }
-}
 
 export class SupabaseDatabase implements Database {
   private supabase;

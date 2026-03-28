@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { Database, FileDatabase, SupabaseDatabase, ensureDataIntegrity } from "./db";
+import { Database, SupabaseDatabase, ensureDataIntegrity } from "./db";
 
 export const asyncHandler = (fn: any) => (req: any, res: any, next: any) => {
   Promise.resolve(fn(req, res, next)).catch(next);
@@ -12,12 +12,15 @@ export function createApp() {
   // Initialize Database
   let db: Database;
   try {
-    db = (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) 
-      ? new SupabaseDatabase() 
-      : new FileDatabase();
+    db = new SupabaseDatabase();
   } catch (error: any) {
     console.error("Database Initialization Error:", error.message);
-    db = new FileDatabase();
+    // If Supabase is not configured, we'll throw an error on the first request
+    // or we can provide a dummy DB that throws errors.
+    db = {
+      get: async () => { throw new Error("Database not configured: " + error.message); },
+      save: async () => { throw new Error("Database not configured: " + error.message); }
+    };
   }
 
   app.use(cors());
@@ -25,7 +28,11 @@ export function createApp() {
 
   // Health check
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", database: process.env.SUPABASE_URL ? 'supabase' : 'file' });
+    res.json({ 
+      status: "ok", 
+      database: 'supabase',
+      configured: !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY)
+    });
   });
 
   // Admin Management
