@@ -57,7 +57,10 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
     try {
       await fetchAPI('/api/admins/create', {
         method: 'POST',
-        body: JSON.stringify(addFormData),
+        body: JSON.stringify({
+          ...addFormData,
+          username: addFormData.username.toLowerCase()
+        }),
       });
 
       setIsAddModalOpen(false);

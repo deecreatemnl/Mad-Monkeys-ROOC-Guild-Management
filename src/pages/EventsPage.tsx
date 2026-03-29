@@ -48,8 +48,8 @@ const getCategoryColor = (category: string) => {
 };
 
 const getJobIcon = (job: string) => {
-  const j = job.toLowerCase();
-  const category = getMemberCategory(job);
+  const j = (job || '').toLowerCase();
+  const category = getMemberCategory(job || '');
   const color = getCategoryColor(category);
   
   let icon = <Star className="w-4 h-4" />;
@@ -787,13 +787,10 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
 
     // Update Firestore orders
     try {
-      const updates = reordered.map((sub, index) => 
-        fetchAPI(`/api/events/${eventId}/subevents/${sub.id}`, {
-          method: 'PUT',
-          body: JSON.stringify({ order: index })
-        })
-      );
-      await Promise.all(updates);
+      await fetchAPI(`/api/events/${eventId}/subevents-reorder`, {
+        method: 'PUT',
+        body: JSON.stringify({ subevents: reordered })
+      });
       loadData();
     } catch (error) {
       console.error('Failed to reorder subevents:', error);
@@ -806,13 +803,10 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
 
     // Update Firestore orders
     try {
-      const updates = reorderedParties.map((party, index) => 
-        fetchAPI(`/api/events/${eventId}/subevents/${subEventId}/parties/${party.id}`, {
-          method: 'PUT',
-          body: JSON.stringify({ order: index })
-        })
-      );
-      await Promise.all(updates);
+      await fetchAPI(`/api/events/${eventId}/subevents/${subEventId}/parties-reorder`, {
+        method: 'PUT',
+        body: JSON.stringify({ parties: reorderedParties })
+      });
       loadData();
     } catch (error) {
       console.error('Failed to reorder parties:', error);
@@ -825,13 +819,10 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
 
     // Update Firestore orders
     try {
-      const updates = reorderedAssignments.map((assignment, index) => 
-        fetchAPI(`/api/events/${eventId}/subevents/${subEventId}/parties/${partyId}/assignments/${assignment.id}`, {
-          method: 'PUT',
-          body: JSON.stringify({ order: index })
-        })
-      );
-      await Promise.all(updates);
+      await fetchAPI(`/api/events/${eventId}/subevents/${subEventId}/parties/${partyId}/assignments-reorder`, {
+        method: 'PUT',
+        body: JSON.stringify({ assignments: reorderedAssignments })
+      });
       loadData();
     } catch (error) {
       console.error('Failed to reorder assignments:', error);
@@ -912,8 +903,10 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     .filter(m => {
       // Search term filter
       if (!memberSearchTerm) return true;
-      return m.ign.toLowerCase().includes(memberSearchTerm.toLowerCase()) || 
-             m.job.toLowerCase().includes(memberSearchTerm.toLowerCase());
+      const ign = m.ign || '';
+      const job = m.job || '';
+      return ign.toLowerCase().includes(memberSearchTerm.toLowerCase()) || 
+             job.toLowerCase().includes(memberSearchTerm.toLowerCase());
     })
     .filter(m => {
       // Role filter

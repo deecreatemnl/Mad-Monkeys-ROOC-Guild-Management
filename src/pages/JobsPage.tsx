@@ -86,7 +86,7 @@ export default function JobsPage({ isAdmin = false }: JobsPageProps) {
   const openModal = (job?: Job) => {
     if (job) {
       setEditingJob(job);
-      setFormData({ name: job.name });
+      setFormData({ name: job.name || '' });
     } else {
       setEditingJob(null);
       setFormData({ name: '' });

@@ -29,7 +29,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [formData, setFormData] = useState({ ign: '', job: '', dateJoined: new Date().toISOString().split('T')[0] });
-  const [viewMode, setViewMode] = useState<'tile' | 'list'>('tile');
+  const [viewMode, setViewMode] = useState<'tile' | 'list'>('list');
   const [selectedJob, setSelectedJob] = useState('All');
   
   const [confirmModal, setConfirmModal] = useState<{
@@ -66,16 +66,20 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const payload = {
+      ...formData,
+      ign: formData.ign.toLowerCase()
+    };
     try {
       if (editingMember) {
         await fetchAPI(`/api/members/${editingMember.id}`, {
           method: 'PUT',
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
         });
       } else {
         await fetchAPI('/api/members', {
           method: 'POST',
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
         });
       }
       closeModal();
@@ -118,8 +122,10 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
   };
 
   const filteredMembers = members.filter(m => {
-    const matchesSearch = m.ign.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         m.job.toLowerCase().includes(searchTerm.toLowerCase());
+    const ign = m.ign || '';
+    const job = m.job || '';
+    const matchesSearch = ign.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         job.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesJob = selectedJob === 'All' || m.job === selectedJob;
     return matchesSearch && matchesJob;
   });

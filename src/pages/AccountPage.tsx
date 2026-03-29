@@ -12,6 +12,7 @@ interface AccountPageProps {
 }
 
 export default function AccountPage({ user, onUpdateUser, onLogout }: AccountPageProps) {
+  const [displayName, setDisplayName] = useState(user.displayName || '');
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
@@ -20,6 +21,29 @@ export default function AccountPage({ user, onUpdateUser, onLogout }: AccountPag
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      const data = await fetchAPI('/api/auth/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          username: user.username,
+          displayName
+        })
+      });
+      onUpdateUser(data.user);
+      localStorage.setItem('user', JSON.stringify(data.user));
+      setMessage({ type: 'success', text: 'Profile updated successfully' });
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Failed to update profile' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,7 +125,7 @@ export default function AccountPage({ user, onUpdateUser, onLogout }: AccountPag
             Profile Information
           </h2>
           
-          <div className="space-y-4">
+          <form onSubmit={handleUpdateProfile} className="space-y-4">
             <div>
               <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1.5 block">IGN (Username)</label>
               <div className="bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-zinc-400 font-medium">
@@ -110,9 +134,14 @@ export default function AccountPage({ user, onUpdateUser, onLogout }: AccountPag
             </div>
             <div>
               <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1.5 block">Display Name</label>
-              <div className="bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-zinc-400 font-medium">
-                {user.displayName}
-              </div>
+              <input
+                type="text"
+                required
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                placeholder="Your display name"
+              />
             </div>
             <div>
               <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1.5 block">Role</label>
@@ -120,7 +149,14 @@ export default function AccountPage({ user, onUpdateUser, onLogout }: AccountPag
                 {user.role}
               </div>
             </div>
-          </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all"
+            >
+              {loading ? 'Updating...' : 'Update Profile'}
+            </button>
+          </form>
         </section>
 
         {/* Change Password */}

@@ -30,8 +30,8 @@ const getCategoryColor = (category: string) => {
 };
 
 const getJobIcon = (job: string) => {
-  const j = job.toLowerCase();
-  const category = getMemberCategory(job);
+  const j = (job || '').toLowerCase();
+  const category = getMemberCategory(job || '');
   const color = getCategoryColor(category);
   
   let icon = <Star className="w-4 h-4" />;

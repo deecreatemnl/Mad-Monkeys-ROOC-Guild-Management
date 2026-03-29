@@ -32,7 +32,12 @@ export default function SettingsPage() {
       try {
         const data = await fetchAPI('/api/settings/guild_settings');
         if (data && Object.keys(data).length > 0) {
-          setSettings(data as GuildSettings);
+          setSettings({
+            name: data.name || '',
+            subtitle: data.subtitle || '',
+            timezone: data.timezone || 'GMT+8 (Singapore/Manila)',
+            logoUrl: data.logoUrl || ''
+          });
         }
       } catch (error) {
         console.error('Settings fetch error:', error);
