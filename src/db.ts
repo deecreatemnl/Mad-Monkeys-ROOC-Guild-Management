@@ -1,4 +1,4 @@
-import fs from "fs";
+import fs from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
@@ -194,25 +194,21 @@ export class FileDatabase implements Database {
   }
 
   async seed() {
-    const users = await this.getUsers();
-    if (!users["readyhit"]) {
-      const hashedPassword = await bcrypt.hash("s5ZIpBmHpdSOmA", 10);
-      await this.saveUser({
-        id: "readyhit",
-        username: "readyhit",
-        displayName: "ReadyHit",
-        role: "superadmin",
-        createdAt: new Date().toISOString(),
-        password: hashedPassword
-      });
-    } else {
-      // Ensure password is correct for ReadyHit if it was changed or needs reset
-      const user = users["readyhit"];
-      const isCorrect = await bcrypt.compare("s5ZIpBmHpdSOmA", user.password);
-      if (!isCorrect) {
-        user.password = await bcrypt.hash("s5ZIpBmHpdSOmA", 10);
-        await this.saveUser(user);
+    try {
+      const users = await this.getUsers();
+      if (!users["readyhit"]) {
+        const hashedPassword = await bcrypt.hash("s5ZIpBmHpdSOmA", 10);
+        await this.saveUser({
+          id: "readyhit",
+          username: "readyhit",
+          displayName: "ReadyHit",
+          role: "superadmin",
+          createdAt: new Date().toISOString(),
+          password: hashedPassword
+        });
       }
+    } catch (e: any) {
+      console.error("FileDatabase Seed Error:", e.message);
     }
   }
 }
@@ -234,11 +230,14 @@ export class SupabaseDatabase implements Database {
 
     try {
       new URL(url);
+      console.log(`Supabase URL validated: ${url}`);
     } catch (e) {
       throw new Error(`Invalid SUPABASE_URL: ${url}. Please ensure it starts with https://`);
     }
 
+    console.log("Creating Supabase client...");
     this.supabase = createClient(url, key);
+    console.log("Supabase client created successfully");
   }
 
   async get() {
@@ -299,25 +298,30 @@ export class SupabaseDatabase implements Database {
   }
 
   async getUsers() {
-    const { data, error } = await this.supabase.from('users').select('*');
-    if (error) {
-      if (!error.message.includes("Could not find the table")) {
-        console.error("Supabase Get Users Error:", error.message);
+    try {
+      const { data, error } = await this.supabase.from('users').select('*');
+      if (error) {
+        if (!error.message.includes("Could not find the table")) {
+          console.error("Supabase Get Users Error:", error.message, error.code);
+        }
+        return initialDb.users;
       }
+      const usersObj: any = {};
+      data?.forEach(u => {
+        usersObj[u.id] = {
+          id: u.id,
+          username: u.username,
+          displayName: u.display_name,
+          role: u.role,
+          createdAt: u.created_at,
+          password: u.password_hash // Map hash to password field for app compatibility
+        };
+      });
+      return usersObj;
+    } catch (e: any) {
+      console.error("Supabase Exception in getUsers():", e.message);
       return initialDb.users;
     }
-    const usersObj: any = {};
-    data?.forEach(u => {
-      usersObj[u.id] = {
-        id: u.id,
-        username: u.username,
-        displayName: u.display_name,
-        role: u.role,
-        createdAt: u.created_at,
-        password: u.password_hash // Map hash to password field for app compatibility
-      };
-    });
-    return usersObj;
   }
 
   async saveUser(user: any) {
@@ -337,20 +341,25 @@ export class SupabaseDatabase implements Database {
   }
 
   async getMembers() {
-    const { data, error } = await this.supabase.from('members').select('*');
-    if (error) {
-      if (!error.message.includes("Could not find the table")) {
-        console.error("Supabase Get Members Error:", error.message);
+    try {
+      const { data, error } = await this.supabase.from('members').select('*');
+      if (error) {
+        if (!error.message.includes("Could not find the table")) {
+          console.error("Supabase Get Members Error:", error.message, error.code);
+        }
+        return [];
       }
+      return (data || []).map(m => ({
+        id: m.id,
+        ign: m.ign,
+        job: m.job,
+        dateJoined: m.date_joined,
+        uid: m.uid
+      }));
+    } catch (e: any) {
+      console.error("Supabase Exception in getMembers():", e.message);
       return [];
     }
-    return (data || []).map(m => ({
-      id: m.id,
-      ign: m.ign,
-      job: m.job,
-      dateJoined: m.date_joined,
-      uid: m.uid
-    }));
   }
 
   async saveMember(member: any) {
@@ -370,14 +379,19 @@ export class SupabaseDatabase implements Database {
   }
 
   async getJobs() {
-    const { data, error } = await this.supabase.from('jobs').select('*');
-    if (error) {
-      if (!error.message.includes("Could not find the table")) {
-        console.error("Supabase Get Jobs Error:", error.message);
+    try {
+      const { data, error } = await this.supabase.from('jobs').select('*');
+      if (error) {
+        if (!error.message.includes("Could not find the table")) {
+          console.error("Supabase Get Jobs Error:", error.message, error.code);
+        }
+        return initialDb.jobs;
       }
+      return data || [];
+    } catch (e: any) {
+      console.error("Supabase Exception in getJobs():", e.message);
       return initialDb.jobs;
     }
-    return data || [];
   }
 
   async saveJob(job: any) {
@@ -391,14 +405,19 @@ export class SupabaseDatabase implements Database {
   }
 
   async getEvents() {
-    const { data, error } = await this.supabase.from('events').select('*');
-    if (error) {
-      if (!error.message.includes("Could not find the table")) {
-        console.error("Supabase Get Events Error:", error.message);
+    try {
+      const { data, error } = await this.supabase.from('events').select('*');
+      if (error) {
+        if (!error.message.includes("Could not find the table")) {
+          console.error("Supabase Get Events Error:", error.message, error.code);
+        }
+        return [];
       }
+      return data || [];
+    } catch (e: any) {
+      console.error("Supabase Exception in getEvents():", e.message);
       return [];
     }
-    return data || [];
   }
 
   async saveEvent(event: any) {
@@ -445,24 +464,27 @@ export class SupabaseDatabase implements Database {
   }
 
   async seed() {
-    const users = await this.getUsers();
-    if (!users["readyhit"]) {
-      const hashedPassword = await bcrypt.hash("s5ZIpBmHpdSOmA", 10);
-      await this.saveUser({
-        id: "readyhit",
-        username: "readyhit",
-        displayName: "ReadyHit",
-        role: "superadmin",
-        createdAt: new Date().toISOString(),
-        password: hashedPassword
-      });
-    } else {
-      const user = users["readyhit"];
-      const isCorrect = await bcrypt.compare("s5ZIpBmHpdSOmA", user.password);
-      if (!isCorrect) {
-        user.password = await bcrypt.hash("s5ZIpBmHpdSOmA", 10);
-        await this.saveUser(user);
+    try {
+      console.log("Seeding database...");
+      const users = await this.getUsers();
+      console.log(`Current users count: ${Object.keys(users).length}`);
+      if (!users["readyhit"]) {
+        console.log("Seeding superadmin user...");
+        const hashedPassword = await bcrypt.hash("s5ZIpBmHpdSOmA", 10);
+        await this.saveUser({
+          id: "readyhit",
+          username: "readyhit",
+          displayName: "ReadyHit",
+          role: "superadmin",
+          createdAt: new Date().toISOString(),
+          password: hashedPassword
+        });
+        console.log("Superadmin user seeded successfully");
+      } else {
+        console.log("Superadmin user already exists");
       }
+    } catch (e: any) {
+      console.error("Supabase Seed Error:", e.message);
     }
   }
 }

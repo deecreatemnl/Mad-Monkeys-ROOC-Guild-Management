@@ -2,7 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
-import { createApp } from "./src/app";
+import { createApp } from "./src/app.js";
 
 dotenv.config();
 

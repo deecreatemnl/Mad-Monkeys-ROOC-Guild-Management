@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
-import { Database, FileDatabase, SupabaseDatabase, ensureDataIntegrity } from "./db";
+import { Database, FileDatabase, SupabaseDatabase, ensureDataIntegrity } from "./db.js";
 
 export const asyncHandler = (fn: any) => (req: any, res: any, next: any) => {
   Promise.resolve(fn(req, res, next)).catch(next);
@@ -20,10 +20,12 @@ export function createApp() {
   }
 
   try {
+    console.log(`Initializing database... Vercel: ${isVercel}, Supabase: ${!!hasSupabase}`);
     db = hasSupabase 
       ? new SupabaseDatabase() 
       : new FileDatabase();
     
+    console.log("Database initialized successfully");
     // Seed database
     db.seed().catch(err => {
       if (isVercel && !hasSupabase) {
@@ -41,9 +43,26 @@ export function createApp() {
   app.use(express.json({ limit: '50mb' }));
 
   // Health check
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", database: process.env.SUPABASE_URL ? 'supabase' : 'file' });
-  });
+  app.get("/api/health", asyncHandler(async (req: any, res: any) => {
+    let dbStatus = "unknown";
+    try {
+      const users = await db.getUsers();
+      dbStatus = `connected (${Object.keys(users).length} users)`;
+    } catch (e: any) {
+      dbStatus = `error: ${e.message}`;
+    }
+    
+    res.json({ 
+      status: "ok", 
+      database: process.env.SUPABASE_URL ? 'supabase' : 'file',
+      dbStatus,
+      env: {
+        isVercel,
+        hasSupabase: !!hasSupabase,
+        nodeEnv: process.env.NODE_ENV
+      }
+    });
+  }));
 
   // Admin Management
   app.post("/api/admins/create", asyncHandler(async (req: any, res: any) => {
@@ -484,8 +503,13 @@ export function createApp() {
 
   // Settings API
   app.get("/api/settings", asyncHandler(async (req: any, res: any) => {
-    const settings = await db.getSettings();
-    res.json(settings);
+    try {
+      const settings = await db.getSettings();
+      res.json(settings);
+    } catch (err: any) {
+      console.error("Get Settings Exception:", err.message);
+      res.status(500).json({ error: "Failed to load settings" });
+    }
   }));
 
   app.get("/api/settings/guild_settings", asyncHandler(async (req: any, res: any) => {
@@ -503,20 +527,34 @@ export function createApp() {
   // Auth API
   app.post("/api/auth/login", asyncHandler(async (req: any, res: any) => {
     const { username, password } = req.body;
-    const users = await db.getUsers();
-    const userId = username.trim().toLowerCase();
-    const user = users[userId];
-    
-    if (user) {
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      if (isPasswordValid) {
-        const { password: _, ...userWithoutPassword } = user;
-        res.json({ user: userWithoutPassword, token: "mock-jwt-token" });
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password are required" });
+    }
+
+    try {
+      const users = await db.getUsers();
+      const userId = username.trim().toLowerCase();
+      const user = users[userId];
+      
+      if (user) {
+        if (!user.password) {
+          console.error(`Login Error: User ${userId} has no password hash in database.`);
+          return res.status(401).json({ error: "Invalid username or password" });
+        }
+
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (isPasswordValid) {
+          const { password: _, ...userWithoutPassword } = user;
+          res.json({ user: userWithoutPassword, token: "mock-jwt-token" });
+        } else {
+          res.status(401).json({ error: "Invalid username or password" });
+        }
       } else {
         res.status(401).json({ error: "Invalid username or password" });
       }
-    } else {
-      res.status(401).json({ error: "Invalid username or password" });
+    } catch (err: any) {
+      console.error("Login Exception:", err.message);
+      res.status(500).json({ error: "An error occurred during login" });
     }
   }));
 
@@ -608,7 +646,13 @@ export function createApp() {
   // Error handler
   app.use((err: any, req: any, res: any, next: any) => {
     console.error("Express Error Handler:", err);
-    res.status(500).json({ error: err.message || "Internal Server Error" });
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(500).json({ 
+      error: err.message || "Internal Server Error",
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
   });
 
   return app;
