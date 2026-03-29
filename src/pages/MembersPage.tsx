@@ -68,7 +68,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     e.preventDefault();
     const payload = {
       ...formData,
-      ign: formData.ign.toLowerCase()
+      ign: formData.ign
     };
     try {
       if (editingMember) {

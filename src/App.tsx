@@ -46,7 +46,7 @@ export default function App() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget as HTMLFormElement);
-    const username = (formData.get('username') as string).toLowerCase();
+    const username = (formData.get('username') as string).trim();
     const password = formData.get('password') as string;
 
     try {
@@ -65,7 +65,7 @@ export default function App() {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget as HTMLFormElement);
-    const username = (formData.get('username') as string).toLowerCase();
+    const username = (formData.get('username') as string).trim();
     const password = formData.get('password') as string;
 
     try {

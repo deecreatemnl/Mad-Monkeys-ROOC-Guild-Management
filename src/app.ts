@@ -69,13 +69,14 @@ export function createApp() {
     const { username, displayName, role, password } = req.body;
     const targetRole = role || "admin";
     const userId = username.trim().toLowerCase();
+    const originalUsername = username.trim();
     
     const hashedPassword = await bcrypt.hash(password || "password123", 10);
     
     const newUser = {
       id: userId,
-      username: userId,
-      displayName: displayName || userId,
+      username: originalUsername,
+      displayName: displayName || originalUsername,
       role: targetRole,
       createdAt: new Date().toISOString(),
       isPreAuthorized: true,
@@ -562,14 +563,15 @@ export function createApp() {
     const { username, password } = req.body;
     const users = await db.getUsers();
     const userId = username.trim().toLowerCase();
+    const originalUsername = username.trim();
     if (users[userId]) return res.status(400).json({ error: "User already exists" });
     
     const hashedPassword = await bcrypt.hash(password, 10);
     
     const newUser = { 
       id: userId, 
-      username: userId, 
-      displayName: userId, 
+      username: originalUsername, 
+      displayName: originalUsername, 
       role: userId === 'readyhit' ? 'superadmin' : 'member', 
       createdAt: new Date().toISOString(), 
       password: hashedPassword 

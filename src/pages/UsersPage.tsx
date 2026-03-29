@@ -59,7 +59,7 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
         method: 'POST',
         body: JSON.stringify({
           ...addFormData,
-          username: addFormData.username.toLowerCase()
+          username: addFormData.username
         }),
       });
 
