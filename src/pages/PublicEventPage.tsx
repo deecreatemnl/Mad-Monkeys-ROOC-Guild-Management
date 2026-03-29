@@ -151,7 +151,7 @@ export default function PublicEventPage() {
 
   return (
     <div className="min-h-screen bg-black text-zinc-100 p-4 md:p-8">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-[1600px] mx-auto">
         <header className="mb-12 text-center">
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -217,7 +217,7 @@ export default function PublicEventPage() {
                       transition={{ duration: 0.2, ease: 'easeInOut' }}
                       className="overflow-hidden"
                     >
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                         {parties[subEvent.id!]?.map((party, index) => (
                           <motion.div
                             key={party.id}

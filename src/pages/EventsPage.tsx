@@ -409,7 +409,7 @@ function SortableSubEventItem({
               items={parties.map(p => p.id!)}
               strategy={rectSortingStrategy}
             >
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {parties.map((party) => (
                   <SortablePartyItem
                     key={party.id}
@@ -1061,7 +1061,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     });
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="p-6 max-w-[1600px] mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-3xl font-bold text-white">Regular Events</h1>
