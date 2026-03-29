@@ -13,6 +13,7 @@ import SettingsPage from './pages/SettingsPage';
 import PublicEventPage from './pages/PublicEventPage';
 import AccountPage from './pages/AccountPage';
 import { UserProfile, GuildSettings } from './types';
+import { Analytics } from '@vercel/analytics/react';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
@@ -296,6 +297,7 @@ export default function App() {
           )
         } />
       </Routes>
+      <Analytics />
     </Router>
   );
 }
