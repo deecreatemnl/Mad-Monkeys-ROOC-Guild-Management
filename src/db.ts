@@ -24,6 +24,11 @@ export interface Database {
   deleteEvent: (id: string) => Promise<void>;
   getSettings: () => Promise<any>;
   saveSettings: (settings: any) => Promise<void>;
+  getMemberById: (id: string) => Promise<any>;
+  getJobById: (id: string) => Promise<any>;
+  getEventById: (id: string) => Promise<any>;
+  getUserById: (id: string) => Promise<any>;
+  updateMembersJob: (oldJobName: string, newJobName: string) => Promise<void>;
   seed: () => Promise<void>;
 }
 
@@ -190,6 +195,34 @@ export class FileDatabase implements Database {
   async saveSettings(settings: any) {
     const data = await this.get();
     data.settings.guild_settings = settings;
+    await this.save(data);
+  }
+
+  async getMemberById(id: string) {
+    const data = await this.get();
+    return data.members.find((m: any) => m.id === id);
+  }
+
+  async getJobById(id: string) {
+    const data = await this.get();
+    return data.jobs.find((j: any) => j.id === id);
+  }
+
+  async getEventById(id: string) {
+    const data = await this.get();
+    return data.events.find((e: any) => e.id === id);
+  }
+
+  async getUserById(id: string) {
+    const data = await this.get();
+    return data.users[id];
+  }
+
+  async updateMembersJob(oldJobName: string, newJobName: string) {
+    const data = await this.get();
+    data.members = data.members.map((m: any) => 
+      m.job === oldJobName ? { ...m, job: newJobName } : m
+    );
     await this.save(data);
   }
 
@@ -461,6 +494,48 @@ export class SupabaseDatabase implements Database {
       logo_url: settings.logoUrl
     });
     if (error) console.error("Supabase Save Settings Error:", error.message);
+  }
+
+  async getMemberById(id: string) {
+    const { data, error } = await this.supabase.from('members').select('*').eq('id', id).single();
+    if (error) return null;
+    return {
+      id: data.id,
+      ign: data.ign,
+      job: data.job,
+      dateJoined: data.date_joined,
+      uid: data.uid
+    };
+  }
+
+  async getJobById(id: string) {
+    const { data, error } = await this.supabase.from('jobs').select('*').eq('id', id).single();
+    if (error) return null;
+    return data;
+  }
+
+  async getEventById(id: string) {
+    const { data, error } = await this.supabase.from('events').select('*').eq('id', id).single();
+    if (error) return null;
+    return data;
+  }
+
+  async getUserById(id: string) {
+    const { data, error } = await this.supabase.from('users').select('*').eq('id', id).single();
+    if (error) return null;
+    return {
+      id: data.id,
+      username: data.username,
+      displayName: data.display_name,
+      role: data.role,
+      createdAt: data.created_at,
+      password: data.password_hash
+    };
+  }
+
+  async updateMembersJob(oldJobName: string, newJobName: string) {
+    const { error } = await this.supabase.from('members').update({ job: newJobName }).eq('job', oldJobName);
+    if (error) console.error("Supabase Update Members Job Error:", error.message);
   }
 
   async seed() {

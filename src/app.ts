@@ -94,10 +94,10 @@ export function createApp() {
   }));
 
   app.put("/api/users/:id", asyncHandler(async (req: any, res: any) => {
-    const users = await db.getUsers();
     const id = req.params.id;
-    if (users[id]) {
-      const updatedUser = { ...users[id], ...req.body };
+    const user = await db.getUserById(id);
+    if (user) {
+      const updatedUser = { ...user, ...req.body };
       // If password is being updated, hash it
       if (req.body.password) {
         updatedUser.password = await bcrypt.hash(req.body.password, 10);
@@ -110,8 +110,7 @@ export function createApp() {
   }));
 
   app.delete("/api/users/:id", asyncHandler(async (req: any, res: any) => {
-    const users = await db.getUsers();
-    const user = users[req.params.id];
+    const user = await db.getUserById(req.params.id);
     if (user && user.role === 'superadmin') {
       return res.status(403).json({ error: "Cannot delete superadmin account" });
     }
@@ -132,10 +131,9 @@ export function createApp() {
   }));
 
   app.put("/api/members/:id", asyncHandler(async (req: any, res: any) => {
-    const members = await db.getMembers();
-    const index = members.findIndex((m: any) => m.id === req.params.id);
-    if (index !== -1) {
-      const updatedMember = { ...members[index], ...req.body };
+    const member = await db.getMemberById(req.params.id);
+    if (member) {
+      const updatedMember = { ...member, ...req.body };
       await db.saveMember(updatedMember);
       res.json(updatedMember);
     } else {
@@ -161,20 +159,14 @@ export function createApp() {
   }));
 
   app.put("/api/jobs/:id", asyncHandler(async (req: any, res: any) => {
-    const jobs = await db.getJobs();
-    const index = jobs.findIndex((j: any) => j.id === req.params.id);
-    if (index !== -1) {
-      const oldName = jobs[index].name;
+    const job = await db.getJobById(req.params.id);
+    if (job) {
+      const oldName = job.name;
       const newName = req.body.name;
-      const updatedJob = { ...jobs[index], ...req.body };
+      const updatedJob = { ...job, ...req.body };
       
       if (oldName !== newName) {
-        const members = await db.getMembers();
-        const updatedMembers = members.map((m: any) => m.job === oldName ? { ...m, job: newName } : m);
-        // This is still a bit slow, but better than before
-        for (const m of updatedMembers) {
-          if (m.job === newName) await db.saveMember(m);
-        }
+        await db.updateMembersJob(oldName, newName);
       }
       
       await db.saveJob(updatedJob);
@@ -196,8 +188,7 @@ export function createApp() {
   }));
 
   app.get("/api/events/:id", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const event = events.find((e: any) => e.id === req.params.id);
+    const event = await db.getEventById(req.params.id);
     if (event) res.json(event);
     else res.status(404).json({ error: "Event not found" });
   }));
@@ -209,10 +200,9 @@ export function createApp() {
   }));
 
   app.put("/api/events/:id", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const index = events.findIndex((e: any) => e.id === req.params.id);
-    if (index !== -1) {
-      const updatedEvent = { ...events[index], ...req.body };
+    const event = await db.getEventById(req.params.id);
+    if (event) {
+      const updatedEvent = { ...event, ...req.body };
       await db.saveEvent(updatedEvent);
       res.json(updatedEvent);
     } else {
@@ -227,19 +217,17 @@ export function createApp() {
 
   // SubEvents API
   app.get("/api/events/:eventId/subevents", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const event = events.find((e: any) => e.id === req.params.eventId);
+    const event = await db.getEventById(req.params.eventId);
     res.json(event?.subevents || []);
   }));
 
   app.post("/api/events/:eventId/subevents", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex !== -1) {
+    const event = await db.getEventById(req.params.eventId);
+    if (event) {
       const newSubEvent = { ...req.body, id: Date.now().toString(), parties: [] };
-      if (!events[eventIndex].subevents) events[eventIndex].subevents = [];
-      events[eventIndex].subevents.push(newSubEvent);
-      await db.saveEvent(events[eventIndex]);
+      if (!event.subevents) event.subevents = [];
+      event.subevents.push(newSubEvent);
+      await db.saveEvent(event);
       res.json(newSubEvent);
     } else {
       res.status(404).json({ error: "Event not found" });
@@ -247,14 +235,13 @@ export function createApp() {
   }));
 
   app.put("/api/events/:eventId/subevents/:id", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex !== -1) {
-      const subIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === req.params.id);
+    const event = await db.getEventById(req.params.eventId);
+    if (event) {
+      const subIndex = event.subevents.findIndex((s: any) => s.id === req.params.id);
       if (subIndex !== -1) {
-        events[eventIndex].subevents[subIndex] = { ...events[eventIndex].subevents[subIndex], ...req.body };
-        await db.saveEvent(events[eventIndex]);
-        res.json(events[eventIndex].subevents[subIndex]);
+        event.subevents[subIndex] = { ...event.subevents[subIndex], ...req.body };
+        await db.saveEvent(event);
+        res.json(event.subevents[subIndex]);
       } else {
         res.status(404).json({ error: "SubEvent not found" });
       }
@@ -265,11 +252,10 @@ export function createApp() {
 
   app.put("/api/events/:eventId/subevents-reorder", asyncHandler(async (req: any, res: any) => {
     const { subevents } = req.body;
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex !== -1) {
-      events[eventIndex].subevents = subevents;
-      await db.saveEvent(events[eventIndex]);
+    const event = await db.getEventById(req.params.eventId);
+    if (event) {
+      event.subevents = subevents;
+      await db.saveEvent(event);
       res.json({ success: true });
     } else {
       res.status(404).json({ error: "Event not found" });
@@ -277,11 +263,10 @@ export function createApp() {
   }));
 
   app.delete("/api/events/:eventId/subevents/:id", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex !== -1) {
-      events[eventIndex].subevents = events[eventIndex].subevents.filter((s: any) => s.id !== req.params.id);
-      await db.saveEvent(events[eventIndex]);
+    const event = await db.getEventById(req.params.eventId);
+    if (event) {
+      event.subevents = event.subevents.filter((s: any) => s.id !== req.params.id);
+      await db.saveEvent(event);
       res.json({ success: true });
     } else {
       res.status(404).json({ error: "Event not found" });
@@ -290,22 +275,20 @@ export function createApp() {
 
   // Parties API
   app.get("/api/events/:eventId/subevents/:subEventId/parties", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const event = events.find((e: any) => e.id === req.params.eventId);
+    const event = await db.getEventById(req.params.eventId);
     const subEvent = event?.subevents?.find((s: any) => s.id === req.params.subEventId);
     res.json(subEvent?.parties || []);
   }));
 
   app.post("/api/events/:eventId/subevents/:subEventId/parties", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex !== -1) {
-      const subIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === req.params.subEventId);
+    const event = await db.getEventById(req.params.eventId);
+    if (event) {
+      const subIndex = event.subevents.findIndex((s: any) => s.id === req.params.subEventId);
       if (subIndex !== -1) {
         const newParty = { ...req.body, id: Date.now().toString(), assignments: [] };
-        if (!events[eventIndex].subevents[subIndex].parties) events[eventIndex].subevents[subIndex].parties = [];
-        events[eventIndex].subevents[subIndex].parties.push(newParty);
-        await db.saveEvent(events[eventIndex]);
+        if (!event.subevents[subIndex].parties) event.subevents[subIndex].parties = [];
+        event.subevents[subIndex].parties.push(newParty);
+        await db.saveEvent(event);
         res.json(newParty);
       } else {
         res.status(404).json({ error: "SubEvent not found" });
@@ -316,16 +299,15 @@ export function createApp() {
   }));
 
   app.put("/api/events/:eventId/subevents/:subEventId/parties/:id", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex !== -1) {
-      const subIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === req.params.subEventId);
+    const event = await db.getEventById(req.params.eventId);
+    if (event) {
+      const subIndex = event.subevents.findIndex((s: any) => s.id === req.params.subEventId);
       if (subIndex !== -1) {
-        const partyIndex = events[eventIndex].subevents[subIndex].parties.findIndex((p: any) => p.id === req.params.id);
+        const partyIndex = event.subevents[subIndex].parties.findIndex((p: any) => p.id === req.params.id);
         if (partyIndex !== -1) {
-          events[eventIndex].subevents[subIndex].parties[partyIndex] = { ...events[eventIndex].subevents[subIndex].parties[partyIndex], ...req.body };
-          await db.saveEvent(events[eventIndex]);
-          res.json(events[eventIndex].subevents[subIndex].parties[partyIndex]);
+          event.subevents[subIndex].parties[partyIndex] = { ...event.subevents[subIndex].parties[partyIndex], ...req.body };
+          await db.saveEvent(event);
+          res.json(event.subevents[subIndex].parties[partyIndex]);
         } else {
           res.status(404).json({ error: "Party not found" });
         }
@@ -339,13 +321,12 @@ export function createApp() {
 
   app.put("/api/events/:eventId/subevents/:subEventId/parties-reorder", asyncHandler(async (req: any, res: any) => {
     const { parties } = req.body;
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex !== -1) {
-      const subIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === req.params.subEventId);
+    const event = await db.getEventById(req.params.eventId);
+    if (event) {
+      const subIndex = event.subevents.findIndex((s: any) => s.id === req.params.subEventId);
       if (subIndex !== -1) {
-        events[eventIndex].subevents[subIndex].parties = parties;
-        await db.saveEvent(events[eventIndex]);
+        event.subevents[subIndex].parties = parties;
+        await db.saveEvent(event);
         res.json({ success: true });
       } else {
         res.status(404).json({ error: "SubEvent not found" });
@@ -357,37 +338,35 @@ export function createApp() {
 
   app.put("/api/events/:eventId/move-party", asyncHandler(async (req: any, res: any) => {
     const { partyId, fromSubEventId, toSubEventId, newIndex } = req.body;
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex === -1) return res.status(404).json({ error: "Event not found" });
+    const event = await db.getEventById(req.params.eventId);
+    if (!event) return res.status(404).json({ error: "Event not found" });
 
-    const fromSubIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === fromSubEventId);
-    const toSubIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === toSubEventId);
+    const fromSubIndex = event.subevents.findIndex((s: any) => s.id === fromSubEventId);
+    const toSubIndex = event.subevents.findIndex((s: any) => s.id === toSubEventId);
 
     if (fromSubIndex === -1 || toSubIndex === -1) return res.status(404).json({ error: "SubEvent not found" });
 
-    const partyIndex = events[eventIndex].subevents[fromSubIndex].parties.findIndex((p: any) => p.id === partyId);
+    const partyIndex = event.subevents[fromSubIndex].parties.findIndex((p: any) => p.id === partyId);
     if (partyIndex === -1) return res.status(404).json({ error: "Party not found" });
 
-    const [party] = events[eventIndex].subevents[fromSubIndex].parties.splice(partyIndex, 1);
-    events[eventIndex].subevents[toSubIndex].parties.splice(newIndex, 0, party);
+    const [party] = event.subevents[fromSubIndex].parties.splice(partyIndex, 1);
+    event.subevents[toSubIndex].parties.splice(newIndex, 0, party);
 
     // Update orders
-    events[eventIndex].subevents[fromSubIndex].parties.forEach((p: any, i: number) => p.order = i);
-    events[eventIndex].subevents[toSubIndex].parties.forEach((p: any, i: number) => p.order = i);
+    event.subevents[fromSubIndex].parties.forEach((p: any, i: number) => p.order = i);
+    event.subevents[toSubIndex].parties.forEach((p: any, i: number) => p.order = i);
 
-    await db.saveEvent(events[eventIndex]);
+    await db.saveEvent(event);
     res.json({ success: true });
   }));
 
   app.delete("/api/events/:eventId/subevents/:subEventId/parties/:id", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex !== -1) {
-      const subIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === req.params.subEventId);
+    const event = await db.getEventById(req.params.eventId);
+    if (event) {
+      const subIndex = event.subevents.findIndex((s: any) => s.id === req.params.subEventId);
       if (subIndex !== -1) {
-        events[eventIndex].subevents[subIndex].parties = events[eventIndex].subevents[subIndex].parties.filter((p: any) => p.id !== req.params.id);
-        await db.saveEvent(events[eventIndex]);
+        event.subevents[subIndex].parties = event.subevents[subIndex].parties.filter((p: any) => p.id !== req.params.id);
+        await db.saveEvent(event);
         res.json({ success: true });
       } else {
         res.status(404).json({ error: "SubEvent not found" });
@@ -399,25 +378,23 @@ export function createApp() {
 
   // Assignments API
   app.get("/api/events/:eventId/subevents/:subEventId/parties/:partyId/assignments", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const event = events.find((e: any) => e.id === req.params.eventId);
+    const event = await db.getEventById(req.params.eventId);
     const subEvent = event?.subevents?.find((s: any) => s.id === req.params.subEventId);
     const party = subEvent?.parties?.find((p: any) => p.id === req.params.partyId);
     res.json(party?.assignments || []);
   }));
 
   app.post("/api/events/:eventId/subevents/:subEventId/parties/:partyId/assignments", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex !== -1) {
-      const subIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === req.params.subEventId);
+    const event = await db.getEventById(req.params.eventId);
+    if (event) {
+      const subIndex = event.subevents.findIndex((s: any) => s.id === req.params.subEventId);
       if (subIndex !== -1) {
-        const partyIndex = events[eventIndex].subevents[subIndex].parties.findIndex((p: any) => p.id === req.params.partyId);
+        const partyIndex = event.subevents[subIndex].parties.findIndex((p: any) => p.id === req.params.partyId);
         if (partyIndex !== -1) {
           const newAssignment = { ...req.body, id: Date.now().toString() };
-          if (!events[eventIndex].subevents[subIndex].parties[partyIndex].assignments) events[eventIndex].subevents[subIndex].parties[partyIndex].assignments = [];
-          events[eventIndex].subevents[subIndex].parties[partyIndex].assignments.push(newAssignment);
-          await db.saveEvent(events[eventIndex]);
+          if (!event.subevents[subIndex].parties[partyIndex].assignments) event.subevents[subIndex].parties[partyIndex].assignments = [];
+          event.subevents[subIndex].parties[partyIndex].assignments.push(newAssignment);
+          await db.saveEvent(event);
           res.json(newAssignment);
         } else {
           res.status(404).json({ error: "Party not found" });
@@ -431,18 +408,17 @@ export function createApp() {
   }));
 
   app.put("/api/events/:eventId/subevents/:subEventId/parties/:partyId/assignments/:id", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex !== -1) {
-      const subIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === req.params.subEventId);
+    const event = await db.getEventById(req.params.eventId);
+    if (event) {
+      const subIndex = event.subevents.findIndex((s: any) => s.id === req.params.subEventId);
       if (subIndex !== -1) {
-        const partyIndex = events[eventIndex].subevents[subIndex].parties.findIndex((p: any) => p.id === req.params.partyId);
+        const partyIndex = event.subevents[subIndex].parties.findIndex((p: any) => p.id === req.params.partyId);
         if (partyIndex !== -1) {
-          const assignIndex = events[eventIndex].subevents[subIndex].parties[partyIndex].assignments.findIndex((a: any) => a.id === req.params.id);
+          const assignIndex = event.subevents[subIndex].parties[partyIndex].assignments.findIndex((a: any) => a.id === req.params.id);
           if (assignIndex !== -1) {
-            events[eventIndex].subevents[subIndex].parties[partyIndex].assignments[assignIndex] = { ...events[eventIndex].subevents[subIndex].parties[partyIndex].assignments[assignIndex], ...req.body };
-            await db.saveEvent(events[eventIndex]);
-            res.json(events[eventIndex].subevents[subIndex].parties[partyIndex].assignments[assignIndex]);
+            event.subevents[subIndex].parties[partyIndex].assignments[assignIndex] = { ...event.subevents[subIndex].parties[partyIndex].assignments[assignIndex], ...req.body };
+            await db.saveEvent(event);
+            res.json(event.subevents[subIndex].parties[partyIndex].assignments[assignIndex]);
           } else {
             res.status(404).json({ error: "Assignment not found" });
           }
@@ -459,15 +435,14 @@ export function createApp() {
 
   app.put("/api/events/:eventId/subevents/:subEventId/parties/:partyId/assignments-reorder", asyncHandler(async (req: any, res: any) => {
     const { assignments } = req.body;
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex !== -1) {
-      const subIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === req.params.subEventId);
+    const event = await db.getEventById(req.params.eventId);
+    if (event) {
+      const subIndex = event.subevents.findIndex((s: any) => s.id === req.params.subEventId);
       if (subIndex !== -1) {
-        const partyIndex = events[eventIndex].subevents[subIndex].parties.findIndex((p: any) => p.id === req.params.partyId);
+        const partyIndex = event.subevents[subIndex].parties.findIndex((p: any) => p.id === req.params.partyId);
         if (partyIndex !== -1) {
-          events[eventIndex].subevents[subIndex].parties[partyIndex].assignments = assignments;
-          await db.saveEvent(events[eventIndex]);
+          event.subevents[subIndex].parties[partyIndex].assignments = assignments;
+          await db.saveEvent(event);
           res.json({ success: true });
         } else {
           res.status(404).json({ error: "Party not found" });
@@ -481,15 +456,14 @@ export function createApp() {
   }));
 
   app.delete("/api/events/:eventId/subevents/:subEventId/parties/:partyId/assignments/:id", asyncHandler(async (req: any, res: any) => {
-    const events = await db.getEvents();
-    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
-    if (eventIndex !== -1) {
-      const subIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === req.params.subEventId);
+    const event = await db.getEventById(req.params.eventId);
+    if (event) {
+      const subIndex = event.subevents.findIndex((s: any) => s.id === req.params.subEventId);
       if (subIndex !== -1) {
-        const partyIndex = events[eventIndex].subevents[subIndex].parties.findIndex((p: any) => p.id === req.params.partyId);
+        const partyIndex = event.subevents[subIndex].parties.findIndex((p: any) => p.id === req.params.partyId);
         if (partyIndex !== -1) {
-          events[eventIndex].subevents[subIndex].parties[partyIndex].assignments = events[eventIndex].subevents[subIndex].parties[partyIndex].assignments.filter((a: any) => a.id !== req.params.id);
-          await db.saveEvent(events[eventIndex]);
+          event.subevents[subIndex].parties[partyIndex].assignments = event.subevents[subIndex].parties[partyIndex].assignments.filter((a: any) => a.id !== req.params.id);
+          await db.saveEvent(event);
           res.json({ success: true });
         } else {
           res.status(404).json({ error: "Party not found" });
@@ -533,9 +507,8 @@ export function createApp() {
     }
 
     try {
-      const users = await db.getUsers();
       const userId = username.trim().toLowerCase();
-      const user = users[userId];
+      const user = await db.getUserById(userId);
       
       if (user) {
         if (!user.password) {
@@ -561,11 +534,11 @@ export function createApp() {
 
   app.post("/api/auth/signup", asyncHandler(async (req: any, res: any) => {
     const { username, password } = req.body;
-    const users = await db.getUsers();
     const userId = username.trim().toLowerCase();
-    const originalUsername = username.trim();
-    if (users[userId]) return res.status(400).json({ error: "User already exists" });
+    const existingUser = await db.getUserById(userId);
+    if (existingUser) return res.status(400).json({ error: "User already exists" });
     
+    const originalUsername = username.trim();
     const hashedPassword = await bcrypt.hash(password, 10);
     
     const newUser = { 
@@ -584,9 +557,8 @@ export function createApp() {
 
   app.post("/api/auth/change-password", asyncHandler(async (req: any, res: any) => {
     const { username, currentPassword, newPassword } = req.body;
-    const users = await db.getUsers();
     const userId = username.trim().toLowerCase();
-    const user = users[userId];
+    const user = await db.getUserById(userId);
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
@@ -610,9 +582,8 @@ export function createApp() {
     const { username, displayName } = req.body;
     if (!username) return res.status(400).json({ error: "Username is required" });
     
-    const users = await db.getUsers();
     const userId = username.trim().toLowerCase();
-    const user = users[userId];
+    const user = await db.getUserById(userId);
     
     if (user) {
       user.displayName = displayName;
@@ -627,9 +598,8 @@ export function createApp() {
     const { username, currentPassword, newPassword } = req.body;
     if (!username) return res.status(400).json({ error: "Username is required" });
     
-    const users = await db.getUsers();
     const userId = username.trim().toLowerCase();
-    const user = users[userId];
+    const user = await db.getUserById(userId);
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
