@@ -8,11 +8,14 @@ import ConfirmModal from '../components/ConfirmModal';
 import {
   DndContext,
   closestCenter,
+  closestCorners,
   KeyboardSensor,
   PointerSensor,
   useSensor,
   useSensors,
   DragEndEvent,
+  DragOverEvent,
+  DragStartEvent,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -171,7 +174,14 @@ function SortablePartyItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: party.id! });
+  } = useSortable({ 
+    id: party.id!,
+    data: {
+      type: 'party',
+      subEventId: subEvent.id,
+      party
+    }
+  });
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -324,25 +334,13 @@ function SortableSubEventItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: subEvent.id! });
-
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handlePartyDragEnd = (eventDnd: DragEndEvent) => {
-    const { active, over } = eventDnd;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = parties.findIndex((p) => p.id === active.id);
-    const newIndex = parties.findIndex((p) => p.id === over.id);
-
-    const reordered = arrayMove(parties, oldIndex, newIndex);
-    onReorderParties(event.id!, subEvent.id!, reordered);
-  };
+  } = useSortable({ 
+    id: subEvent.id!,
+    data: {
+      type: 'subEvent',
+      subEvent
+    }
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -406,41 +404,36 @@ function SortableSubEventItem({
             transition={{ duration: 0.2, ease: 'easeInOut' }}
             className="overflow-hidden"
           >
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={handlePartyDragEnd}
+            <SortableContext
+              id={subEvent.id!}
+              items={parties.map(p => p.id!)}
+              strategy={rectSortingStrategy}
             >
-              <SortableContext
-                items={parties.map(p => p.id!)}
-                strategy={rectSortingStrategy}
-              >
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {parties.map((party) => (
-                    <SortablePartyItem
-                      key={party.id}
-                      party={party}
-                      event={event}
-                      subEvent={subEvent}
-                      isAdmin={isAdmin}
-                      assignments={assignments}
-                      members={members}
-                      openAssignModal={openAssignModal}
-                      openPartyModal={openPartyModal}
-                      deleteParty={deleteParty}
-                      unassignMember={unassignMember}
-                      getRoleStyle={getRoleStyle}
-                      onReorderAssignments={onReorderAssignments}
-                    />
-                  ))}
-                  {parties.length === 0 && (
-                    <div className="col-span-full py-4 text-center border border-dashed border-zinc-800 rounded-xl text-zinc-700 text-xs">
-                      No parties created for this sub event
-                    </div>
-                  )}
-                </div>
-              </SortableContext>
-            </DndContext>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {parties.map((party) => (
+                  <SortablePartyItem
+                    key={party.id}
+                    party={party}
+                    event={event}
+                    subEvent={subEvent}
+                    isAdmin={isAdmin}
+                    assignments={assignments}
+                    members={members}
+                    openAssignModal={openAssignModal}
+                    openPartyModal={openPartyModal}
+                    deleteParty={deleteParty}
+                    unassignMember={unassignMember}
+                    getRoleStyle={getRoleStyle}
+                    onReorderAssignments={onReorderAssignments}
+                  />
+                ))}
+                {parties.length === 0 && (
+                  <div className="col-span-full py-4 text-center border border-dashed border-zinc-800 rounded-xl text-zinc-700 text-xs">
+                    No parties created for this sub event
+                  </div>
+                )}
+              </div>
+            </SortableContext>
           </motion.div>
         )}
       </AnimatePresence>
@@ -487,6 +480,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [memberRoleFilter, setMemberRoleFilter] = useState<'All' | 'DPS' | 'Support' | 'Tank'>('All');
+  const [initialSubEventId, setInitialSubEventId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -772,40 +766,152 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     }
   };
 
-  const handleDragEnd = async (event: DragEndEvent, eventId: string) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const eventSubEvents = [...(subEvents[eventId] || [])];
-    const oldIndex = eventSubEvents.findIndex((s) => s.id === active.id);
-    const newIndex = eventSubEvents.findIndex((s) => s.id === over.id);
-
-    const reordered = arrayMove(eventSubEvents, oldIndex, newIndex);
-    
-    // Update state immediately for smooth UI
-    setSubEvents(prev => ({ ...prev, [eventId]: reordered }));
-
-    // Update Firestore orders
-    try {
-      await fetchAPI(`/api/events/${eventId}/subevents-reorder`, {
-        method: 'PUT',
-        body: JSON.stringify({ subevents: reordered })
-      });
-      loadData();
-    } catch (error) {
-      console.error('Failed to reorder subevents:', error);
+  const handleDragStart = (event: DragStartEvent) => {
+    const { active } = event;
+    const activeData = active.data.current;
+    if (activeData?.type === 'party') {
+      setInitialSubEventId(activeData.subEventId);
     }
   };
 
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeData = active.data.current;
+    const overData = over.data.current;
+
+    if (!activeData || activeData.type !== 'party') return;
+
+    // Find current container in state
+    const activeSubEventId = Object.keys(parties).find(key => 
+      parties[key].some(p => p.id === active.id)
+    );
+    
+    const overSubEventId = overData?.subEventId || (overData?.type === 'subEvent' ? over.id : null);
+
+    if (activeSubEventId && overSubEventId && activeSubEventId !== overSubEventId) {
+      setParties(prev => {
+        const activeItems = prev[activeSubEventId] || [];
+        const overItems = prev[overSubEventId] || [];
+        const activeIndex = activeItems.findIndex(p => p.id === active.id);
+        
+        let newIndex;
+        if (overData?.type === 'party') {
+          newIndex = overItems.findIndex(p => p.id === over.id);
+        } else {
+          newIndex = overItems.length;
+        }
+
+        const item = activeItems[activeIndex];
+        if (!item) return prev;
+
+        const nextActiveItems = [...activeItems];
+        nextActiveItems.splice(activeIndex, 1);
+
+        const nextOverItems = [...overItems];
+        nextOverItems.splice(newIndex, 0, { ...item, subEventId: overSubEventId });
+
+        return {
+          ...prev,
+          [activeSubEventId]: nextActiveItems,
+          [overSubEventId]: nextOverItems,
+        };
+      });
+    }
+  };
+
+  const handleDragEnd = async (event: DragEndEvent, eventId: string) => {
+    const { active, over } = event;
+    if (!over) {
+      setInitialSubEventId(null);
+      return;
+    }
+
+    const activeData = active.data.current;
+    
+    if (activeData?.type === 'subEvent') {
+      if (active.id === over.id) {
+        setInitialSubEventId(null);
+        return;
+      }
+      
+      const eventSubEvents = [...(subEvents[eventId] || [])];
+      const oldIndex = eventSubEvents.findIndex((s) => s.id === active.id);
+      const newIndex = eventSubEvents.findIndex((s) => s.id === over.id);
+
+      const reordered = arrayMove(eventSubEvents, oldIndex, newIndex).map((s, index) => ({
+        ...s,
+        order: index
+      }));
+      
+      setSubEvents(prev => ({ ...prev, [eventId]: reordered }));
+
+      try {
+        await fetchAPI(`/api/events/${eventId}/subevents-reorder`, {
+          method: 'PUT',
+          body: JSON.stringify({ subevents: reordered })
+        });
+        loadData();
+      } catch (error) {
+        console.error('Failed to reorder subevents:', error);
+      }
+    } else if (activeData?.type === 'party') {
+      // Find where it ended up in our state
+      const currentSubEventId = Object.keys(parties).find(key => 
+        parties[key].some(p => p.id === active.id)
+      );
+
+      if (initialSubEventId && currentSubEventId) {
+        const currentParties = parties[currentSubEventId] || [];
+        const finalIndex = currentParties.findIndex(p => p.id === active.id);
+
+        if (initialSubEventId === currentSubEventId) {
+          // Reorder within same container
+          const oldIndex = currentParties.findIndex(p => p.id === active.id);
+          const overIndex = currentParties.findIndex(p => p.id === over.id);
+          
+          if (oldIndex !== -1 && overIndex !== -1 && oldIndex !== overIndex) {
+            const reordered = arrayMove(currentParties, oldIndex, overIndex);
+            handlePartyReorder(eventId, currentSubEventId, reordered);
+          }
+        } else {
+          // Cross-container move
+          try {
+            await fetchAPI(`/api/events/${eventId}/move-party`, {
+              method: 'PUT',
+              body: JSON.stringify({
+                partyId: active.id,
+                fromSubEventId: initialSubEventId,
+                toSubEventId: currentSubEventId,
+                newIndex: finalIndex
+              })
+            });
+            loadData();
+          } catch (error) {
+            console.error('Failed to move party:', error);
+            loadData();
+          }
+        }
+      }
+    }
+    setInitialSubEventId(null);
+  };
+
   const handlePartyReorder = async (eventId: string, subEventId: string, reorderedParties: Party[]) => {
+    const reorderedWithOrder = reorderedParties.map((p, index) => ({
+      ...p,
+      order: index
+    }));
+
     // Update state immediately for smooth UI
-    setParties(prev => ({ ...prev, [subEventId]: reorderedParties }));
+    setParties(prev => ({ ...prev, [subEventId]: reorderedWithOrder }));
 
     // Update Firestore orders
     try {
       await fetchAPI(`/api/events/${eventId}/subevents/${subEventId}/parties-reorder`, {
         method: 'PUT',
-        body: JSON.stringify({ parties: reorderedParties })
+        body: JSON.stringify({ parties: reorderedWithOrder })
       });
       loadData();
     } catch (error) {
@@ -814,14 +920,19 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   };
 
   const handleAssignmentReorder = async (eventId: string, subEventId: string, partyId: string, reorderedAssignments: Assignment[]) => {
+    const reorderedWithOrder = reorderedAssignments.map((a, index) => ({
+      ...a,
+      order: index
+    }));
+
     // Update state immediately for smooth UI
-    setAssignments(prev => ({ ...prev, [partyId]: reorderedAssignments }));
+    setAssignments(prev => ({ ...prev, [partyId]: reorderedWithOrder }));
 
     // Update Firestore orders
     try {
       await fetchAPI(`/api/events/${eventId}/subevents/${subEventId}/parties/${partyId}/assignments-reorder`, {
         method: 'PUT',
-        body: JSON.stringify({ assignments: reorderedAssignments })
+        body: JSON.stringify({ assignments: reorderedWithOrder })
       });
       loadData();
     } catch (error) {
@@ -1025,7 +1136,9 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                     <div className="p-6 space-y-8">
                       <DndContext
                         sensors={sensors}
-                        collisionDetection={closestCenter}
+                        collisionDetection={closestCorners}
+                        onDragStart={handleDragStart}
+                        onDragOver={handleDragOver}
                         onDragEnd={(e) => handleDragEnd(e, event.id!)}
                       >
                         <SortableContext

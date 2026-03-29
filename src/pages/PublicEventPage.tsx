@@ -89,24 +89,31 @@ export default function PublicEventPage() {
           fetchAPI('/api/members')
         ]);
         
-        setEvent(eventData);
         setMembers(membersData);
+        setEvent(eventData);
         
-        const subEventsData = await fetchAPI(`/api/events/${eventId}/subevents`);
+        // Process nested data from eventData
+        const subEventsData = [...(eventData.subevents || [])];
         subEventsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
         setSubEvents(subEventsData);
         
+        const newParties: Record<string, Party[]> = {};
+        const newAssignments: Record<string, Assignment[]> = {};
+        
         for (const subEvent of subEventsData) {
-          const partiesData = await fetchAPI(`/api/events/${eventId}/subevents/${subEvent.id}/parties`);
+          const partiesData = [...(subEvent.parties || [])];
           partiesData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
-          setParties(prev => ({ ...prev, [subEvent.id!]: partiesData }));
+          newParties[subEvent.id!] = partiesData;
           
           for (const party of partiesData) {
-            const assignmentsData = await fetchAPI(`/api/events/${eventId}/subevents/${subEvent.id}/parties/${party.id}/assignments`);
+            const assignmentsData = [...(party.assignments || [])];
             assignmentsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
-            setAssignments(prev => ({ ...prev, [party.id!]: assignmentsData }));
+            newAssignments[party.id!] = assignmentsData;
           }
         }
+        
+        setParties(newParties);
+        setAssignments(newAssignments);
         setLoading(false);
       } catch (err) {
         console.error('Error loading event data:', err);
@@ -116,6 +123,10 @@ export default function PublicEventPage() {
     };
 
     loadData();
+    
+    // Add polling for sync every 10 seconds
+    const interval = setInterval(loadData, 10000);
+    return () => clearInterval(interval);
   }, [eventId]);
 
   const getMemberName = (id: string) => members.find(m => m.id === id)?.ign || 'Unknown Member';

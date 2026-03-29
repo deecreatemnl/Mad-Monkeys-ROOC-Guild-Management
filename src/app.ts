@@ -12,13 +12,26 @@ export function createApp() {
 
   // Initialize Database
   let db: Database;
+  const isVercel = process.env.VERCEL === '1';
+  const hasSupabase = process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY;
+
+  if (isVercel && !hasSupabase) {
+    console.warn("WARNING: Running on Vercel without Supabase configuration. Data persistence will not work.");
+  }
+
   try {
-    db = (process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY) 
+    db = hasSupabase 
       ? new SupabaseDatabase() 
       : new FileDatabase();
     
     // Seed database
-    db.seed().catch(err => console.error("Database Seeding Error:", err.message));
+    db.seed().catch(err => {
+      if (isVercel && !hasSupabase) {
+        // Ignore seed errors on Vercel when using FileDatabase as it's expected to fail
+        return;
+      }
+      console.error("Database Seeding Error:", err.message);
+    });
   } catch (error: any) {
     console.error("Database Initialization Error:", error.message);
     db = new FileDatabase();
@@ -320,6 +333,31 @@ export function createApp() {
     } else {
       res.status(404).json({ error: "Event not found" });
     }
+  }));
+
+  app.put("/api/events/:eventId/move-party", asyncHandler(async (req: any, res: any) => {
+    const { partyId, fromSubEventId, toSubEventId, newIndex } = req.body;
+    const events = await db.getEvents();
+    const eventIndex = events.findIndex((e: any) => e.id === req.params.eventId);
+    if (eventIndex === -1) return res.status(404).json({ error: "Event not found" });
+
+    const fromSubIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === fromSubEventId);
+    const toSubIndex = events[eventIndex].subevents.findIndex((s: any) => s.id === toSubEventId);
+
+    if (fromSubIndex === -1 || toSubIndex === -1) return res.status(404).json({ error: "SubEvent not found" });
+
+    const partyIndex = events[eventIndex].subevents[fromSubIndex].parties.findIndex((p: any) => p.id === partyId);
+    if (partyIndex === -1) return res.status(404).json({ error: "Party not found" });
+
+    const [party] = events[eventIndex].subevents[fromSubIndex].parties.splice(partyIndex, 1);
+    events[eventIndex].subevents[toSubIndex].parties.splice(newIndex, 0, party);
+
+    // Update orders
+    events[eventIndex].subevents[fromSubIndex].parties.forEach((p: any, i: number) => p.order = i);
+    events[eventIndex].subevents[toSubIndex].parties.forEach((p: any, i: number) => p.order = i);
+
+    await db.saveEvent(events[eventIndex]);
+    res.json({ success: true });
   }));
 
   app.delete("/api/events/:eventId/subevents/:subEventId/parties/:id", asyncHandler(async (req: any, res: any) => {
