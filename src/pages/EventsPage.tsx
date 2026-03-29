@@ -522,24 +522,31 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       setEvents(eventsData);
       setMembers(membersData);
       
-      // Fetch sub-resources for each event
+      const newSubEvents: Record<string, SubEvent[]> = {};
+      const newParties: Record<string, Party[]> = {};
+      const newAssignments: Record<string, Assignment[]> = {};
+
       for (const event of eventsData) {
-        const subEventsData = await fetchAPI(`/api/events/${event.id}/subevents`);
+        const subEventsData = [...(event.subevents || [])];
         subEventsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
-        setSubEvents(prev => ({ ...prev, [event.id!]: subEventsData }));
+        newSubEvents[event.id!] = subEventsData;
         
         for (const subEvent of subEventsData) {
-          const partiesData = await fetchAPI(`/api/events/${event.id}/subevents/${subEvent.id}/parties`);
+          const partiesData = [...(subEvent.parties || [])];
           partiesData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
-          setParties(prev => ({ ...prev, [subEvent.id!]: partiesData }));
+          newParties[subEvent.id!] = partiesData;
           
           for (const party of partiesData) {
-            const assignmentsData = await fetchAPI(`/api/events/${event.id}/subevents/${subEvent.id}/parties/${party.id}/assignments`);
+            const assignmentsData = [...(party.assignments || [])];
             assignmentsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
-            setAssignments(prev => ({ ...prev, [party.id!]: assignmentsData }));
+            newAssignments[party.id!] = assignmentsData;
           }
         }
       }
+
+      setSubEvents(newSubEvents);
+      setParties(newParties);
+      setAssignments(newAssignments);
       setLoading(false);
     } catch (error) {
       console.error('Failed to load events data:', error);
@@ -655,6 +662,24 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     }
 
     const nextOrder = currentAssignments.length;
+    const newAssignment = {
+      id: 'temp-' + Date.now(),
+      memberId: assignFormData.memberId,
+      role: assignFormData.role,
+      eventId: activeEventId,
+      subEventId: activeSubEventId,
+      partyId: activePartyId,
+      order: nextOrder
+    };
+
+    // Optimistic update
+    setAssignments(prev => ({
+      ...prev,
+      [activePartyId]: [...(prev[activePartyId] || []), newAssignment]
+    }));
+    setIsAssignModalOpen(false);
+    setAssignFormData({ memberId: '', role: ROLES[0].name });
+
     try {
       await fetchAPI(`/api/events/${activeEventId}/subevents/${activeSubEventId}/parties/${activePartyId}/assignments`, {
         method: 'POST',
@@ -667,15 +692,20 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           order: nextOrder
         })
       });
-      setIsAssignModalOpen(false);
-      setAssignFormData({ memberId: '', role: ROLES[0].name });
       loadData();
     } catch (error) {
       console.error('Failed to assign member:', error);
+      loadData(); // Rollback
     }
   };
 
   const unassignMember = async (eventId: string, subEventId: string, partyId: string, assignmentId: string) => {
+    // Optimistic update
+    setAssignments(prev => ({
+      ...prev,
+      [partyId]: (prev[partyId] || []).filter(a => a.id !== assignmentId)
+    }));
+
     try {
       await fetchAPI(`/api/events/${eventId}/subevents/${subEventId}/parties/${partyId}/assignments/${assignmentId}`, {
         method: 'DELETE'
@@ -683,6 +713,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       loadData();
     } catch (error) {
       console.error('Failed to unassign member:', error);
+      loadData(); // Rollback
     }
   };
 
@@ -748,21 +779,25 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     const newIndex = direction === 'up' ? index - 1 : index + 1;
     if (newIndex < 0 || newIndex >= eventSubEvents.length) return;
 
-    const currentSubEvent = eventSubEvents[index];
-    const otherSubEvent = eventSubEvents[newIndex];
+    const newSubEvents = [...eventSubEvents];
+    const [moved] = newSubEvents.splice(index, 1);
+    newSubEvents.splice(newIndex, 0, moved);
+
+    // Update orders
+    newSubEvents.forEach((s, i) => s.order = i);
+
+    // Optimistic update
+    setSubEvents(prev => ({ ...prev, [eventId]: newSubEvents }));
 
     try {
-      await fetchAPI(`/api/events/${eventId}/subevents/${currentSubEvent.id}`, {
+      await fetchAPI(`/api/events/${eventId}/subevents-reorder`, {
         method: 'PUT',
-        body: JSON.stringify({ order: otherSubEvent.order })
-      });
-      await fetchAPI(`/api/events/${eventId}/subevents/${otherSubEvent.id}`, {
-        method: 'PUT',
-        body: JSON.stringify({ order: currentSubEvent.order })
+        body: JSON.stringify({ subevents: newSubEvents })
       });
       loadData();
     } catch (error) {
       console.error('Failed to reorder subevents:', error);
+      loadData(); // Rollback
     }
   };
 

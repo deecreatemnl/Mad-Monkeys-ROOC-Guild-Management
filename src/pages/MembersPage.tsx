@@ -70,6 +70,19 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
       ...formData,
       ign: formData.ign
     };
+
+    // Optimistic update
+    const tempId = 'temp-' + Date.now();
+    const optimisticMember = { ...payload, id: editingMember?.id || tempId };
+    
+    if (editingMember) {
+      setMembers(prev => prev.map(m => m.id === editingMember.id ? optimisticMember : m));
+    } else {
+      setMembers(prev => [...prev, optimisticMember]);
+    }
+    
+    closeModal();
+
     try {
       if (editingMember) {
         await fetchAPI(`/api/members/${editingMember.id}`, {
@@ -82,10 +95,10 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
           body: JSON.stringify(payload),
         });
       }
-      closeModal();
       loadData();
     } catch (error) {
       console.error('Save failed:', error);
+      loadData(); // Rollback
     }
   };
 
@@ -95,11 +108,15 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
       title: 'Delete Member',
       message: 'Are you sure you want to delete this member? This action cannot be undone.',
       onConfirm: async () => {
+        // Optimistic update
+        setMembers(prev => prev.filter(m => m.id !== id));
+        
         try {
           await fetchAPI(`/api/members/${id}`, { method: 'DELETE' });
           loadData();
         } catch (error) {
           console.error('Delete failed:', error);
+          loadData(); // Rollback
         }
       }
     });

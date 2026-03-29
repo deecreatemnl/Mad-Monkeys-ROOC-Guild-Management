@@ -78,22 +78,20 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
   const toggleAdmin = async (user: UserProfile) => {
     if (!isSuperAdmin) return;
     const newRole = user.role === 'admin' ? 'user' : 'admin';
-    setConfirmModal({
-      isOpen: true,
-      title: 'Change User Role',
-      message: `Are you sure you want to change ${user.displayName}'s role to ${newRole}?`,
-      onConfirm: async () => {
-        try {
-          await fetchAPI(`/api/users/${user.id}`, {
-            method: 'PUT',
-            body: JSON.stringify({ role: newRole })
-          });
-          loadUsers();
-        } catch (error) {
-          console.error('Failed to update user role:', error);
-        }
-      }
-    });
+    
+    // Optimistic update
+    setUsers(prev => prev.map(u => u.id === user.id ? { ...u, role: newRole } : u));
+
+    try {
+      await fetchAPI(`/api/users/${user.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ role: newRole })
+      });
+      loadUsers();
+    } catch (error) {
+      console.error('Failed to update user role:', error);
+      loadUsers(); // Rollback
+    }
   };
 
   const handleDeleteUser = async (user: UserProfile) => {
@@ -108,6 +106,9 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
       title: 'Delete User',
       message: `Are you sure you want to delete ${user.displayName}? This action cannot be undone.`,
       onConfirm: async () => {
+        // Optimistic update
+        setUsers(prev => prev.filter(u => u.id !== user.id));
+        
         try {
           await fetchAPI(`/api/users/${user.id}`, {
             method: 'DELETE'
@@ -115,6 +116,7 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
           loadUsers();
         } catch (error) {
           console.error('Failed to delete user:', error);
+          loadUsers(); // Rollback
         }
       }
     });
