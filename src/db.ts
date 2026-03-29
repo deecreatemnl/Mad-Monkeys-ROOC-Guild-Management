@@ -68,9 +68,19 @@ export const initialDb = {
 };
 
 export class FileDatabase implements Database {
+  private isVercel = process.env.VERCEL === '1';
+
   constructor() {
-    if (!fs.existsSync(DB_FILE)) {
-      fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2));
+    try {
+      if (!fs.existsSync(DB_FILE)) {
+        if (this.isVercel) {
+          console.warn("FileDatabase: Running on Vercel with no db.json. Writes will fail.");
+          return;
+        }
+        fs.writeFileSync(DB_FILE, JSON.stringify(initialDb, null, 2));
+      }
+    } catch (e: any) {
+      console.error("FileDatabase Constructor Error:", e.message);
     }
   }
 
@@ -87,7 +97,15 @@ export class FileDatabase implements Database {
   }
 
   async save(data: any) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+    try {
+      if (this.isVercel) {
+        console.warn("FileDatabase: Cannot save to read-only filesystem on Vercel.");
+        return;
+      }
+      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+    } catch (e: any) {
+      console.error("FileDatabase Save Error:", e.message);
+    }
   }
 
   async getUsers() {
@@ -394,19 +412,25 @@ export class SupabaseDatabase implements Database {
   }
 
   async getSettings() {
-    const { data, error } = await this.supabase.from('settings').select('*').eq('id', 'guild_settings').single();
-    if (error) {
-      if (error.code !== 'PGRST116' && !error.message.includes("Could not find the table")) {
-        console.error("Supabase Get Settings Error:", error.message);
+    try {
+      const { data, error } = await this.supabase.from('settings').select('*').eq('id', 'guild_settings').single();
+      if (error) {
+        if (error.code !== 'PGRST116' && !error.message.includes("Could not find the table")) {
+          console.error("Supabase Get Settings Error:", error.message);
+        }
+        return initialDb.settings.guild_settings;
       }
+      if (!data) return initialDb.settings.guild_settings;
+      return {
+        name: data.name,
+        subtitle: data.subtitle,
+        timezone: data.timezone,
+        logoUrl: data.logo_url
+      };
+    } catch (e: any) {
+      console.error("Supabase Exception in getSettings():", e.message);
       return initialDb.settings.guild_settings;
     }
-    return {
-      name: data.name,
-      subtitle: data.subtitle,
-      timezone: data.timezone,
-      logoUrl: data.logo_url
-    };
   }
 
   async saveSettings(settings: any) {
