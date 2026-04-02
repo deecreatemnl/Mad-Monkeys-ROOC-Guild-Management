@@ -29,6 +29,7 @@ export interface Database {
   getEventById: (id: string) => Promise<any>;
   getUserById: (id: string) => Promise<any>;
   updateMembersJob: (oldJobName: string, newJobName: string) => Promise<void>;
+  updateAssignmentsRole: (memberId: string, newRole: string) => Promise<void>;
   seed: () => Promise<void>;
 }
 
@@ -226,6 +227,23 @@ export class FileDatabase implements Database {
     await this.save(data);
   }
 
+  async updateAssignmentsRole(memberId: string, newRole: string) {
+    const data = await this.get();
+    data.events = (data.events || []).map((event: any) => ({
+      ...event,
+      subevents: (event.subevents || []).map((subevent: any) => ({
+        ...subevent,
+        parties: (subevent.parties || []).map((party: any) => ({
+          ...party,
+          assignments: (party.assignments || []).map((assignment: any) => 
+            assignment.memberId === memberId ? { ...assignment, role: newRole } : assignment
+          )
+        }))
+      }))
+    }));
+    await this.save(data);
+  }
+
   async seed() {
     try {
       const users = await this.getUsers();
@@ -386,6 +404,7 @@ export class SupabaseDatabase implements Database {
         id: m.id,
         ign: m.ign,
         job: m.job,
+        role: m.role,
         dateJoined: m.date_joined,
         uid: m.uid
       }));
@@ -400,6 +419,7 @@ export class SupabaseDatabase implements Database {
       id: member.id,
       ign: member.ign,
       job: member.job,
+      role: member.role,
       date_joined: member.dateJoined,
       uid: member.uid
     });
@@ -503,6 +523,7 @@ export class SupabaseDatabase implements Database {
       id: data.id,
       ign: data.ign,
       job: data.job,
+      role: data.role,
       dateJoined: data.date_joined,
       uid: data.uid
     };
@@ -536,6 +557,26 @@ export class SupabaseDatabase implements Database {
   async updateMembersJob(oldJobName: string, newJobName: string) {
     const { error } = await this.supabase.from('members').update({ job: newJobName }).eq('job', oldJobName);
     if (error) console.error("Supabase Update Members Job Error:", error.message);
+  }
+
+  async updateAssignmentsRole(memberId: string, newRole: string) {
+    const events = await this.getEvents();
+    const updatedEvents = events.map((event: any) => ({
+      ...event,
+      subevents: (event.subevents || []).map((subevent: any) => ({
+        ...subevent,
+        parties: (subevent.parties || []).map((party: any) => ({
+          ...party,
+          assignments: (party.assignments || []).map((assignment: any) => 
+            assignment.memberId === memberId ? { ...assignment, role: newRole } : assignment
+          )
+        }))
+      }))
+    }));
+    
+    for (const event of updatedEvents) {
+      await this.saveEvent(event);
+    }
   }
 
   async seed() {

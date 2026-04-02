@@ -28,7 +28,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
-  const [formData, setFormData] = useState({ ign: '', job: '', dateJoined: new Date().toISOString().split('T')[0] });
+  const [formData, setFormData] = useState({ ign: '', job: '', role: 'DPS', dateJoined: new Date().toISOString().split('T')[0] });
   const [viewMode, setViewMode] = useState<'tile' | 'list'>('list');
   const [selectedJob, setSelectedJob] = useState('All');
   
@@ -125,10 +125,20 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
   const openModal = (member?: Member) => {
     if (member) {
       setEditingMember(member);
-      setFormData({ ign: member.ign, job: member.job, dateJoined: member.dateJoined });
+      setFormData({ 
+        ign: member.ign, 
+        job: member.job, 
+        role: member.role || 'DPS', 
+        dateJoined: member.dateJoined 
+      });
     } else {
       setEditingMember(null);
-      setFormData({ ign: '', job: jobs[0]?.name || '', dateJoined: new Date().toISOString().split('T')[0] });
+      setFormData({ 
+        ign: '', 
+        job: jobs[0]?.name || '', 
+        role: 'DPS', 
+        dateJoined: new Date().toISOString().split('T')[0] 
+      });
     }
     setIsModalOpen(true);
   };
@@ -236,9 +246,18 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                 <div className="flex justify-between items-start mb-4">
                   <div>
                     <h3 className="text-xl font-bold text-white group-hover:text-orange-500 transition-colors">{member.ign}</h3>
-                    <span className="inline-block px-2 py-1 rounded-md bg-zinc-800 text-xs font-medium text-zinc-400 mt-1">
-                      {member.job}
-                    </span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="inline-block px-2 py-1 rounded-md bg-zinc-800 text-xs font-medium text-zinc-400">
+                        {member.job}
+                      </span>
+                      <span className={cn(
+                        "text-[10px] font-bold uppercase",
+                        member.role === 'Tank' ? 'text-orange-400' : 
+                        member.role === 'Support' ? 'text-blue-400' : 'text-zinc-500'
+                      )}>
+                        {member.role || 'DPS'}
+                      </span>
+                    </div>
                   </div>
                   {isAdmin && (
                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -291,9 +310,18 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                       <span className="font-bold text-white group-hover:text-orange-500 transition-colors">{member.ign}</span>
                     </td>
                     <td className="p-4">
-                      <span className="px-2 py-1 rounded-md bg-zinc-800 text-xs font-medium text-zinc-400">
-                        {member.job}
-                      </span>
+                      <div className="flex flex-col">
+                        <span className="px-2 py-1 rounded-md bg-zinc-800 text-xs font-medium text-zinc-400 w-fit">
+                          {member.job}
+                        </span>
+                        <span className={cn(
+                          "text-[10px] font-bold uppercase mt-1 px-1",
+                          member.role === 'Tank' ? 'text-orange-400' : 
+                          member.role === 'Support' ? 'text-blue-400' : 'text-zinc-500'
+                        )}>
+                          {member.role || 'DPS'}
+                        </span>
+                      </div>
                     </td>
                     <td className="p-4 text-sm text-zinc-500 font-mono">
                       {member.dateJoined}
@@ -377,6 +405,18 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                     {jobs.map(job => (
                       <option key={job.id} value={job.name}>{job.name}</option>
                     ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Default Role</label>
+                  <select
+                    value={formData.role}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                  >
+                    <option value="DPS">DPS</option>
+                    <option value="Tank">Tank</option>
+                    <option value="Support">Support</option>
                   </select>
                 </div>
                 <div>

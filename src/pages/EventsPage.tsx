@@ -33,7 +33,10 @@ const ROLES = [
   { name: 'Tank', color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/20', icon: <Shield className="w-3 h-3" /> },
 ];
 
-const getMemberCategory = (job: string) => {
+const getMemberCategory = (member: Member) => {
+  if (member.role) return member.role;
+  
+  const job = member.job || '';
   const supports = ['Gypsy', 'Minstrel', 'High Priest', 'Minstrel (M)', 'Gypsy (F)'];
   const tanks = ['Paladin'];
   
@@ -50,9 +53,10 @@ const getCategoryColor = (category: string) => {
   }
 };
 
-const getJobIcon = (job: string) => {
-  const j = (job || '').toLowerCase();
-  const category = getMemberCategory(job || '');
+const getJobIcon = (member: Member) => {
+  const job = member.job || '';
+  const j = job.toLowerCase();
+  const category = getMemberCategory(member);
   const color = getCategoryColor(category);
   
   let icon = <Star className="w-4 h-4" />;
@@ -113,7 +117,7 @@ function SortableAssignmentItem({
           </div>
         )}
         <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center bg-zinc-800")}>
-          {member ? getJobIcon(member.job) : <Star className="w-4 h-4 text-zinc-500" />}
+          {member ? getJobIcon(member) : <Star className="w-4 h-4 text-zinc-500" />}
         </div>
         <div>
           <p className="text-sm font-bold text-white leading-none">{member?.ign}</p>
@@ -1031,9 +1035,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     return ROLES.find(r => r.name === roleName) || ROLES[0];
   };
 
-  const getAutoRole = (job: string) => {
-    const category = getMemberCategory(job);
-    return category;
+  const getAutoRole = (member: Member) => {
+    return getMemberCategory(member);
   };
 
   const filteredMembersForAssign = members
@@ -1057,7 +1060,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     .filter(m => {
       // Role filter
       if (memberRoleFilter === 'All') return true;
-      return getMemberCategory(m.job) === memberRoleFilter;
+      return getMemberCategory(m) === memberRoleFilter;
     });
 
   return (
@@ -1348,7 +1351,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                           setAssignFormData({ 
                             ...assignFormData, 
                             memberId: m.id!,
-                            role: getAutoRole(m.job)
+                            role: getAutoRole(m)
                           });
                         }}
                         className={cn(
@@ -1365,11 +1368,11 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                         <div className="flex items-center gap-2">
                           <span className={cn(
                             "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border",
-                            getMemberCategory(m.job) === 'Support' ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
-                            getMemberCategory(m.job) === 'Tank' ? "bg-orange-500/10 text-orange-500 border-orange-500/20" :
+                            getMemberCategory(m) === 'Support' ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
+                            getMemberCategory(m) === 'Tank' ? "bg-orange-500/10 text-orange-500 border-orange-500/20" :
                             "bg-zinc-700 text-zinc-400 border-zinc-600"
                           )}>
-                            {getMemberCategory(m.job)}
+                            {getMemberCategory(m)}
                           </span>
                           {assignFormData.memberId === m.id && <Check className="w-4 h-4 text-orange-500" />}
                         </div>

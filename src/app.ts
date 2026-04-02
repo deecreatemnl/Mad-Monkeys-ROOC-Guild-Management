@@ -133,7 +133,14 @@ export function createApp() {
   app.put("/api/members/:id", asyncHandler(async (req: any, res: any) => {
     const member = await db.getMemberById(req.params.id);
     if (member) {
+      const oldRole = member.role;
+      const newRole = req.body.role;
       const updatedMember = { ...member, ...req.body };
+      
+      if (oldRole !== newRole && newRole) {
+        await db.updateAssignmentsRole(req.params.id, newRole);
+      }
+      
       await db.saveMember(updatedMember);
       res.json(updatedMember);
     } else {

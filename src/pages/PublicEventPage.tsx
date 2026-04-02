@@ -12,12 +12,13 @@ const ROLES = [
   { name: 'Tank', color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/20', icon: <Shield className="w-3 h-3" /> },
 ];
 
-const getMemberCategory = (job: string) => {
+const getMemberCategory = (member: Member) => {
+  if (member.role) return member.role;
   const supports = ['Gypsy', 'Minstrel', 'High Priest', 'Minstrel (M)', 'Gypsy (F)'];
   const tanks = ['Paladin'];
   
-  if (supports.includes(job)) return 'Support';
-  if (tanks.includes(job)) return 'Tank';
+  if (supports.includes(member.job)) return 'Support';
+  if (tanks.includes(member.job)) return 'Tank';
   return 'DPS';
 };
 
@@ -29,9 +30,10 @@ const getCategoryColor = (category: string) => {
   }
 };
 
-const getJobIcon = (job: string) => {
-  const j = (job || '').toLowerCase();
-  const category = getMemberCategory(job || '');
+const getJobIcon = (member: Member) => {
+  const job = member.job || '';
+  const j = job.toLowerCase();
+  const category = getMemberCategory(member);
   const color = getCategoryColor(category);
   
   let icon = <Star className="w-4 h-4" />;
@@ -246,7 +248,7 @@ export default function PublicEventPage() {
                                   >
                                     <div className="flex items-center gap-3">
                                       <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-800 border border-zinc-700")}>
-                                        {member ? getJobIcon(member.job) : <Star className="w-5 h-5 text-zinc-500" />}
+                                        {member ? getJobIcon(member) : <Star className="w-5 h-5 text-zinc-500" />}
                                       </div>
                                       <div>
                                         <div className="font-bold text-zinc-100 text-sm">{member?.ign || 'Unknown'}</div>

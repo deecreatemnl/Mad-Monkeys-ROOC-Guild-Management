@@ -2,6 +2,7 @@ export interface Member {
   id?: string;
   ign: string;
   job: string;
+  role?: string;
   dateJoined: string;
   uid?: string;
 }
