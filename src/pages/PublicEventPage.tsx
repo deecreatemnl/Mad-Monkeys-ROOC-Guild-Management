@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { fetchAPI } from '../lib/api';
 import { GuildEvent, Member, Assignment, Party, SubEvent, GuildSettings } from '../types';
-import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, ChevronDown, ChevronRight, Cross, Zap, Target, Skull, Hammer, FlaskConical, Music, Hand } from 'lucide-react';
+import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, ChevronDown, ChevronRight, Cross, Zap, Target, Skull, Hammer, FlaskConical, Music, Hand, UserMinus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -291,6 +291,54 @@ export default function PublicEventPage() {
               <p className="text-zinc-600 font-bold uppercase tracking-widest italic">No sub events or parties formed yet</p>
             </div>
           )}
+
+          {/* Absent Members Section */}
+          {(() => {
+            const assignedMemberIds = new Set<string>();
+            Object.values(assignments).forEach(partyAssignments => {
+              partyAssignments.forEach(a => {
+                assignedMemberIds.add(a.memberId);
+              });
+            });
+            const absentMembers = members.filter(m => !assignedMemberIds.has(m.id!));
+
+            if (absentMembers.length === 0) return null;
+
+            return (
+              <div className="mt-20 pt-12 border-t border-zinc-900">
+                <div className="flex items-center gap-3 mb-8">
+                  <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500">
+                    <UserMinus className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold uppercase tracking-tight">Absent / Unassigned Members</h2>
+                    <p className="text-xs text-zinc-500 font-bold uppercase tracking-[0.2em] mt-1">
+                      {absentMembers.length} {absentMembers.length === 1 ? 'Member' : 'Members'} not in any party
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+                  {absentMembers.map(m => (
+                    <motion.div 
+                      key={m.id}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-900/30 border border-zinc-800/50"
+                    >
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-900 shrink-0 border border-zinc-800">
+                        {getJobIcon(m)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-zinc-300 truncate">{m.ign}</p>
+                        <p className="text-[10px] text-zinc-600 truncate uppercase font-bold tracking-wider">{m.job}</p>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         <footer className="mt-20 pt-8 border-t border-zinc-900 text-center">

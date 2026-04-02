@@ -1213,6 +1213,56 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                           <p>No sub events created for this event</p>
                         </div>
                       )}
+
+                      {/* Absent Members Section */}
+                      {(() => {
+                        const eventSubEvents = subEvents[event.id!] || [];
+                        const assignedMemberIds = new Set<string>();
+                        eventSubEvents.forEach(se => {
+                          const subEventParties = parties[se.id!] || [];
+                          subEventParties.forEach(p => {
+                            const partyAssignments = assignments[p.id!] || [];
+                            partyAssignments.forEach(a => {
+                              assignedMemberIds.add(a.memberId);
+                            });
+                          });
+                        });
+                        const absentMembers = members.filter(m => !assignedMemberIds.has(m.id!));
+
+                        if (absentMembers.length === 0) return null;
+
+                        return (
+                          <div className="mt-8 pt-8 border-t border-zinc-800/50">
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center text-red-500">
+                                  <UserMinus className="w-4 h-4" />
+                                </div>
+                                <div>
+                                  <h4 className="font-bold text-white text-sm uppercase tracking-wider">Absent / Unassigned Members</h4>
+                                  <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mt-0.5">
+                                    {absentMembers.length} {absentMembers.length === 1 ? 'Member' : 'Members'} not in any party
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                              {absentMembers.map(m => (
+                                <div key={m.id} className="flex items-center gap-2 p-2 rounded-lg bg-zinc-900/30 border border-zinc-800/50">
+                                  <div className="w-6 h-6 rounded flex items-center justify-center bg-zinc-800 shrink-0">
+                                    {getJobIcon(m)}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-zinc-300 truncate">{m.ign}</p>
+                                    <p className="text-[9px] text-zinc-600 truncate uppercase font-bold">{m.job}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </motion.div>
                 )}
