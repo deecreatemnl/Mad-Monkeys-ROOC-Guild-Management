@@ -94,6 +94,20 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
     }
   };
 
+  const handleApproveUser = async (user: UserProfile) => {
+    try {
+      await fetchAPI(`/api/users/${user.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ isApproved: true })
+      });
+      loadUsers();
+      alert('User approved successfully!');
+    } catch (error: any) {
+      console.error('Failed to approve user:', error);
+      alert(error.message);
+    }
+  };
+
   const handleDeleteUser = async (user: UserProfile) => {
     const canDelete = isSuperAdmin || (user.role === 'user');
     if (!canDelete) {
@@ -190,11 +204,15 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-bold text-zinc-100">{user.displayName}</h3>
-                      {((user as any).isPreAuthorized) && (
-                        <span className="text-[10px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-700 uppercase font-bold tracking-wider">Pending</span>
+                      {!user.isApproved && user.role !== 'admin' && user.role !== 'superadmin' && (
+                        <span className="text-[10px] bg-orange-500/10 text-orange-500 px-1.5 py-0.5 rounded border border-orange-500/20 uppercase font-bold tracking-wider">Pending Approval</span>
                       )}
                     </div>
-                    <p className="text-sm text-zinc-500 font-mono">{user.username}</p>
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-xs text-zinc-500 font-mono">User: {user.username}</p>
+                      {user.ign && <p className="text-xs text-zinc-400">IGN: <span className="text-zinc-200">{user.ign}</span></p>}
+                      {user.uid && <p className="text-xs text-zinc-400">UID: <span className="text-zinc-200 font-mono">{user.uid}</span></p>}
+                    </div>
                   </div>
                 </div>
 
@@ -208,6 +226,16 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
                   </span>
                   
                   <div className="flex items-center gap-1">
+                    {!user.isApproved && user.role !== 'admin' && user.role !== 'superadmin' && (
+                      <button
+                        onClick={() => handleApproveUser(user)}
+                        className="p-2 bg-green-500/10 text-green-500 hover:bg-green-500/20 rounded-lg transition-all"
+                        title="Approve User"
+                      >
+                        <UserCheck className="w-5 h-5" />
+                      </button>
+                    )}
+
                     {isSuperAdmin && user.role !== 'superadmin' && (
                       <button
                         onClick={() => toggleAdmin(user)}

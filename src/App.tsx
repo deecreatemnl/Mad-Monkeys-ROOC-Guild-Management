@@ -35,12 +35,15 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadSettings();
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+    const init = async () => {
+      await loadSettings();
+      const storedUser = localStorage.getItem('user');
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      }
+      setLoading(false);
+    };
+    init();
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -67,11 +70,13 @@ export default function App() {
     const formData = new FormData(e.currentTarget as HTMLFormElement);
     const username = (formData.get('username') as string).trim();
     const password = formData.get('password') as string;
+    const ign = formData.get('ign') as string;
+    const uid = formData.get('uid') as string;
 
     try {
       const data = await fetchAPI('/api/auth/signup', {
         method: 'POST',
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username, password, ign, uid })
       });
       setUser(data.user);
       localStorage.setItem('user', JSON.stringify(data.user));
@@ -110,7 +115,7 @@ export default function App() {
 
         <form onSubmit={authMode === 'login' ? handleLogin : handleSignup} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">IGN (Username)</label>
+            <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Username</label>
             <div className="relative">
               <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
               <input
@@ -118,10 +123,44 @@ export default function App() {
                 name="username"
                 type="text"
                 className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-10 pr-4 text-white text-sm focus:ring-2 focus:ring-orange-500/50 outline-none"
-                placeholder="Your In-Game Name"
+                placeholder="Your Username"
               />
             </div>
           </div>
+
+          {authMode === 'signup' && (
+            <>
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">In-Game Name (IGN)</label>
+                <div className="relative">
+                  <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                  <input
+                    required
+                    name="ign"
+                    type="text"
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-10 pr-4 text-white text-sm focus:ring-2 focus:ring-orange-500/50 outline-none"
+                    placeholder="Your IGN"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">User ID (UID - Numbers Only)</label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                  <input
+                    required
+                    name="uid"
+                    type="text"
+                    pattern="[0-9]*"
+                    inputMode="numeric"
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-10 pr-4 text-white text-sm focus:ring-2 focus:ring-orange-500/50 outline-none"
+                    placeholder="Your UID"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Password</label>
             <div className="relative">
@@ -166,6 +205,33 @@ export default function App() {
   }
 
   const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
+  const isApproved = user?.isApproved || isAdmin;
+
+  if (user && !isApproved) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4 text-center">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md w-full bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-2xl"
+        >
+          <div className="w-20 h-20 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Shield className="w-10 h-10 text-orange-500 animate-pulse" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-2">Account Pending Approval</h1>
+          <p className="text-zinc-400 mb-8">
+            Your account (UID: <span className="text-zinc-200 font-mono">{user.uid}</span>) is currently pending approval by an administrator. Please check back later.
+          </p>
+          <button 
+            onClick={handleLogout}
+            className="w-full bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-3 rounded-xl transition-all active:scale-95"
+          >
+            Sign Out
+          </button>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <Router>
@@ -226,16 +292,16 @@ export default function App() {
                         <Calendar className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
                         <span className="font-medium">Guild Events</span>
                       </Link>
-                      <Link to="/jobs" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
-                        <Briefcase className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
-                        <span className="font-medium">Job Classes</span>
-                      </Link>
                       <Link to="/statistics" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
                         <BarChart3 className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
                         <span className="font-medium">Statistics</span>
                       </Link>
                       {isAdmin && (
                         <>
+                          <Link to="/jobs" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
+                            <Briefcase className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
+                            <span className="font-medium">Job Classes</span>
+                          </Link>
                           <div className="pt-4 pb-2 px-4 text-[10px] font-bold text-zinc-600 uppercase tracking-widest">Administration</div>
                           <Link to="/admins" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
                             <Shield className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
@@ -280,13 +346,13 @@ export default function App() {
                 <Routes>
                   <Route path="/" element={<MembersPage isAdmin={isAdmin} />} />
                   <Route path="/events" element={<EventsPage isAdmin={isAdmin} />} />
-                  <Route path="/jobs" element={<JobsPage isAdmin={isAdmin} />} />
+                  <Route path="/jobs" element={isAdmin ? <JobsPage isAdmin={isAdmin} /> : <Navigate to="/" replace />} />
                   <Route path="/statistics" element={<StatisticsPage isAdmin={isAdmin} />} />
                   <Route path="/account" element={<AccountPage user={user} onUpdateUser={setUser} onLogout={handleLogout} />} />
                   {isAdmin && (
                     <>
                       <Route path="/admins" element={<AdminsPage isSuperAdmin={user?.role === 'superadmin'} />} />
-                      <Route path="/settings" element={<SettingsPage />} />
+                      <Route path="/settings" element={<SettingsPage onUpdateSettings={loadSettings} />} />
                     </>
                   )}
                   <Route path="*" element={<Navigate to="/" replace />} />

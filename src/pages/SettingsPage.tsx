@@ -1,43 +1,175 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchAPI } from '../lib/api';
 import { GuildSettings } from '../types';
-import { Save, Globe, Type, Image as ImageIcon, Loader2, CheckCircle2, Upload } from 'lucide-react';
+import { Save, Globe, Type, Image as ImageIcon, Loader2, CheckCircle2, Upload, Calendar, MessageSquare, Check, ChevronDown, Users } from 'lucide-react';
 import { motion } from 'motion/react';
 
 const TIMEZONES = [
   'UTC',
-  'GMT+8 (Singapore/Manila)',
-  'GMT+9 (Tokyo/Seoul)',
-  'GMT+7 (Bangkok/Jakarta)',
-  'GMT+0 (London)',
-  'GMT-5 (New York)',
-  'GMT-8 (Los Angeles)',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Asia/Bangkok',
+  'Europe/London',
+  'America/New_York',
+  'America/Los_Angeles',
 ];
 
-export default function SettingsPage() {
+export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: () => void }) {
   const [settings, setSettings] = useState<GuildSettings>({
     name: 'MadMonkeys',
     subtitle: 'Guild Management System',
-    timezone: 'GMT+8 (Singapore/Manila)',
+    timezone: 'Asia/Singapore',
     logoUrl: '',
+    maxPartySize: 12,
+    discordChannelId: '',
+    discordGuildId: '',
+    discordAnnouncementsChannelId: '',
+    discordAbsenceChannelId: '',
+    discordWebhookUrl: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isDiscordConnected, setIsDiscordConnected] = useState(false);
+  const [guilds, setGuilds] = useState<any[]>([]);
+  const [channels, setChannels] = useState<any[]>([]);
+  const [selectedGuildId, setSelectedGuildId] = useState('');
+  const [fetchingGuilds, setFetchingGuilds] = useState(false);
+  const [fetchingChannels, setFetchingChannels] = useState(false);
+  const [channelError, setChannelError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.data?.type === 'DISCORD_AUTH_SUCCESS') {
+        const { accessToken, guildId } = event.data;
+        setIsDiscordConnected(true);
+        fetchGuilds(accessToken);
+        if (guildId) {
+          setSelectedGuildId(guildId);
+          const newSettings = { ...settings, discordGuildId: guildId };
+          setSettings(newSettings);
+          fetchChannels(guildId, newSettings);
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [settings]);
+
+  const fetchGuilds = async (accessToken: string) => {
+    setFetchingGuilds(true);
+    try {
+      const data = await fetchAPI('/api/discord/guilds', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      setGuilds(data);
+    } catch (err) {
+      console.error('Failed to fetch guilds:', err);
+    } finally {
+      setFetchingGuilds(false);
+    }
+  };
+
+  const fetchGuildInfo = async (guildId: string) => {
+    setFetchingGuilds(true);
+    try {
+      const data = await fetchAPI(`/api/discord/guild/${guildId}`);
+      if (data && data.name) {
+        setGuilds(prev => {
+          // Only add if not already in list
+          if (!prev.find(g => g.id === data.id)) {
+            return [...prev, data];
+          }
+          return prev;
+        });
+      }
+    } catch (err) {
+      console.error('Failed to fetch guild info:', err);
+    } finally {
+      setFetchingGuilds(false);
+    }
+  };
+
+  const fetchChannels = async (guildId: string, currentSettings?: GuildSettings) => {
+    setFetchingChannels(true);
+    setChannelError(null);
+    try {
+      const data = await fetchAPI(`/api/discord/channels/${guildId}`);
+      setChannels(data);
+      
+      // Auto-select channels if they match our default names
+      const announcements = data.find((c: any) => c.name.toLowerCase() === 'guild-event-announcements');
+      const absence = data.find((c: any) => c.name.toLowerCase() === 'guild-event-absence');
+      
+      const activeSettings = currentSettings || settings;
+      const newSettings = { ...activeSettings };
+      let changed = false;
+      
+      if (announcements && !activeSettings.discordAnnouncementsChannelId) {
+        newSettings.discordAnnouncementsChannelId = announcements.id;
+        changed = true;
+      }
+      if (absence && !activeSettings.discordAbsenceChannelId) {
+        newSettings.discordAbsenceChannelId = absence.id;
+        changed = true;
+      }
+      
+      if (changed) {
+        setSettings(newSettings);
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch channels:', err);
+      setChannelError(err.message || 'Failed to fetch channels');
+    } finally {
+      setFetchingChannels(false);
+    }
+  };
+
+  const handleInviteBot = async () => {
+    try {
+      const { url } = await fetchAPI('/api/auth/discord/invite');
+      window.open(url, 'discord_invite', 'width=500,height=800');
+    } catch (err) {
+      console.error('Discord invite error:', err);
+    }
+  };
+
+  const handleDiscordConnect = async () => {
+    try {
+      const { url } = await fetchAPI('/api/auth/discord/url');
+      window.open(url, 'discord_oauth', 'width=500,height=800');
+    } catch (err) {
+      console.error('Discord connect error:', err);
+    }
+  };
 
   useEffect(() => {
     const loadSettings = async () => {
       try {
         const data = await fetchAPI('/api/settings/guild_settings');
         if (data && Object.keys(data).length > 0) {
-          setSettings({
+          const newSettings = {
             name: data.name || '',
             subtitle: data.subtitle || '',
-            timezone: data.timezone || 'GMT+8 (Singapore/Manila)',
-            logoUrl: data.logoUrl || ''
-          });
+            timezone: data.timezone || 'Asia/Singapore',
+            logoUrl: data.logoUrl || '',
+            maxPartySize: data.maxPartySize || 12,
+            discordChannelId: data.discordChannelId || '',
+            discordGuildId: data.discordGuildId || '',
+            discordAnnouncementsChannelId: data.discordAnnouncementsChannelId || '',
+            discordAbsenceChannelId: data.discordAbsenceChannelId || '',
+            discordWebhookUrl: data.discordWebhookUrl || '',
+          };
+          setSettings(newSettings);
+          
+          if (newSettings.discordGuildId) {
+            setIsDiscordConnected(true);
+            setSelectedGuildId(newSettings.discordGuildId);
+            fetchGuildInfo(newSettings.discordGuildId);
+            fetchChannels(newSettings.discordGuildId, newSettings);
+          }
         }
       } catch (error) {
         console.error('Settings fetch error:', error);
@@ -88,6 +220,7 @@ export default function SettingsPage() {
         body: JSON.stringify(settings)
       });
       setSaveSuccess(true);
+      if (onUpdateSettings) onUpdateSettings();
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
       console.error('Failed to save settings:', error);
@@ -225,6 +358,197 @@ export default function SettingsPage() {
                     <option key={tz} value={tz}>{tz}</option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Calendar className="w-5 h-5 text-orange-500" />
+                Event Settings
+              </h2>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Max Party Members</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="50"
+                  value={settings.maxPartySize}
+                  onChange={(e) => setSettings({ ...settings, maxPartySize: parseInt(e.target.value) || 12 })}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                  placeholder="e.g. 12"
+                />
+                <p className="mt-2 text-[10px] text-zinc-500 italic">Changing this will update all existing sub-event parties.</p>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-orange-500" />
+                Discord Integration
+              </h2>
+
+              <div className="space-y-4">
+                {!isDiscordConnected ? (
+                  <button
+                    type="button"
+                    onClick={handleDiscordConnect}
+                    className="w-full flex items-center justify-center gap-2 bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold py-3 px-6 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-[#5865F2]/20"
+                  >
+                    <MessageSquare className="w-5 h-5" />
+                    Connect Discord Server
+                  </button>
+                ) : (
+                  <div className="space-y-4 p-4 bg-zinc-800/50 border border-zinc-700 rounded-2xl">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-green-500 text-sm font-bold">
+                        <Check className="w-4 h-4" />
+                        Discord Connected
+                      </div>
+                      <button 
+                        type="button"
+                        onClick={() => { setIsDiscordConnected(false); setGuilds([]); setChannels([]); }}
+                        className="text-[10px] text-zinc-500 hover:text-zinc-300 underline"
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+
+                    {fetchingGuilds ? (
+                      <div className="flex items-center gap-2 text-zinc-500 text-xs">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Fetching your servers...
+                      </div>
+                    ) : guilds.length > 0 ? (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Select Server</label>
+                          <select
+                            value={selectedGuildId}
+                            onChange={(e) => {
+                              const guildId = e.target.value;
+                              setSelectedGuildId(guildId);
+                              const newSettings = { ...settings, discordGuildId: guildId };
+                              setSettings(newSettings);
+                              fetchChannels(guildId, newSettings);
+                            }}
+                            className="w-full bg-zinc-800 border border-zinc-700 rounded-lg py-2 px-3 text-xs text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all appearance-none"
+                          >
+                            <option value="">-- Choose a Server --</option>
+                            {guilds.map(g => (
+                              <option key={g.id} value={g.id}>{g.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {selectedGuildId && (
+                          fetchingChannels ? (
+                            <div className="flex items-center gap-2 text-zinc-500 text-xs">
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              Fetching channels...
+                            </div>
+                          ) : channels.length > 0 ? (
+                            <div className="space-y-3">
+                              <div>
+                                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Event Announcements Channel</label>
+                                <select
+                                  value={settings.discordAnnouncementsChannelId}
+                                  onChange={(e) => setSettings({ ...settings, discordAnnouncementsChannelId: e.target.value })}
+                                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg py-2 px-3 text-xs text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all appearance-none"
+                                >
+                                  <option value="">-- Choose a Channel --</option>
+                                  {channels.map(c => (
+                                    <option key={c.id} value={c.id}># {c.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Event Absence Channel</label>
+                                <select
+                                  value={settings.discordAbsenceChannelId}
+                                  onChange={(e) => setSettings({ ...settings, discordAbsenceChannelId: e.target.value })}
+                                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg py-2 px-3 text-xs text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all appearance-none"
+                                >
+                                  <option value="">-- Choose a Channel --</option>
+                                  {channels.map(c => (
+                                    <option key={c.id} value={c.id}># {c.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              <p className="text-[10px] text-orange-400 italic">
+                                {channelError?.includes('Missing Access') 
+                                  ? "The bot is not in this server or lacks permissions." 
+                                  : "No text channels found."}
+                              </p>
+                              {channelError?.includes('Missing Access') && (
+                                <button
+                                  type="button"
+                                  onClick={handleInviteBot}
+                                  className="flex items-center gap-2 bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 text-[10px] font-bold py-1.5 px-3 rounded-lg border border-orange-500/20 transition-all active:scale-95"
+                                >
+                                  <Users className="w-3 h-3" />
+                                  Invite Bot to Server
+                                </button>
+                              )}
+                            </div>
+                          )
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-[10px] text-zinc-500 italic">
+                        {selectedGuildId ? "Loading server details..." : "No manageable servers found."}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="pt-2 space-y-4">
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                      <div className="w-full border-t border-zinc-800"></div>
+                    </div>
+                    <div className="relative flex justify-center text-[10px] uppercase tracking-widest font-bold">
+                      <span className="bg-zinc-900 px-2 text-zinc-600">Or Manual Setup</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Announcements Channel ID</label>
+                    <input
+                      type="text"
+                      value={settings.discordAnnouncementsChannelId}
+                      onChange={(e) => setSettings({ ...settings, discordAnnouncementsChannelId: e.target.value })}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                      placeholder="e.g. 123456789012345678"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Absence Channel ID</label>
+                    <input
+                      type="text"
+                      value={settings.discordAbsenceChannelId}
+                      onChange={(e) => setSettings({ ...settings, discordAbsenceChannelId: e.target.value })}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                      placeholder="e.g. 123456789012345678"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Discord Webhook URL (Optional)</label>
+                    <input
+                      type="text"
+                      value={settings.discordWebhookUrl}
+                      onChange={(e) => setSettings({ ...settings, discordWebhookUrl: e.target.value })}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                      placeholder="https://discord.com/api/webhooks/..."
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>

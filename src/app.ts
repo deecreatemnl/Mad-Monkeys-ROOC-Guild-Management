@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
+import axios from "axios";
 import { Database, FileDatabase, SupabaseDatabase, ensureDataIntegrity } from "./db.js";
 
 export const asyncHandler = (fn: any) => (req: any, res: any, next: any) => {
@@ -66,7 +67,7 @@ export function createApp() {
 
   // Admin Management
   app.post("/api/admins/create", asyncHandler(async (req: any, res: any) => {
-    const { username, displayName, role, password } = req.body;
+    const { username, displayName, role, password, ign, uid } = req.body;
     const targetRole = role || "admin";
     const userId = username.trim().toLowerCase();
     const originalUsername = username.trim();
@@ -77,8 +78,11 @@ export function createApp() {
       id: userId,
       username: originalUsername,
       displayName: displayName || originalUsername,
+      ign: ign || originalUsername,
+      uid: uid || '',
       role: targetRole,
       createdAt: new Date().toISOString(),
+      isApproved: true,
       isPreAuthorized: true,
       password: hashedPassword
     };
@@ -97,7 +101,13 @@ export function createApp() {
     const id = req.params.id;
     const user = await db.getUserById(id);
     if (user) {
-      const updatedUser = { ...user, ...req.body };
+      const updateData = { ...req.body };
+      // Admins and superadmins are approved by default
+      if (updateData.role === 'admin' || updateData.role === 'superadmin') {
+        updateData.isApproved = true;
+      }
+      
+      const updatedUser = { ...user, ...updateData };
       // If password is being updated, hash it
       if (req.body.password) {
         updatedUser.password = await bcrypt.hash(req.body.password, 10);
@@ -160,12 +170,20 @@ export function createApp() {
   }));
 
   app.post("/api/jobs", asyncHandler(async (req: any, res: any) => {
+    const user = req.headers['user-role'];
+    if (user !== 'admin' && user !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can manage jobs" });
+    }
     const newJob = { ...req.body, id: Date.now().toString() };
     await db.saveJob(newJob);
     res.json(newJob);
   }));
 
   app.put("/api/jobs/:id", asyncHandler(async (req: any, res: any) => {
+    const user = req.headers['user-role'];
+    if (user !== 'admin' && user !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can manage jobs" });
+    }
     const job = await db.getJobById(req.params.id);
     if (job) {
       const oldName = job.name;
@@ -184,11 +202,54 @@ export function createApp() {
   }));
 
   app.delete("/api/jobs/:id", asyncHandler(async (req: any, res: any) => {
+    const user = req.headers['user-role'];
+    if (user !== 'admin' && user !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can manage jobs" });
+    }
     await db.deleteJob(req.params.id);
     res.json({ success: true });
   }));
 
   // Events API
+  async function sendDiscordMessage(message: string, target: 'announcements' | 'absence' | 'both' = 'announcements') {
+    const settings = await db.getSettings();
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    
+    const channels = [];
+    if (target === 'announcements' || target === 'both') {
+      const id = settings.discordAnnouncementsChannelId || settings.discordChannelId;
+      if (id) channels.push(id);
+    }
+    if (target === 'absence' || target === 'both') {
+      const id = settings.discordAbsenceChannelId || settings.discordChannelId;
+      if (id) channels.push(id);
+    }
+
+    if (botToken && channels.length > 0) {
+      for (const channelId of channels) {
+        try {
+          await axios.post(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+            content: message
+          }, {
+            headers: {
+              Authorization: `Bot ${botToken}`
+            }
+          });
+        } catch (err: any) {
+          console.error(`Failed to send Discord message to channel ${channelId} via Bot:`, err.response?.data || err.message);
+        }
+      }
+    } else if (settings.discordWebhookUrl) {
+      try {
+        await axios.post(settings.discordWebhookUrl, {
+          content: message
+        });
+      } catch (err: any) {
+        console.error("Failed to send Discord message via Webhook:", err.message);
+      }
+    }
+  }
+
   app.get("/api/events", asyncHandler(async (req: any, res: any) => {
     const events = await db.getEvents();
     res.json(events);
@@ -219,6 +280,64 @@ export function createApp() {
 
   app.delete("/api/events/:id", asyncHandler(async (req: any, res: any) => {
     await db.deleteEvent(req.params.id);
+    res.json({ success: true });
+  }));
+
+  app.post("/api/events/:eventId/absent", asyncHandler(async (req: any, res: any) => {
+    const { memberId, message } = req.body;
+    const eventId = req.params.eventId;
+    const event = await db.getEventById(eventId);
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    const member = await db.getMemberById(memberId);
+    if (!member) return res.status(404).json({ error: "Member not found" });
+
+    // Remove them from any party in this event
+    const updatedEvent = {
+      ...event,
+      subevents: (event.subevents || []).map((subevent: any) => ({
+        ...subevent,
+        parties: (subevent.parties || []).map((party: any) => ({
+          ...party,
+          assignments: (party.assignments || []).filter((a: any) => a.memberId !== member.id)
+        }))
+      }))
+    };
+
+    await db.saveEvent(updatedEvent);
+
+    // Get settings for timezone
+    const settings = await db.getSettings();
+    let timezone = settings.timezone || 'UTC';
+    
+    const now = new Date();
+    let dateStr, timeStr;
+    try {
+      dateStr = now.toLocaleDateString('en-US', { timeZone: timezone, month: 'long', day: 'numeric', year: 'numeric' });
+      timeStr = now.toLocaleTimeString('en-US', { timeZone: timezone, hour: '2-digit', minute: '2-digit', hour12: true });
+    } catch (e) {
+      console.warn(`Invalid timezone: ${timezone}, falling back to UTC`);
+      dateStr = now.toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric' });
+      timeStr = now.toLocaleTimeString('en-US', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hour12: true });
+    }
+
+    // Send message to Discord if configured
+    const discordMsg = `${dateStr}\n${timeStr}\n\n**${member.ign}** won't be able to attend **${event.name}** because of the following reasons\n${message || 'No reason provided'}`;
+    await sendDiscordMessage(discordMsg, 'absence');
+
+    res.json({ success: true });
+  }));
+
+  app.post("/api/events/:eventId/share-discord", asyncHandler(async (req: any, res: any) => {
+    const { message } = req.body;
+    const eventId = req.params.eventId;
+    const event = await db.getEventById(eventId);
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    if (message) {
+      await sendDiscordMessage(message, 'announcements');
+    }
+
     res.json({ success: true });
   }));
 
@@ -503,7 +622,198 @@ export function createApp() {
     const settings = await db.getSettings();
     const updatedSettings = { ...settings, ...req.body };
     await db.saveSettings(updatedSettings);
+
+    // If Discord channel was just connected/updated, send an automatic message
+    if (req.body.discordAnnouncementsChannelId && req.body.discordAnnouncementsChannelId !== settings.discordAnnouncementsChannelId) {
+      await sendDiscordMessage(`✅ **App Connected!** This channel will now receive guild event notifications.`, 'announcements');
+    }
+    if (req.body.discordAbsenceChannelId && req.body.discordAbsenceChannelId !== settings.discordAbsenceChannelId) {
+      await sendDiscordMessage(`✅ **App Connected!** This channel will now receive guild absence reports.`, 'absence');
+    }
+
+    // If maxPartySize changed, update all existing parties across all events
+    if (req.body.maxPartySize !== undefined) {
+      const events = await db.getEvents();
+      const updatedEvents = events.map((event: any) => ({
+        ...event,
+        subevents: (event.subevents || []).map((subevent: any) => ({
+          ...subevent,
+          parties: (subevent.parties || []).map((party: any) => ({
+            ...party,
+            maxSize: req.body.maxPartySize
+          }))
+        }))
+      }));
+      for (const event of updatedEvents) {
+        await db.saveEvent(event);
+      }
+    }
+
     res.json(updatedSettings);
+  }));
+
+  // Discord OAuth API
+  app.get("/api/auth/discord/url", (req: any, res: any) => {
+    const clientId = process.env.DISCORD_CLIENT_ID;
+    const redirectUri = `${process.env.APP_URL || `https://${req.get('host')}`}/auth/discord/callback`;
+    
+    if (!clientId) {
+      return res.status(500).json({ error: "Discord Client ID not configured" });
+    }
+
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'identify guilds bot applications.commands',
+      permissions: '3088', // View Channels (1024) + Send Messages (2048) + Manage Channels (16)
+    });
+
+    const authUrl = `https://discord.com/api/oauth2/authorize?${params.toString()}`;
+    res.json({ url: authUrl });
+  });
+
+  app.get("/api/auth/discord/invite", (req: any, res: any) => {
+    const clientId = process.env.DISCORD_CLIENT_ID;
+    if (!clientId) {
+      return res.status(500).json({ error: "Discord Client ID not configured" });
+    }
+    // Permissions: View Channels (1024), Send Messages (2048), Manage Channels (16) -> 3088
+    const permissions = "3088"; 
+    const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&permissions=${permissions}&scope=bot%20applications.commands`;
+    res.json({ url: inviteUrl });
+  });
+
+  app.get("/auth/discord/callback", asyncHandler(async (req: any, res: any) => {
+    const { code, guild_id } = req.query;
+    if (!code) return res.status(400).send("Code missing");
+
+    const clientId = process.env.DISCORD_CLIENT_ID;
+    const clientSecret = process.env.DISCORD_CLIENT_SECRET;
+    const redirectUri = `${process.env.APP_URL || `https://${req.get('host')}`}/auth/discord/callback`;
+
+    try {
+      // Exchange code for token
+      const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
+        client_id: clientId!,
+        client_secret: clientSecret!,
+        grant_type: 'authorization_code',
+        code: code as string,
+        redirect_uri: redirectUri,
+      }), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+
+      const { access_token } = tokenResponse.data;
+
+      // Get user profile
+      const userResponse = await axios.get('https://discord.com/api/users/@me', {
+        headers: { Authorization: `Bearer ${access_token}` }
+      });
+
+      const discordUser = userResponse.data;
+
+      // If a guild was added, try to create the default channels
+      if (guild_id && process.env.DISCORD_BOT_TOKEN) {
+        try {
+          const botToken = process.env.DISCORD_BOT_TOKEN;
+          const channelsResponse = await axios.get(`https://discord.com/api/guilds/${guild_id}/channels`, {
+            headers: { Authorization: `Bot ${botToken}` }
+          });
+          
+          const existingChannels = channelsResponse.data.map((c: any) => c.name.toLowerCase());
+          const channelsToCreate = ['guild-event-announcements', 'guild-event-absence'];
+
+          for (const channelName of channelsToCreate) {
+            if (!existingChannels.includes(channelName)) {
+              await axios.post(`https://discord.com/api/guilds/${guild_id}/channels`, {
+                name: channelName,
+                type: 0 // Text channel
+              }, {
+                headers: { Authorization: `Bot ${botToken}` }
+              });
+              console.log(`Created Discord channel: ${channelName} in guild ${guild_id}`);
+            }
+          }
+        } catch (err: any) {
+          console.error("Failed to create default Discord channels:", err.response?.data || err.message);
+          // We don't fail the whole auth flow if channel creation fails
+        }
+      }
+
+      res.send(`
+        <html>
+          <body>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ 
+                  type: 'DISCORD_AUTH_SUCCESS', 
+                  discordId: '${discordUser.id}',
+                  username: '${discordUser.username}',
+                  accessToken: '${access_token}',
+                  guildId: '${guild_id || ''}'
+                }, '*');
+                window.close();
+              } else {
+                window.location.href = '/';
+              }
+            </script>
+            <p>Discord authentication successful. This window should close automatically.</p>
+          </body>
+        </html>
+      `);
+    } catch (err: any) {
+      console.error("Discord OAuth Error:", err.response?.data || err.message);
+      res.status(500).send("Authentication failed");
+    }
+  }));
+
+  app.get("/api/discord/guilds", asyncHandler(async (req: any, res: any) => {
+    const accessToken = req.headers.authorization?.split(' ')[1];
+    if (!accessToken) return res.status(401).json({ error: "Access token required" });
+
+    try {
+      const response = await axios.get('https://discord.com/api/users/@me/guilds', {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      // Filter for guilds where user has MANAGE_GUILD (0x20) or is owner
+      const managedGuilds = response.data.filter((g: any) => (BigInt(g.permissions) & BigInt(0x20)) === BigInt(0x20) || g.owner);
+      res.json(managedGuilds);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }));
+
+  app.get("/api/discord/guild/:guildId", asyncHandler(async (req: any, res: any) => {
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) return res.status(500).json({ error: "Bot token not configured" });
+
+    try {
+      const response = await axios.get(`https://discord.com/api/guilds/${req.params.guildId}`, {
+        headers: { Authorization: `Bot ${botToken}` }
+      });
+      res.json(response.data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }));
+
+  app.get("/api/discord/channels/:guildId", asyncHandler(async (req: any, res: any) => {
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) return res.status(500).json({ error: "Bot token not configured" });
+
+    try {
+      const response = await axios.get(`https://discord.com/api/guilds/${req.params.guildId}/channels`, {
+        headers: { Authorization: `Bot ${botToken}` }
+      });
+      // Filter for text channels (type 0)
+      const textChannels = response.data.filter((c: any) => c.type === 0);
+      res.json(textChannels);
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.message || err.message;
+      console.error(`Discord API Error at /api/discord/channels/${req.params.guildId}:`, errorMsg);
+      res.status(500).json({ error: `Failed to fetch channels: ${errorMsg}. Is the bot in this server?` });
+    }
   }));
 
   // Auth API
@@ -525,6 +835,9 @@ export function createApp() {
 
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (isPasswordValid) {
+          if (user.role !== 'superadmin' && !user.isApproved) {
+            return res.status(403).json({ error: "Account pending approval by admin" });
+          }
           const { password: _, ...userWithoutPassword } = user;
           res.json({ user: userWithoutPassword, token: "mock-jwt-token" });
         } else {
@@ -540,11 +853,16 @@ export function createApp() {
   }));
 
   app.post("/api/auth/signup", asyncHandler(async (req: any, res: any) => {
-    const { username, password } = req.body;
+    const { username, password, ign, uid } = req.body;
     const userId = username.trim().toLowerCase();
     const existingUser = await db.getUserById(userId);
     if (existingUser) return res.status(400).json({ error: "User already exists" });
     
+    // Check if UID is already taken
+    const users = await db.getUsers();
+    const uidExists = Object.values(users).some((u: any) => u.uid === uid);
+    if (uidExists) return res.status(400).json({ error: "UID already registered" });
+
     const originalUsername = username.trim();
     const hashedPassword = await bcrypt.hash(password, 10);
     
@@ -552,7 +870,10 @@ export function createApp() {
       id: userId, 
       username: originalUsername, 
       displayName: originalUsername, 
-      role: userId === 'readyhit' ? 'superadmin' : 'member', 
+      ign: ign || originalUsername,
+      uid: uid || '',
+      isApproved: userId === 'readyhit',
+      role: userId === 'readyhit' ? 'superadmin' : 'user', 
       createdAt: new Date().toISOString(), 
       password: hashedPassword 
     };

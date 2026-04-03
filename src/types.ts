@@ -5,6 +5,7 @@ export interface Member {
   role?: string;
   dateJoined: string;
   uid?: string;
+  discordId?: string;
 }
 
 export interface GuildEvent {
@@ -27,6 +28,7 @@ export interface Party {
   subEventId: string;
   name: string;
   order: number;
+  maxSize?: number;
 }
 
 export interface Assignment {
@@ -49,10 +51,14 @@ export interface UserProfile {
   username: string;
   email?: string;
   displayName: string;
+  ign?: string;
+  uid?: string;
+  isApproved?: boolean;
   role: 'user' | 'admin' | 'superadmin' | 'member';
   createdAt: string;
   isPreAuthorized?: boolean;
   authUid?: string | null;
+  discordId?: string;
 }
 
 export interface Job {
@@ -66,4 +72,10 @@ export interface GuildSettings {
   subtitle: string;
   timezone: string;
   logoUrl?: string;
+  maxPartySize?: number;
+  discordChannelId?: string; // Legacy field
+  discordGuildId?: string;
+  discordAnnouncementsChannelId?: string;
+  discordAbsenceChannelId?: string;
+  discordWebhookUrl?: string;
 }

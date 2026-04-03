@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fetchAPI } from '../lib/api';
 import { GuildEvent, Member, Assignment, Party, SubEvent } from '../types';
-import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Shield, Sword, Heart, Star, Share2, Check, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search, Zap, Target, Music, Hammer, FlaskConical, Hand, Cross, Skull } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Shield, Sword, Heart, Star, Share2, Check, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search, Zap, Target, Music, Hammer, FlaskConical, Hand, Cross, Skull, MessageSquare, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import ConfirmModal from '../components/ConfirmModal';
@@ -100,7 +100,14 @@ function SortableAssignmentItem({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: assignment.id! });
+  } = useSortable({ 
+    id: assignment.id!,
+    data: {
+      type: 'assignment',
+      assignment,
+      partyId: assignment.partyId
+    }
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -198,6 +205,14 @@ function SortablePartyItem({
     const { active, over } = eventDnd;
     if (!over || active.id === over.id) return;
 
+    const activeData = active.data.current;
+    const overData = over.data.current;
+
+    if (activeData?.type === 'assignment') {
+      // If it's an assignment, let the parent handle it
+      return;
+    }
+
     const partyAssignments = assignments[party.id!] || [];
     const oldIndex = partyAssignments.findIndex((a) => a.id === active.id);
     const newIndex = partyAssignments.findIndex((a) => a.id === over.id);
@@ -224,7 +239,7 @@ function SortablePartyItem({
           <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
           <h5 className="font-bold text-sm text-white uppercase tracking-wider">{party.name}</h5>
           <span className="text-[10px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded">
-            {assignments[party.id!]?.length || 0}/5
+            {assignments[party.id!]?.length || 0}/{party.maxSize || 12}
           </span>
         </div>
         <div className="flex items-center gap-1">
@@ -486,6 +501,11 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [memberRoleFilter, setMemberRoleFilter] = useState<'All' | 'DPS' | 'Support' | 'Tank'>('All');
   const [initialSubEventId, setInitialSubEventId] = useState<string | null>(null);
 
+  const [isDiscordShareModalOpen, setIsDiscordShareModalOpen] = useState(false);
+  const [discordShareMessage, setDiscordShareMessage] = useState('');
+  const [activeEventForDiscord, setActiveEventForDiscord] = useState<GuildEvent | null>(null);
+  const [isSendingDiscord, setIsSendingDiscord] = useState(false);
+
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -516,15 +536,19 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [partyFormData, setPartyFormData] = useState({ name: '' });
   const [assignFormData, setAssignFormData] = useState({ memberId: '', role: ROLES[0].name });
 
+  const [settings, setSettings] = useState<any>(null);
+
   const loadData = useCallback(async () => {
     try {
-      const [eventsData, membersData] = await Promise.all([
+      const [eventsData, membersData, settingsData] = await Promise.all([
         fetchAPI('/api/events'),
-        fetchAPI('/api/members')
+        fetchAPI('/api/members'),
+        fetchAPI('/api/settings/guild_settings')
       ]);
       
       setEvents(eventsData);
       setMembers(membersData);
+      setSettings(settingsData);
       
       const newSubEvents: Record<string, SubEvent[]> = {};
       const newParties: Record<string, Party[]> = {};
@@ -567,6 +591,36 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     navigator.clipboard.writeText(url);
     setCopiedId(eventId);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const openDiscordShareModal = (event: GuildEvent) => {
+    setActiveEventForDiscord(event);
+    const url = `${window.location.origin}/public/event/${event.id}`;
+    setDiscordShareMessage(`Hey @everyone! The lineup for **${event.name}** is ready. Check it out here: {link}`);
+    setIsDiscordShareModalOpen(true);
+  };
+
+  const handleDiscordShare = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeEventForDiscord) return;
+    
+    setIsSendingDiscord(true);
+    try {
+      const url = `${window.location.origin}/public/event/${activeEventForDiscord.id}`;
+      const finalMessage = discordShareMessage.replace('{link}', url);
+      
+      await fetchAPI(`/api/events/${activeEventForDiscord.id}/share-discord`, {
+        method: 'POST',
+        body: JSON.stringify({ message: finalMessage })
+      });
+      
+      setIsDiscordShareModalOpen(false);
+    } catch (error) {
+      console.error('Failed to share to Discord:', error);
+      alert('Failed to share to Discord. Please check your integration settings.');
+    } finally {
+      setIsSendingDiscord(false);
+    }
   };
 
   const handleEventSubmit = async (e: React.FormEvent) => {
@@ -658,10 +712,13 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     e.preventDefault();
     if (!activeEventId || !activeSubEventId || !activePartyId) return;
     
-    // Check 5 member limit
+    // Check member limit
     const currentAssignments = assignments[activePartyId] || [];
-    if (currentAssignments.length >= 5) {
-      alert("Party is full! Maximum 5 members allowed.");
+    const party = parties[activeSubEventId!]?.find(p => p.id === activePartyId);
+    const maxSize = party?.maxSize || settings?.maxPartySize || 12;
+    
+    if (currentAssignments.length >= maxSize) {
+      alert(`Party is full! Maximum ${maxSize} members allowed.`);
       return;
     }
 
@@ -820,6 +877,42 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     const activeData = active.data.current;
     const overData = over.data.current;
 
+    if (activeData?.type === 'assignment') {
+      const activePartyId = activeData.partyId;
+      const overPartyId = overData?.type === 'assignment' ? overData.partyId : (overData?.type === 'party' ? over.id : null);
+
+      if (activePartyId && overPartyId && activePartyId !== overPartyId) {
+        setAssignments(prev => {
+          const activeItems = prev[activePartyId] || [];
+          const overItems = prev[overPartyId] || [];
+          const activeIndex = activeItems.findIndex(a => a.id === active.id);
+          
+          let newIndex;
+          if (overData?.type === 'assignment') {
+            newIndex = overItems.findIndex(a => a.id === over.id);
+          } else {
+            newIndex = overItems.length;
+          }
+
+          const item = activeItems[activeIndex];
+          if (!item) return prev;
+
+          const nextActiveItems = [...activeItems];
+          nextActiveItems.splice(activeIndex, 1);
+
+          const nextOverItems = [...overItems];
+          nextOverItems.splice(newIndex, 0, { ...item, partyId: overPartyId });
+
+          return {
+            ...prev,
+            [activePartyId]: nextActiveItems,
+            [overPartyId]: nextOverItems,
+          };
+        });
+      }
+      return;
+    }
+
     if (!activeData || activeData.type !== 'party') return;
 
     // Find current container in state
@@ -894,6 +987,86 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         loadData();
       } catch (error) {
         console.error('Failed to reorder subevents:', error);
+      }
+    } else if (activeData?.type === 'assignment') {
+      const currentPartyId = Object.keys(assignments).find(key => 
+        assignments[key].some(a => a.id === active.id)
+      );
+      
+      if (currentPartyId) {
+        const currentAssignments = assignments[currentPartyId] || [];
+        const oldPartyId = activeData.partyId;
+        
+        if (oldPartyId === currentPartyId) {
+          // Reorder within same party
+          const oldIndex = currentAssignments.findIndex(a => a.id === active.id);
+          const overIndex = currentAssignments.findIndex(a => a.id === over.id);
+          if (oldIndex !== -1 && overIndex !== -1 && oldIndex !== overIndex) {
+            const reordered = arrayMove(currentAssignments, oldIndex, overIndex);
+            // Find which subevent this party belongs to
+            let subEventId = '';
+            for (const seId in parties) {
+              if (parties[seId].some(p => p.id === currentPartyId)) {
+                subEventId = seId;
+                break;
+              }
+            }
+            handleAssignmentReorder(eventId, subEventId, currentPartyId, reordered);
+          }
+        } else {
+          // Cross-party move
+          const assignment = currentAssignments.find(a => a.id === active.id);
+          if (assignment) {
+            // Find subevent for target party
+            let targetSubEventId = '';
+            for (const seId in parties) {
+              if (parties[seId].some(p => p.id === currentPartyId)) {
+                targetSubEventId = seId;
+                break;
+              }
+            }
+            
+            // Find subevent for source party
+            let sourceSubEventId = '';
+            for (const seId in parties) {
+              if (parties[seId].some(p => p.id === oldPartyId)) {
+                sourceSubEventId = seId;
+                break;
+              }
+            }
+
+            try {
+              // Let's just use the current state to update the event
+              const updatedEvent = events.find(e => e.id === eventId);
+              if (updatedEvent) {
+                const newEvent = {
+                  ...updatedEvent,
+                  subevents: ((updatedEvent as any).subevents || []).map((se: any) => ({
+                    ...se,
+                    parties: (se.parties || []).map((p: any) => {
+                      if (p.id === oldPartyId) {
+                        return { ...p, assignments: (p.assignments || []).filter((a: any) => a.id !== active.id) };
+                      }
+                      if (p.id === currentPartyId) {
+                        const newAssignment = { ...assignment, partyId: currentPartyId, subEventId: targetSubEventId };
+                        return { ...p, assignments: [...(p.assignments || []), newAssignment] };
+                      }
+                      return p;
+                    })
+                  }))
+                };
+                await fetchAPI(`/api/events/${eventId}`, {
+                  method: 'PUT',
+                  body: JSON.stringify(newEvent)
+                });
+                loadData();
+              }
+            } catch (error) {
+              console.error('Failed to move assignment:', error);
+              loadData();
+            }
+          }
+        }
       }
     } else if (activeData?.type === 'party') {
       // Find where it ended up in our state
@@ -1138,6 +1311,13 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                   </button>
                   {isAdmin && (
                     <>
+                      <button
+                        onClick={() => openDiscordShareModal(event)}
+                        className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-2 px-4 rounded-lg text-sm font-medium transition-colors"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                        Send to Discord
+                      </button>
                       <button
                         onClick={() => openSubEventModal(event.id!)}
                         className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-2 px-4 rounded-lg text-sm font-medium transition-colors"
@@ -1467,6 +1647,76 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         message={confirmModal.message}
         variant={confirmModal.variant}
       />
+
+      {/* Discord Share Modal */}
+      <AnimatePresence>
+        {isDiscordShareModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsDiscordShareModalOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 bg-[#5865F2]/10 rounded-xl flex items-center justify-center text-[#5865F2]">
+                  <MessageSquare className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Share to Discord</h2>
+                  <p className="text-xs text-zinc-500 uppercase font-bold tracking-widest">Announcements Channel</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleDiscordShare} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Announcement Message</label>
+                  <textarea 
+                    required 
+                    value={discordShareMessage} 
+                    onChange={(e) => setDiscordShareMessage(e.target.value)} 
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white h-32 resize-none focus:ring-2 focus:ring-orange-500/50 outline-none" 
+                    placeholder="Enter your message..."
+                  />
+                  <p className="mt-2 text-[10px] text-zinc-500 italic">
+                    Use <span className="text-orange-500 font-bold">{'{link}'}</span> where you want the lineup URL to appear.
+                  </p>
+                </div>
+
+                <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800/50">
+                  <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-2">Preview</p>
+                  <p className="text-xs text-zinc-400 leading-relaxed break-words">
+                    {discordShareMessage.replace('{link}', `${window.location.origin}/public/event/${activeEventForDiscord?.id}`)}
+                  </p>
+                </div>
+
+                <div className="pt-4 flex gap-3">
+                  <button 
+                    type="button" 
+                    onClick={() => setIsDiscordShareModalOpen(false)} 
+                    className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 font-medium hover:bg-zinc-800 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    type="submit" 
+                    disabled={isSendingDiscord}
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-orange-500 text-white font-bold hover:bg-orange-600 shadow-lg shadow-orange-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-all active:scale-95"
+                  >
+                    {isSendingDiscord ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Sending...
+                      </>
+                    ) : (
+                      <>
+                        <Share2 className="w-4 h-4" />
+                        Send Now
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

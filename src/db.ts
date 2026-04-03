@@ -67,8 +67,14 @@ export const initialDb = {
     guild_settings: {
       name: 'MadMonkeys',
       subtitle: 'Guild Management System',
-      timezone: 'GMT+8 (Singapore/Manila)',
+      timezone: 'Asia/Singapore',
       logoUrl: '',
+      maxPartySize: 12,
+      discordChannelId: '',
+      discordGuildId: '',
+      discordAnnouncementsChannelId: '',
+      discordAbsenceChannelId: '',
+      discordWebhookUrl: '',
     }
   }
 };
@@ -254,6 +260,7 @@ export class FileDatabase implements Database {
           username: "readyhit",
           displayName: "ReadyHit",
           role: "superadmin",
+          isApproved: true,
           createdAt: new Date().toISOString(),
           password: hashedPassword
         });
@@ -363,6 +370,10 @@ export class SupabaseDatabase implements Database {
           id: u.id,
           username: u.username,
           displayName: u.display_name,
+          ign: u.ign,
+          uid: u.uid,
+          discordId: u.discord_id,
+          isApproved: u.is_approved,
           role: u.role,
           createdAt: u.created_at,
           password: u.password_hash // Map hash to password field for app compatibility
@@ -380,6 +391,10 @@ export class SupabaseDatabase implements Database {
       id: user.id,
       username: user.username,
       display_name: user.displayName,
+      ign: user.ign,
+      uid: user.uid,
+      discord_id: user.discordId,
+      is_approved: user.isApproved,
       role: user.role,
       password_hash: user.password
     });
@@ -406,7 +421,8 @@ export class SupabaseDatabase implements Database {
         job: m.job,
         role: m.role,
         dateJoined: m.date_joined,
-        uid: m.uid
+        uid: m.uid,
+        discordId: m.discord_id
       }));
     } catch (e: any) {
       console.error("Supabase Exception in getMembers():", e.message);
@@ -421,7 +437,8 @@ export class SupabaseDatabase implements Database {
       job: member.job,
       role: member.role,
       date_joined: member.dateJoined,
-      uid: member.uid
+      uid: member.uid,
+      discord_id: member.discordId
     });
     if (error) console.error("Supabase Save Member Error:", error.message);
   }
@@ -497,7 +514,13 @@ export class SupabaseDatabase implements Database {
         name: data.name,
         subtitle: data.subtitle,
         timezone: data.timezone,
-        logoUrl: data.logo_url
+        logoUrl: data.logo_url,
+        maxPartySize: data.max_party_size || 12,
+        discordChannelId: data.discord_channel_id || '',
+        discordGuildId: data.discord_guild_id || '',
+        discordAnnouncementsChannelId: data.discord_announcements_channel_id || '',
+        discordAbsenceChannelId: data.discord_absence_channel_id || '',
+        discordWebhookUrl: data.discord_webhook_url || ''
       };
     } catch (e: any) {
       console.error("Supabase Exception in getSettings():", e.message);
@@ -506,14 +529,31 @@ export class SupabaseDatabase implements Database {
   }
 
   async saveSettings(settings: any) {
-    const { error } = await this.supabase.from('settings').upsert({
+    const payload: any = {
       id: 'guild_settings',
       name: settings.name,
       subtitle: settings.subtitle,
       timezone: settings.timezone,
-      logo_url: settings.logoUrl
-    });
-    if (error) console.error("Supabase Save Settings Error:", error.message);
+      logo_url: settings.logoUrl,
+      max_party_size: settings.maxPartySize,
+    };
+
+    // Only add Discord fields if they are provided, to avoid schema errors if columns are missing
+    // Note: If columns are missing, Supabase will still throw an error on upsert if we include them.
+    if (settings.discordChannelId !== undefined) payload.discord_channel_id = settings.discordChannelId;
+    if (settings.discordGuildId !== undefined) payload.discord_guild_id = settings.discordGuildId;
+    if (settings.discordAnnouncementsChannelId !== undefined) payload.discord_announcements_channel_id = settings.discordAnnouncementsChannelId;
+    if (settings.discordAbsenceChannelId !== undefined) payload.discord_absence_channel_id = settings.discordAbsenceChannelId;
+    if (settings.discordWebhookUrl !== undefined) payload.discord_webhook_url = settings.discordWebhookUrl;
+
+    const { error } = await this.supabase.from('settings').upsert(payload);
+    if (error) {
+      console.error("Supabase Save Settings Error:", error.message);
+      if (error.message.includes("column") && error.message.includes("not found")) {
+        console.warn("WARNING: It looks like your 'settings' table is missing Discord columns. Please run the SQL migration:");
+        console.warn("ALTER TABLE settings ADD COLUMN IF NOT EXISTS discord_guild_id TEXT, ADD COLUMN IF NOT EXISTS discord_announcements_channel_id TEXT, ADD COLUMN IF NOT EXISTS discord_absence_channel_id TEXT, ADD COLUMN IF NOT EXISTS discord_webhook_url TEXT;");
+      }
+    }
   }
 
   async getMemberById(id: string) {
@@ -525,7 +565,8 @@ export class SupabaseDatabase implements Database {
       job: data.job,
       role: data.role,
       dateJoined: data.date_joined,
-      uid: data.uid
+      uid: data.uid,
+      discordId: data.discord_id
     };
   }
 
@@ -548,6 +589,10 @@ export class SupabaseDatabase implements Database {
       id: data.id,
       username: data.username,
       displayName: data.display_name,
+      ign: data.ign,
+      uid: data.uid,
+      discordId: data.discord_id,
+      isApproved: data.is_approved,
       role: data.role,
       createdAt: data.created_at,
       password: data.password_hash
@@ -592,6 +637,7 @@ export class SupabaseDatabase implements Database {
           username: "readyhit",
           displayName: "ReadyHit",
           role: "superadmin",
+          isApproved: true,
           createdAt: new Date().toISOString(),
           password: hashedPassword
         });
