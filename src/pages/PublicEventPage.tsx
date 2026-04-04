@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { fetchAPI } from '../lib/api';
 import { GuildEvent, Member, Assignment, Party, SubEvent, GuildSettings } from '../types';
-import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, ChevronDown, ChevronRight, Cross, Zap, Target, Skull, Hammer, FlaskConical, Music, Hand, UserMinus, Check, MessageSquare } from 'lucide-react';
+import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, ChevronDown, ChevronRight, Cross, Zap, Target, Skull, Hammer, FlaskConical, Music, Hand, UserMinus, Check, MessageSquare, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { Link } from 'react-router-dom';
 
 const ROLES = [
   { name: 'DPS', color: 'text-zinc-400', bg: 'bg-zinc-400/10', border: 'border-zinc-400/20', icon: <Sword className="w-3 h-3" /> },
@@ -191,7 +192,16 @@ export default function PublicEventPage() {
   return (
     <div className="min-h-screen bg-black text-zinc-100 p-4 md:p-8">
       <div className="max-w-[1600px] mx-auto">
-        <header className="mb-12 text-center">
+        <header className="mb-12 text-center relative">
+          <div className="absolute top-0 right-0">
+            <Link 
+              to="/raffle" 
+              className="flex items-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white px-4 py-2 rounded-xl border border-zinc-800 transition-all text-sm font-bold"
+            >
+              <Trophy className="w-4 h-4 text-orange-500" />
+              Weekly Raffle
+            </Link>
+          </div>
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}

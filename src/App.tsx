@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { fetchAPI } from './lib/api';
-import { Users, Calendar, MessageSquare, LogIn, LogOut, Menu, X, Shield, Briefcase, Mail, Lock, UserPlus as UserPlusIcon, Settings, BarChart3 } from 'lucide-react';
+import { Users, Calendar, MessageSquare, LogIn, LogOut, Menu, X, Shield, Briefcase, Mail, Lock, UserPlus as UserPlusIcon, Settings, BarChart3, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import MembersPage from './pages/MembersPage';
@@ -10,6 +10,7 @@ import AdminsPage from './pages/UsersPage';
 import JobsPage from './pages/JobsPage';
 import StatisticsPage from './pages/StatisticsPage';
 import SettingsPage from './pages/SettingsPage';
+import RafflePage from './pages/RafflePage';
 import PublicEventPage from './pages/PublicEventPage';
 import AccountPage from './pages/AccountPage';
 import { UserProfile, GuildSettings } from './types';
@@ -183,6 +184,16 @@ export default function App() {
           </button>
         </form>
 
+        <div className="mt-6 pt-6 border-t border-zinc-900 flex flex-col gap-3">
+          <Link 
+            to="/raffle" 
+            className="w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white py-3 rounded-xl transition-all border border-zinc-800"
+          >
+            <Trophy className="w-4 h-4 text-orange-500" />
+            <span className="text-sm font-bold">Go to Weekly Raffle</span>
+          </Link>
+        </div>
+
         <p className="text-center mt-8 text-sm text-zinc-500">
           {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
           <button 
@@ -237,6 +248,7 @@ export default function App() {
     <Router>
       <Routes>
         <Route path="/public/event/:eventId" element={<PublicEventPage />} />
+        <Route path="/raffle" element={<RafflePage />} />
         <Route path="*" element={
           !user ? <AuthUI /> : (
             <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col md:flex-row">
@@ -291,6 +303,10 @@ export default function App() {
                       <Link to="/events" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
                         <Calendar className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
                         <span className="font-medium">Guild Events</span>
+                      </Link>
+                      <Link to="/raffle" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
+                        <Trophy className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
+                        <span className="font-medium">Card Raffle</span>
                       </Link>
                       <Link to="/statistics" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
                         <BarChart3 className="w-5 h-5 group-hover:text-orange-500 transition-colors" />

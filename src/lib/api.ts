@@ -9,9 +9,12 @@ export enum OperationType {
 
 export async function fetchAPI(path: string, options: RequestInit = {}) {
   const token = localStorage.getItem('token');
+  const user = JSON.parse(localStorage.getItem('user') || '{}');
+  console.log(`[fetchAPI] Path: ${path}, Role: ${user.role}`);
   const headers = {
     'Content-Type': 'application/json',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...(user.role ? { 'user-role': user.role } : {}),
     ...(options.headers || {}),
   };
 

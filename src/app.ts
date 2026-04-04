@@ -40,8 +40,20 @@ export function createApp() {
     db = new FileDatabase();
   }
 
-  app.use(cors());
+  app.use(cors({
+    allowedHeaders: ['Content-Type', 'Authorization', 'user-role'],
+    origin: true,
+    credentials: true
+  }));
   app.use(express.json({ limit: '50mb' }));
+
+  // Debug middleware for raffle API
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api/raffle')) {
+      console.log(`[Raffle API Debug] Path: ${req.path}, Method: ${req.method}, Role: ${req.headers['user-role']}`);
+    }
+    next();
+  });
 
   // Health check
   app.get("/api/health", asyncHandler(async (req: any, res: any) => {
@@ -618,6 +630,191 @@ export function createApp() {
     res.json(settings);
   }));
 
+  // Raffle API
+  app.get("/api/raffle", asyncHandler(async (req: any, res: any) => {
+    const raffle = await db.getRaffle();
+    res.json(raffle);
+  }));
+
+  app.post("/api/raffle/join", asyncHandler(async (req: any, res: any) => {
+    const { memberId } = req.body;
+    const raffle = await db.getRaffle();
+    const members = await db.getMembers();
+    const member = members.find((m: any) => m.id === memberId);
+
+    if (!member) return res.status(404).json({ error: "Member not found" });
+
+    // Check if member is already a winner this month
+    const isWinnerThisMonth = (raffle.winners || []).some((w: any) => 
+      w.memberId === memberId && 
+      w.month === raffle.settings.currentMonth && 
+      w.year === raffle.settings.currentYear
+    );
+
+    if (isWinnerThisMonth) {
+      return res.status(400).json({ error: "You have already won this month and cannot join until next month." });
+    }
+
+    // Check if already entered this week
+    const alreadyEntered = (raffle.entries || []).some((e: any) => 
+      e.memberId === memberId && 
+      e.week === raffle.settings.currentWeek &&
+      e.month === raffle.settings.currentMonth &&
+      e.year === raffle.settings.currentYear
+    );
+
+    if (alreadyEntered) {
+      return res.status(400).json({ error: "You have already joined the raffle for this week." });
+    }
+
+    const newEntry = {
+      id: Date.now().toString(),
+      memberId,
+      ign: member.ign,
+      week: raffle.settings.currentWeek,
+      month: raffle.settings.currentMonth,
+      year: raffle.settings.currentYear,
+      timestamp: new Date().toISOString()
+    };
+
+    if (!raffle.entries) raffle.entries = [];
+    raffle.entries.push(newEntry);
+    await db.saveRaffle(raffle);
+    res.json({ success: true, entry: newEntry });
+  }));
+
+  app.post("/api/raffle/draw", asyncHandler(async (req: any, res: any) => {
+    const userRole = req.headers['user-role'];
+    console.log(`[Raffle Draw] Role: ${userRole}, Headers:`, req.headers);
+    if (userRole !== 'admin' && userRole !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can draw winners" });
+    }
+
+    const raffle = await db.getRaffle();
+    console.log(`[Raffle Draw] Raffle Settings:`, raffle.settings);
+    
+    const currentWeekEntries = (raffle.entries || []).filter((e: any) => {
+      const match = Number(e.week) === Number(raffle.settings.currentWeek) &&
+                  Number(e.month) === Number(raffle.settings.currentMonth) &&
+                  Number(e.year) === Number(raffle.settings.currentYear);
+      return match;
+    });
+
+    console.log(`[Raffle Draw] Found ${currentWeekEntries.length} entries for current week.`);
+    if (currentWeekEntries.length < 2) {
+      return res.status(400).json({ error: "Not enough entries to draw 2 winners." });
+    }
+
+    // Shuffle and pick 2 winners
+    const shuffled = [...currentWeekEntries].sort(() => 0.5 - Math.random());
+    const winners = shuffled.slice(0, 2).map(e => ({
+      id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5),
+      memberId: e.memberId,
+      ign: e.ign,
+      week: raffle.settings.currentWeek,
+      month: raffle.settings.currentMonth,
+      year: raffle.settings.currentYear,
+      timestamp: new Date().toISOString()
+    }));
+
+    if (!raffle.winners) raffle.winners = [];
+    raffle.winners.push(...winners);
+    raffle.settings.isOpen = false; // Close raffle after draw
+    
+    console.log(`[Raffle Draw] Success: ${winners.length} winners drawn.`);
+    await db.saveRaffle(raffle);
+    res.json({ success: true, winners });
+  }));
+
+  app.post("/api/raffle/clear-entries", asyncHandler(async (req: any, res: any) => {
+    const userRole = req.headers['user-role'];
+    if (userRole !== 'admin' && userRole !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can clear entries" });
+    }
+
+    const raffle = await db.getRaffle();
+    raffle.entries = [];
+    await db.saveRaffle(raffle);
+    res.json({ success: true });
+  }));
+
+  app.post("/api/raffle/reset", asyncHandler(async (req: any, res: any) => {
+    const userRole = req.headers['user-role'];
+    console.log(`[Raffle Reset] Role: ${userRole}, Body:`, req.body);
+    if (userRole !== 'admin' && userRole !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can reset the raffle" });
+    }
+
+    const { nextWeek, nextMonth, nextYear } = req.body;
+    const raffle = await db.getRaffle();
+    
+    if (nextWeek !== undefined) raffle.settings.currentWeek = Number(nextWeek);
+    else raffle.settings.currentWeek = (raffle.settings.currentWeek % 5) + 1;
+    
+    if (nextMonth !== undefined) raffle.settings.currentMonth = Number(nextMonth);
+    if (nextYear !== undefined) raffle.settings.currentYear = Number(nextYear);
+    raffle.settings.isOpen = true;
+    
+    console.log(`[Raffle Reset] New Settings:`, raffle.settings);
+    await db.saveRaffle(raffle);
+    res.json({ success: true, settings: raffle.settings });
+  }));
+
+  app.post("/api/raffle/settings", asyncHandler(async (req: any, res: any) => {
+    const userRole = req.headers['user-role'];
+    if (userRole !== 'admin' && userRole !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can change raffle settings" });
+    }
+
+    const raffle = await db.getRaffle();
+    raffle.settings = { ...raffle.settings, ...req.body };
+    await db.saveRaffle(raffle);
+    res.json(raffle.settings);
+  }));
+
+  app.post("/api/raffle/remove-entry", asyncHandler(async (req: any, res: any) => {
+    const userRole = req.headers['user-role'];
+    console.log(`[Raffle Remove] Role: ${userRole}, Body:`, req.body);
+    if (userRole !== 'admin' && userRole !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can remove entries" });
+    }
+
+    const { entryId } = req.body;
+    const raffle = await db.getRaffle();
+    if (!raffle.entries) raffle.entries = [];
+    const initialCount = raffle.entries.length;
+    raffle.entries = raffle.entries.filter((e: any) => e.id !== entryId);
+    const finalCount = raffle.entries.length;
+    
+    console.log(`[Raffle Remove] Initial: ${initialCount}, Final: ${finalCount}`);
+    if (initialCount === finalCount) {
+      console.warn(`[Raffle Remove] Entry not found: ${entryId}`);
+    }
+    
+    await db.saveRaffle(raffle);
+    res.json({ success: true, count: finalCount });
+  }));
+
+  app.post("/api/raffle/force-reset", asyncHandler(async (req: any, res: any) => {
+    const userRole = req.headers['user-role'];
+    if (userRole !== 'admin' && userRole !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can force reset" });
+    }
+
+    const initialRaffle = {
+      entries: [],
+      winners: [],
+      settings: {
+        currentWeek: 1,
+        currentMonth: 4,
+        currentYear: 2026,
+        isOpen: true
+      }
+    };
+    await db.saveRaffle(initialRaffle);
+    res.json({ success: true, raffle: initialRaffle });
+  }));
+
   app.post("/api/settings/guild_settings", asyncHandler(async (req: any, res: any) => {
     const settings = await db.getSettings();
     const updatedSettings = { ...settings, ...req.body };
@@ -654,8 +851,9 @@ export function createApp() {
 
   // Discord OAuth API
   app.get("/api/auth/discord/url", (req: any, res: any) => {
+    const { origin } = req.query;
     const clientId = process.env.DISCORD_CLIENT_ID;
-    const redirectUri = `${process.env.APP_URL || `https://${req.get('host')}`}/auth/discord/callback`;
+    const redirectUri = `${origin || process.env.APP_URL || `https://${req.get('host')}`}/auth/discord/callback`;
     
     if (!clientId) {
       return res.status(500).json({ error: "Discord Client ID not configured" });
@@ -690,7 +888,11 @@ export function createApp() {
 
     const clientId = process.env.DISCORD_CLIENT_ID;
     const clientSecret = process.env.DISCORD_CLIENT_SECRET;
-    const redirectUri = `${process.env.APP_URL || `https://${req.get('host')}`}/auth/discord/callback`;
+    
+    // Reconstruct redirectUri from host
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.get('host');
+    const redirectUri = process.env.APP_URL || `${protocol}://${host}/auth/discord/callback`;
 
     try {
       // Exchange code for token
@@ -712,34 +914,6 @@ export function createApp() {
       });
 
       const discordUser = userResponse.data;
-
-      // If a guild was added, try to create the default channels
-      if (guild_id && process.env.DISCORD_BOT_TOKEN) {
-        try {
-          const botToken = process.env.DISCORD_BOT_TOKEN;
-          const channelsResponse = await axios.get(`https://discord.com/api/guilds/${guild_id}/channels`, {
-            headers: { Authorization: `Bot ${botToken}` }
-          });
-          
-          const existingChannels = channelsResponse.data.map((c: any) => c.name.toLowerCase());
-          const channelsToCreate = ['guild-event-announcements', 'guild-event-absence'];
-
-          for (const channelName of channelsToCreate) {
-            if (!existingChannels.includes(channelName)) {
-              await axios.post(`https://discord.com/api/guilds/${guild_id}/channels`, {
-                name: channelName,
-                type: 0 // Text channel
-              }, {
-                headers: { Authorization: `Bot ${botToken}` }
-              });
-              console.log(`Created Discord channel: ${channelName} in guild ${guild_id}`);
-            }
-          }
-        } catch (err: any) {
-          console.error("Failed to create default Discord channels:", err.response?.data || err.message);
-          // We don't fail the whole auth flow if channel creation fails
-        }
-      }
 
       res.send(`
         <html>

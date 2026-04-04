@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchAPI } from '../lib/api';
 import { GuildSettings } from '../types';
-import { Save, Globe, Type, Image as ImageIcon, Loader2, CheckCircle2, Upload, Calendar, MessageSquare, Check, ChevronDown, Users } from 'lucide-react';
+import { Save, Globe, Type, Image as ImageIcon, Loader2, CheckCircle2, Upload, Calendar, MessageSquare, Check, ChevronDown, Users, RotateCcw, AlertTriangle } from 'lucide-react';
 import { motion } from 'motion/react';
 
 const TIMEZONES = [
@@ -138,10 +138,43 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
 
   const handleDiscordConnect = async () => {
     try {
-      const { url } = await fetchAPI('/api/auth/discord/url');
+      // Use absolute URL to avoid issues on some platforms
+      const baseUrl = window.location.origin;
+      const { url } = await fetchAPI(`/api/auth/discord/url?origin=${encodeURIComponent(baseUrl)}`);
       window.open(url, 'discord_oauth', 'width=500,height=800');
     } catch (err) {
       console.error('Discord connect error:', err);
+      alert('Failed to start Discord connection. Check your console for details.');
+    }
+  };
+
+  const handleDisconnect = async () => {
+    if (!confirm('Are you sure you want to disconnect Discord? This will clear your server and channel settings.')) return;
+    
+    try {
+      const newSettings = { 
+        ...settings, 
+        discordGuildId: '', 
+        discordAnnouncementsChannelId: '', 
+        discordAbsenceChannelId: '',
+        discordWebhookUrl: ''
+      };
+      
+      await fetchAPI('/api/settings/guild_settings', {
+        method: 'POST',
+        body: JSON.stringify(newSettings)
+      });
+      
+      setSettings(newSettings);
+      setIsDiscordConnected(false);
+      setGuilds([]);
+      setChannels([]);
+      setSelectedGuildId('');
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch (err) {
+      console.error('Disconnect error:', err);
+      alert('Failed to disconnect Discord.');
     }
   };
 
@@ -224,6 +257,21 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (error) {
       console.error('Failed to save settings:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleForceResetRaffle = async () => {
+    if (!confirm('WARNING: This will completely wipe ALL raffle data (entries, winners, settings) and reset to defaults. This action cannot be undone. Are you sure?')) return;
+    
+    setSaving(true);
+    try {
+      await fetchAPI('/api/raffle/force-reset', { method: 'POST' });
+      alert('Raffle data has been completely reset.');
+    } catch (err: any) {
+      console.error('Force reset failed:', err);
+      alert('Force reset failed: ' + err.message);
     } finally {
       setSaving(false);
     }
@@ -407,7 +455,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                       </div>
                       <button 
                         type="button"
-                        onClick={() => { setIsDiscordConnected(false); setGuilds([]); setChannels([]); }}
+                        onClick={handleDisconnect}
                         className="text-[10px] text-zinc-500 hover:text-zinc-300 underline"
                       >
                         Disconnect
@@ -580,6 +628,34 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
             </button>
           </div>
         </form>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.1 }}
+        className="mt-8 bg-red-500/5 border border-red-500/20 rounded-2xl overflow-hidden"
+      >
+        <div className="p-8">
+          <div className="flex items-center gap-3 mb-4">
+            <AlertTriangle className="w-6 h-6 text-red-500" />
+            <h2 className="text-xl font-bold text-white">Danger Zone</h2>
+          </div>
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div>
+              <h3 className="text-lg font-bold text-white">Force Reset Raffle</h3>
+              <p className="text-zinc-500 text-sm">Wipe all entries, winners, and settings for the Card Raffle. This is irreversible.</p>
+            </div>
+            <button
+              onClick={handleForceResetRaffle}
+              disabled={saving}
+              className="flex items-center gap-2 bg-red-500 hover:bg-red-600 disabled:opacity-50 text-white font-bold py-3 px-6 rounded-xl transition-all active:scale-95 shadow-lg shadow-red-500/20 whitespace-nowrap"
+            >
+              <RotateCcw className="w-5 h-5" />
+              Force Reset Raffle
+            </button>
+          </div>
+        </div>
       </motion.div>
     </div>
   );

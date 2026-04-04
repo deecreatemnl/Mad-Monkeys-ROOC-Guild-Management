@@ -24,6 +24,8 @@ export interface Database {
   deleteEvent: (id: string) => Promise<void>;
   getSettings: () => Promise<any>;
   saveSettings: (settings: any) => Promise<void>;
+  getRaffle: () => Promise<any>;
+  saveRaffle: (raffle: any) => Promise<void>;
   getMemberById: (id: string) => Promise<any>;
   getJobById: (id: string) => Promise<any>;
   getEventById: (id: string) => Promise<any>;
@@ -75,6 +77,16 @@ export const initialDb = {
       discordAnnouncementsChannelId: '',
       discordAbsenceChannelId: '',
       discordWebhookUrl: '',
+    }
+  },
+  raffle: {
+    entries: [],
+    winners: [],
+    settings: {
+      currentWeek: 1,
+      currentMonth: 4,
+      currentYear: 2026,
+      isOpen: true
     }
   }
 };
@@ -202,6 +214,17 @@ export class FileDatabase implements Database {
   async saveSettings(settings: any) {
     const data = await this.get();
     data.settings.guild_settings = settings;
+    await this.save(data);
+  }
+
+  async getRaffle() {
+    const data = await this.get();
+    return JSON.parse(JSON.stringify(data.raffle || initialDb.raffle));
+  }
+
+  async saveRaffle(raffle: any) {
+    const data = await this.get();
+    data.raffle = raffle;
     await this.save(data);
   }
 
@@ -556,6 +579,53 @@ export class SupabaseDatabase implements Database {
     }
   }
 
+  async getRaffle() {
+    try {
+      console.log('[Supabase] Fetching raffle data...');
+      const { data, error } = await this.supabase.from('settings').select('subtitle').eq('id', 'raffle').single();
+      if (error) {
+        if (error.code !== 'PGRST116' && !error.message.includes("Could not find the table")) {
+          console.error("Supabase Get Raffle Error:", error.message, error.details, error.hint);
+        }
+        console.log('[Supabase] Raffle not found or error, returning initial state');
+        return JSON.parse(JSON.stringify(initialDb.raffle));
+      }
+      try {
+        if (!data?.subtitle) {
+          console.log('[Supabase] Raffle subtitle is empty, returning initial state');
+          return JSON.parse(JSON.stringify(initialDb.raffle));
+        }
+        const parsed = JSON.parse(data.subtitle);
+        console.log('[Supabase] Raffle data fetched and parsed successfully');
+        return parsed;
+      } catch (e: any) {
+        console.error("[Supabase] Error parsing raffle subtitle:", e.message);
+        return JSON.parse(JSON.stringify(initialDb.raffle));
+      }
+    } catch (e: any) {
+      console.error("Supabase Exception in getRaffle():", e.message);
+      return JSON.parse(JSON.stringify(initialDb.raffle));
+    }
+  }
+
+  async saveRaffle(raffle: any) {
+    console.log('[Supabase] Saving raffle data...');
+    const { error } = await this.supabase.from('settings').upsert({ 
+      id: 'raffle', 
+      name: 'Card Raffle',
+      subtitle: JSON.stringify(raffle) 
+    });
+    if (error) {
+      console.error("Supabase Save Raffle Error:", error.message, error.details, error.hint);
+      if (error.message.includes("column") && error.message.includes("subtitle")) {
+        console.warn("WARNING: The 'subtitle' column is missing from your 'settings' table. Please run the SQL migration:");
+        console.warn("ALTER TABLE settings ADD COLUMN IF NOT EXISTS subtitle TEXT;");
+      }
+    } else {
+      console.log('[Supabase] Raffle data saved successfully.');
+    }
+  }
+
   async getMemberById(id: string) {
     const { data, error } = await this.supabase.from('members').select('*').eq('id', id).single();
     if (error) return null;
@@ -663,6 +733,7 @@ export const ensureDataIntegrity = (data: any) => {
         ...initialDb.settings.guild_settings,
         ...(data.settings?.guild_settings || {})
       }
-    }
+    },
+    raffle: data.raffle || initialDb.raffle
   };
 };

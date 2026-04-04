@@ -278,10 +278,6 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                     </div>
                   )}
                 </div>
-                <div className="flex items-center justify-between text-sm text-zinc-500 mb-2">
-                  <span>Discord</span>
-                  <span className="font-mono text-blue-400">{member.discordId || 'Not Linked'}</span>
-                </div>
                 <div className="flex items-center justify-between text-sm text-zinc-500">
                   <span>Joined</span>
                   <span className="font-mono">{member.dateJoined}</span>
@@ -298,7 +294,6 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                 <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">IGN</th>
                 <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Job / Class</th>
                 <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Date Joined</th>
-                <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Discord ID</th>
                 <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right">Actions</th>
               </tr>
             </thead>
@@ -332,9 +327,6 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                     </td>
                     <td className="p-4 text-sm text-zinc-500 font-mono">
                       {member.dateJoined}
-                    </td>
-                    <td className="p-4 text-sm text-zinc-500 font-mono">
-                      {member.discordId || '-'}
                     </td>
                     {isAdmin && (
                       <td className="p-4 text-right">
@@ -428,16 +420,6 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                     <option value="Tank">Tank</option>
                     <option value="Support">Support</option>
                   </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Discord ID</label>
-                  <input
-                    type="text"
-                    value={formData.discordId}
-                    onChange={(e) => setFormData({ ...formData, discordId: e.target.value })}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-                    placeholder="e.g. user#1234"
-                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-zinc-400 mb-1.5">Date Joined</label>
