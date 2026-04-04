@@ -920,17 +920,34 @@ export function createApp() {
         <html>
           <body>
             <script>
+              const authData = { 
+                type: 'DISCORD_AUTH_SUCCESS', 
+                discordId: '${discordUser.id}',
+                username: '${discordUser.username}',
+                accessToken: '${access_token}',
+                guildId: '${guild_id || ''}'
+              };
+              
+              // Try postMessage to opener
               if (window.opener) {
-                window.opener.postMessage({ 
-                  type: 'DISCORD_AUTH_SUCCESS', 
-                  discordId: '${discordUser.id}',
-                  username: '${discordUser.username}',
-                  accessToken: '${access_token}',
-                  guildId: '${guild_id || ''}'
-                }, '*');
-                window.close();
+                try {
+                  window.opener.postMessage(authData, '*');
+                } catch (e) {
+                  console.error('postMessage failed:', e);
+                }
+              }
+              
+              // Always store in localStorage as fallback for same-origin
+              localStorage.setItem('discord_auth_result', JSON.stringify({
+                ...authData,
+                timestamp: Date.now()
+              }));
+              
+              // Close if it's a popup, otherwise redirect
+              if (window.opener) {
+                setTimeout(() => window.close(), 1000);
               } else {
-                window.location.href = '/';
+                window.location.href = '/settings?discord_success=true';
               }
             </script>
             <p>Discord authentication successful. This window should close automatically.</p>

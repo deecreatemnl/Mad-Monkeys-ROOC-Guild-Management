@@ -42,21 +42,63 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    const handleAuthSuccess = async (data: any) => {
+      const { accessToken, guildId } = data;
+      setIsDiscordConnected(true);
+      fetchGuilds(accessToken);
+      if (guildId) {
+        setSelectedGuildId(guildId);
+        const newSettings = { ...settings, discordGuildId: guildId };
+        setSettings(newSettings);
+        fetchChannels(guildId, newSettings);
+      }
+    };
+
     const handleMessage = async (event: MessageEvent) => {
       if (event.data?.type === 'DISCORD_AUTH_SUCCESS') {
-        const { accessToken, guildId } = event.data;
-        setIsDiscordConnected(true);
-        fetchGuilds(accessToken);
-        if (guildId) {
-          setSelectedGuildId(guildId);
-          const newSettings = { ...settings, discordGuildId: guildId };
-          setSettings(newSettings);
-          fetchChannels(guildId, newSettings);
+        handleAuthSuccess(event.data);
+      }
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'discord_auth_result' && event.newValue) {
+        try {
+          const data = JSON.parse(event.newValue);
+          if (data.type === 'DISCORD_AUTH_SUCCESS') {
+            handleAuthSuccess(data);
+            localStorage.removeItem('discord_auth_result');
+          }
+        } catch (e) {
+          console.error('Failed to parse discord_auth_result:', e);
         }
       }
     };
+
+    // Check on mount for redirected auth
+    const checkAuth = () => {
+      const stored = localStorage.getItem('discord_auth_result');
+      if (stored) {
+        try {
+          const data = JSON.parse(stored);
+          // Only use if it's fresh (within last 30 seconds)
+          if (data.type === 'DISCORD_AUTH_SUCCESS' && Date.now() - data.timestamp < 30000) {
+            handleAuthSuccess(data);
+          }
+          localStorage.removeItem('discord_auth_result');
+        } catch (e) {
+          console.error('Failed to parse discord_auth_result:', e);
+        }
+      }
+    };
+
     window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
+    window.addEventListener('storage', handleStorage);
+    checkAuth();
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      window.removeEventListener('storage', handleStorage);
+    };
   }, [settings]);
 
   const fetchGuilds = async (accessToken: string) => {
