@@ -20,6 +20,7 @@ export default function RafflePage() {
   const [testEntries, setTestEntries] = useState<any[]>([]);
   const [testWinners, setTestWinners] = useState<any[]>([]);
   const [isTest, setIsTest] = useState(false);
+  const [revealedWinners, setRevealedWinners] = useState<any[]>([]);
   const [tick, setTick] = useState(0);
 
   const isRaffleLocked = () => {
@@ -98,9 +99,12 @@ export default function RafflePage() {
     
     setDrawing(true);
     try {
-      const result = await fetchAPI('/api/raffle/draw', { method: 'POST' });
+      const result = await fetchAPI('/api/raffle/draw', { 
+        method: 'POST'
+      });
       console.log('[RafflePage] Draw result:', result);
       setLastWinners(result.winners);
+      setRevealedWinners([]);
       setIsTest(false);
       setShowAnimation(true);
       setIsAnimationRunning(true);
@@ -180,6 +184,7 @@ export default function RafflePage() {
     
     setTestEntries(fakeEntries);
     setTestWinners(winners);
+    setRevealedWinners([]);
     setIsTest(true);
     setShowAnimation(true);
     setIsAnimationRunning(true);
@@ -197,10 +202,14 @@ export default function RafflePage() {
   ).filter((w: any) => {
     // If animation is running, don't show the latest winners yet
     if (isAnimationRunning && !isTest && lastWinners.some(lw => lw.id === w.memberId)) {
-      return false;
+      return revealedWinners.some(rw => rw.id === w.memberId);
     }
     return true;
   });
+
+  // For test animation, we also want to show revealed winners in the sidebar if possible
+  // But the sidebar is tied to raffle.winners. Let's add a separate section or mock it.
+  // Actually, let's just focus on the real draw for now as per user request.
 
   const winnersByWeek = currentMonthWinners.reduce((acc: any, winner: any) => {
     if (!acc[winner.week]) acc[winner.week] = [];
@@ -389,6 +398,9 @@ export default function RafflePage() {
                 <RaffleAnimation 
                   entries={isTest ? testEntries : currentWeekEntries} 
                   winners={isTest ? testWinners : lastWinners} 
+                  onWinnerRevealed={(winner) => {
+                    setRevealedWinners(prev => [...prev, winner]);
+                  }}
                   onComplete={() => setIsAnimationRunning(false)}
                 />
                 <div className="flex justify-center">
@@ -569,6 +581,7 @@ export default function RafflePage() {
                     <Sparkles className="w-4 h-4 text-orange-500" />
                     Test Animation
                   </button>
+
                   <button
                     onClick={async () => {
                       const isOpen = !raffle.settings.isOpen;

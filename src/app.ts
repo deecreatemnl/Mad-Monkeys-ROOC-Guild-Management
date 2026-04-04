@@ -854,7 +854,15 @@ export function createApp() {
   app.get("/api/auth/discord/url", (req: any, res: any) => {
     const { origin } = req.query;
     const clientId = process.env.DISCORD_CLIENT_ID;
-    const redirectUri = `${origin || process.env.APP_URL || `https://${req.get('host')}`}/auth/discord/callback`;
+    // Use consistent redirect URI construction
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.get('host');
+    const defaultRedirectUri = `${protocol}://${host}/auth/discord/callback`;
+    const redirectUri = process.env.APP_URL 
+      ? `${process.env.APP_URL}/auth/discord/callback` 
+      : (origin ? `${origin}/auth/discord/callback` : defaultRedirectUri);
+    
+    console.log(`[Discord Auth URL] Origin: ${origin}, Host: ${host}, RedirectURI: ${redirectUri}`);
     
     if (!clientId) {
       return res.status(500).json({ error: "Discord Client ID not configured" });
@@ -890,10 +898,14 @@ export function createApp() {
     const clientId = process.env.DISCORD_CLIENT_ID;
     const clientSecret = process.env.DISCORD_CLIENT_SECRET;
     
-    // Reconstruct redirectUri from host
+    // Reconstruct redirectUri consistently
     const protocol = req.headers['x-forwarded-proto'] || 'https';
     const host = req.get('host');
-    const redirectUri = process.env.APP_URL || `${protocol}://${host}/auth/discord/callback`;
+    const redirectUri = process.env.APP_URL 
+      ? `${process.env.APP_URL}/auth/discord/callback` 
+      : `${protocol}://${host}/auth/discord/callback`;
+
+    console.log(`[Discord Callback] Code: ${code ? 'present' : 'missing'}, Host: ${host}, RedirectURI: ${redirectUri}`);
 
     try {
       // Exchange code for token
