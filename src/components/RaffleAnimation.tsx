@@ -12,18 +12,22 @@ export default function RaffleAnimation({ entries, winners, onComplete }: Raffle
   const [isRacing, setIsRacing] = useState(true);
   const [showWinners, setShowWinners] = useState(false);
   const [duckPositions, setDuckPositions] = useState<any[]>([]);
+  const [finishedWinners, setFinishedWinners] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Initialize ducks with random speeds and starting positions
   useEffect(() => {
     const initialDucks = entries.map((entry, index) => ({
       ...entry,
-      speed: 0.5 + Math.random() * 1.5,
-      offsetY: (index * 25) % 150 + 20,
+      speed: 0.4 + Math.random() * 1.2,
+      offsetY: (index * 22) % 160 + 20,
       progress: 0,
-      isWinner: winners.some(w => w.id === entry.id)
+      isWinner: winners.some(w => w.id === entry.id),
+      bobDelay: Math.random() * 2,
+      bobDuration: 1.5 + Math.random() * 1
     }));
     setDuckPositions(initialDucks);
+    setFinishedWinners(new Set());
   }, [entries, winners]);
 
   // Animation loop
@@ -34,13 +38,20 @@ export default function RaffleAnimation({ entries, winners, onComplete }: Raffle
           const next = prev.map(duck => {
             if (duck.progress >= 100) return duck;
             
-            // Winners move slightly faster towards the end
-            const boost = (duck.isWinner && duck.progress > 70) ? 1.5 : 1;
-            const newProgress = duck.progress + (duck.speed * boost * 0.5);
+            // Winners move slightly faster towards the end to ensure they win
+            const boost = (duck.isWinner && duck.progress > 60) ? 1.8 : 1;
+            const newProgress = duck.progress + (duck.speed * boost * 0.4);
             
+            const finalProgress = Math.min(newProgress, 100);
+            
+            // If this duck just finished and is a winner, add to finished winners
+            if (finalProgress >= 100 && duck.isWinner) {
+              setFinishedWinners(current => new Set([...current, duck.id]));
+            }
+
             return {
               ...duck,
-              progress: Math.min(newProgress, 100)
+              progress: finalProgress
             };
           });
 
@@ -49,8 +60,11 @@ export default function RaffleAnimation({ entries, winners, onComplete }: Raffle
           if (allWinnersFinished) {
             setTimeout(() => {
               setIsRacing(false);
-              setTimeout(() => setShowWinners(true), 1000);
-            }, 500);
+              setTimeout(() => {
+                setShowWinners(true);
+                if (onComplete) onComplete();
+              }, 1000);
+            }, 800);
           }
 
           return next;
@@ -59,7 +73,7 @@ export default function RaffleAnimation({ entries, winners, onComplete }: Raffle
 
       return () => clearInterval(interval);
     }
-  }, [isRacing, duckPositions.length]);
+  }, [isRacing, duckPositions.length, onComplete]);
 
   return (
     <div ref={containerRef} className="relative w-full max-w-2xl mx-auto aspect-[21/9] bg-blue-600 rounded-3xl border-4 border-blue-400/30 overflow-hidden shadow-2xl shadow-blue-500/10">
@@ -96,10 +110,27 @@ export default function RaffleAnimation({ entries, winners, onComplete }: Raffle
                   top: `${duck.offsetY}px`,
                   zIndex: duck.isWinner ? 10 : 1
                 }}
+                animate={{
+                  y: [0, -8, 0],
+                }}
+                transition={{
+                  duration: duck.bobDuration,
+                  repeat: Infinity,
+                  ease: "easeInOut",
+                  delay: duck.bobDelay
+                }}
                 className="absolute flex flex-col items-center gap-1 -translate-x-1/2 transition-all duration-50 ease-linear"
               >
-                <div className="text-2xl filter drop-shadow-md">
-                  {duck.isWinner ? '👑' : '🦆'}
+                <div className="text-2xl filter drop-shadow-md relative">
+                  {/* Show crown only if finished and is winner */}
+                  {(duck.progress >= 100 && duck.isWinner) ? '👑' : '🦆'}
+                  
+                  {/* Small wake effect */}
+                  <motion.div 
+                    animate={{ scale: [1, 1.5], opacity: [0.5, 0] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                    className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-1 bg-white/30 rounded-full blur-[2px]"
+                  />
                 </div>
                 <div className="bg-black/50 backdrop-blur-sm px-2 py-0.5 rounded text-[8px] font-bold text-white whitespace-nowrap border border-white/10">
                   {duck.ign}

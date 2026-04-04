@@ -248,11 +248,13 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
           };
           setSettings(newSettings);
           
-          if (newSettings.discordGuildId) {
+          if (newSettings.discordGuildId || newSettings.discordAnnouncementsChannelId || newSettings.discordAbsenceChannelId) {
             setIsDiscordConnected(true);
-            setSelectedGuildId(newSettings.discordGuildId);
-            fetchGuildInfo(newSettings.discordGuildId);
-            fetchChannels(newSettings.discordGuildId, newSettings);
+            if (newSettings.discordGuildId) {
+              setSelectedGuildId(newSettings.discordGuildId);
+              fetchGuildInfo(newSettings.discordGuildId);
+              fetchChannels(newSettings.discordGuildId, newSettings);
+            }
           }
         }
       } catch (error) {
@@ -528,13 +530,32 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                         <Check className="w-4 h-4" />
                         Discord Connected
                       </div>
-                      <button 
-                        type="button"
-                        onClick={handleDisconnect}
-                        className="text-[10px] text-zinc-500 hover:text-zinc-300 underline"
-                      >
-                        Disconnect
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button 
+                          type="button"
+                          onClick={() => {
+                            if (selectedGuildId) fetchChannels(selectedGuildId);
+                            // If we have a token in localStorage from a previous OAuth, we could try to re-fetch guilds
+                            const stored = localStorage.getItem('discord_auth_result');
+                            if (stored) {
+                              try {
+                                const data = JSON.parse(stored);
+                                if (data.accessToken) fetchGuilds(data.accessToken);
+                              } catch (e) {}
+                            }
+                          }}
+                          className="text-[10px] text-orange-500 hover:text-orange-400 underline font-bold"
+                        >
+                          Refresh
+                        </button>
+                        <button 
+                          type="button"
+                          onClick={handleDisconnect}
+                          className="text-[10px] text-zinc-500 hover:text-zinc-300 underline"
+                        >
+                          Disconnect
+                        </button>
+                      </div>
                     </div>
 
                     {fetchingGuilds ? (

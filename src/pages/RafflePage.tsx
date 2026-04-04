@@ -14,8 +14,12 @@ export default function RafflePage() {
   const [joining, setJoining] = useState(false);
   const [drawing, setDrawing] = useState(false);
   const [showAnimation, setShowAnimation] = useState(false);
+  const [isAnimationRunning, setIsAnimationRunning] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [lastWinners, setLastWinners] = useState<any[]>([]);
+  const [testEntries, setTestEntries] = useState<any[]>([]);
+  const [testWinners, setTestWinners] = useState<any[]>([]);
+  const [isTest, setIsTest] = useState(false);
   const [tick, setTick] = useState(0);
 
   const isRaffleLocked = () => {
@@ -97,7 +101,9 @@ export default function RafflePage() {
       const result = await fetchAPI('/api/raffle/draw', { method: 'POST' });
       console.log('[RafflePage] Draw result:', result);
       setLastWinners(result.winners);
+      setIsTest(false);
       setShowAnimation(true);
+      setIsAnimationRunning(true);
       await loadData();
     } catch (err: any) {
       console.error('[RafflePage] Draw error:', err);
@@ -153,6 +159,32 @@ export default function RafflePage() {
     }
   };
 
+  const handleTestAnimation = () => {
+    // Generate 10 fake entries
+    const fakeEntries = [
+      { id: 't1', ign: 'DuckMaster' },
+      { id: 't2', ign: 'QuackQuack' },
+      { id: 't3', ign: 'PekingDuck' },
+      { id: 't4', ign: 'Donald' },
+      { id: 't5', ign: 'Daffy' },
+      { id: 't6', ign: 'Howard' },
+      { id: 't7', ign: 'Darkwing' },
+      { id: 't8', ign: 'Scrooge' },
+      { id: 't9', ign: 'Launchpad' },
+      { id: 't10', ign: 'Webby' },
+    ];
+    
+    // Select 2 random winners
+    const shuffled = [...fakeEntries].sort(() => 0.5 - Math.random());
+    const winners = shuffled.slice(0, 2);
+    
+    setTestEntries(fakeEntries);
+    setTestWinners(winners);
+    setIsTest(true);
+    setShowAnimation(true);
+    setIsAnimationRunning(true);
+  };
+
   if (loading) return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
       <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
@@ -162,7 +194,13 @@ export default function RafflePage() {
   const currentMonthWinners = (raffle.winners || []).filter((w: any) => 
     w.month === raffle.settings.currentMonth && 
     w.year === raffle.settings.currentYear
-  );
+  ).filter((w: any) => {
+    // If animation is running, don't show the latest winners yet
+    if (isAnimationRunning && !isTest && lastWinners.some(lw => lw.id === w.memberId)) {
+      return false;
+    }
+    return true;
+  });
 
   const winnersByWeek = currentMonthWinners.reduce((acc: any, winner: any) => {
     if (!acc[winner.week]) acc[winner.week] = [];
@@ -342,19 +380,24 @@ export default function RafflePage() {
           <div className="lg:col-span-2 space-y-6">
             
             {/* Animation Section */}
-            {showAnimation && lastWinners.length > 0 && (
+            {showAnimation && (isTest ? testWinners.length > 0 : lastWinners.length > 0) && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 className="space-y-4"
               >
                 <RaffleAnimation 
-                  entries={currentWeekEntries} 
-                  winners={lastWinners} 
+                  entries={isTest ? testEntries : currentWeekEntries} 
+                  winners={isTest ? testWinners : lastWinners} 
+                  onComplete={() => setIsAnimationRunning(false)}
                 />
                 <div className="flex justify-center">
                   <button
-                    onClick={() => setShowAnimation(false)}
+                    onClick={() => {
+                      setShowAnimation(false);
+                      setIsTest(false);
+                      setIsAnimationRunning(false);
+                    }}
                     className="text-sm text-zinc-500 hover:text-zinc-300 flex items-center gap-2"
                   >
                     <X className="w-4 h-4" />
@@ -518,6 +561,13 @@ export default function RafflePage() {
                   >
                     <RotateCcw className="w-4 h-4" />
                     Reset / Set Week
+                  </button>
+                  <button
+                    onClick={handleTestAnimation}
+                    className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold px-4 py-2 rounded-xl border border-zinc-700 transition-all"
+                  >
+                    <Sparkles className="w-4 h-4 text-orange-500" />
+                    Test Animation
                   </button>
                   <button
                     onClick={async () => {
