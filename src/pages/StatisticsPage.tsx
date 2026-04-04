@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
 import { fetchAPI } from '../lib/api';
 import { Member, Job } from '../types';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { BarChart3, Users, Briefcase, Loader2, PieChart as PieChartIcon, X } from 'lucide-react';
+import { 
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid 
+} from 'recharts';
+import { BarChart3, Users, Briefcase, Loader2, PieChart as PieChartIcon, X, TrendingUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 const COLORS = ['#f97316', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#f59e0b', '#06b6d4', '#14b8a6', '#6366f1'];
@@ -117,86 +120,148 @@ export default function StatisticsPage({ isAdmin = false }: StatisticsPageProps)
         </motion.div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Pie Chart */}
+      <div className="grid grid-cols-1 gap-8">
+        {/* Main Bar Chart */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-xl min-h-[400px]"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-xl"
         >
-          <h2 className="text-xl font-bold text-white mb-8 flex items-center gap-2">
-            <PieChartIcon className="w-5 h-5 text-orange-500" />
-            Class Distribution
-          </h2>
-          <div className="h-[300px] w-full">
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-orange-500" />
+              Class Distribution Breakdown
+            </h2>
+            <div className="text-xs text-zinc-500 font-medium px-3 py-1 bg-zinc-800 rounded-full border border-zinc-700">
+              {pieData.length} Active Classes
+            </div>
+          </div>
+          <div className="h-[400px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
-                  dataKey="count"
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              <BarChart
+                data={pieData}
+                layout="vertical"
+                margin={{ top: 5, right: 30, left: 40, bottom: 5 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
+                <XAxis type="number" hide />
+                <YAxis 
+                  dataKey="name" 
+                  type="category" 
+                  stroke="#71717a" 
+                  fontSize={12} 
+                  tickLine={false}
+                  axisLine={false}
+                  width={100}
+                />
+                <Tooltip
+                  cursor={{ fill: '#27272a', opacity: 0.4 }}
+                  contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px', color: '#fff' }}
+                  itemStyle={{ color: '#fff' }}
+                  formatter={(value: number) => [`${value} Members`, 'Count']}
+                />
+                <Bar 
+                  dataKey="count" 
+                  radius={[0, 4, 4, 0]}
+                  barSize={24}
+                  onClick={(data) => handleJobClick(data.name)}
+                  className="cursor-pointer"
                 >
                   {pieData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px', color: '#fff' }}
-                  itemStyle={{ color: '#fff' }}
-                />
-                <Legend verticalAlign="bottom" height={36}/>
-              </PieChart>
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </motion.div>
 
-        {/* List View */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.1 }}
-          className="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-xl"
-        >
-          <h2 className="text-xl font-bold text-white mb-8 flex items-center gap-2">
-            <Users className="w-5 h-5 text-orange-500" />
-            Member Counts by Job
-          </h2>
-          <div className="space-y-4 max-h-[300px] overflow-auto pr-2 custom-scrollbar">
-            {jobStats.map((stat, index) => (
-              <button 
-                key={stat.name} 
-                onClick={() => handleJobClick(stat.name)}
-                className="w-full flex items-center justify-between p-3 bg-zinc-800/50 rounded-xl border border-zinc-800 group hover:border-orange-500/50 hover:bg-zinc-800 transition-all text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <div 
-                    className="w-2 h-2 rounded-full" 
-                    style={{ backgroundColor: COLORS[index % COLORS.length] }} 
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          {/* Donut Chart */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-xl"
+          >
+            <h2 className="text-xl font-bold text-white mb-8 flex items-center gap-2">
+              <PieChartIcon className="w-5 h-5 text-orange-500" />
+              Composition Overview
+            </h2>
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={70}
+                    outerRadius={100}
+                    paddingAngle={8}
+                    dataKey="count"
+                    stroke="none"
+                  >
+                    {pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px', color: '#fff' }}
+                    itemStyle={{ color: '#fff' }}
                   />
-                  <span className="font-bold text-zinc-200 group-hover:text-white transition-colors">{stat.name}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-xs text-zinc-500 font-mono">
-                    {totalMembers > 0 ? ((stat.count / totalMembers) * 100).toFixed(1) : 0}%
+                  <Legend 
+                    verticalAlign="bottom" 
+                    height={36}
+                    iconType="circle"
+                    formatter={(value) => <span className="text-xs text-zinc-400">{value}</span>}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </motion.div>
+
+          {/* List View */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.1 }}
+            className="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-xl"
+          >
+            <h2 className="text-xl font-bold text-white mb-8 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-orange-500" />
+              Detailed Statistics
+            </h2>
+            <div className="space-y-3 max-h-[300px] overflow-auto pr-2 custom-scrollbar">
+              {jobStats.map((stat, index) => (
+                <button 
+                  key={stat.name} 
+                  onClick={() => handleJobClick(stat.name)}
+                  className="w-full flex items-center justify-between p-4 bg-zinc-800/30 rounded-xl border border-zinc-800 group hover:border-orange-500/50 hover:bg-zinc-800/50 transition-all text-left"
+                >
+                  <div className="flex items-center gap-4">
+                    <div 
+                      className="w-3 h-3 rounded-full shadow-lg shadow-black/20" 
+                      style={{ backgroundColor: COLORS[index % COLORS.length] }} 
+                    />
+                    <div>
+                      <span className="font-bold text-zinc-200 group-hover:text-white transition-colors block leading-none">{stat.name}</span>
+                      <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-widest mt-1 block">
+                        {totalMembers > 0 ? ((stat.count / totalMembers) * 100).toFixed(1) : 0}% of Guild
+                      </span>
+                    </div>
                   </div>
-                  <div className="bg-zinc-900 px-3 py-1 rounded-lg text-orange-500 font-bold border border-zinc-800 shadow-inner group-hover:border-orange-500/30 transition-colors">
+                  <div className="bg-zinc-900 px-4 py-2 rounded-xl text-orange-500 font-bold border border-zinc-800 shadow-inner group-hover:border-orange-500/30 transition-colors">
                     {stat.count}
                   </div>
+                </button>
+              ))}
+              {jobStats.length === 0 && (
+                <div className="text-center py-12 text-zinc-500 italic">
+                  No jobs defined yet.
                 </div>
-              </button>
-            ))}
-            {jobStats.length === 0 && (
-              <div className="text-center py-12 text-zinc-500 italic">
-                No jobs defined yet.
-              </div>
-            )}
-          </div>
-        </motion.div>
+              )}
+            </div>
+          </motion.div>
+        </div>
       </div>
 
       {/* Member List Modal */}

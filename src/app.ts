@@ -72,7 +72,8 @@ export function createApp() {
       env: {
         isVercel,
         hasSupabase: !!hasSupabase,
-        nodeEnv: process.env.NODE_ENV
+        nodeEnv: process.env.NODE_ENV,
+        hasDiscord: !!(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET && process.env.DISCORD_BOT_TOKEN)
       }
     });
   }));

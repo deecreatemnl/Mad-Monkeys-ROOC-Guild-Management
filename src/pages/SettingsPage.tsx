@@ -32,6 +32,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
   const [uploading, setUploading] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isDiscordConnected, setIsDiscordConnected] = useState(false);
+  const [isDiscordConfigured, setIsDiscordConfigured] = useState(true);
   const [guilds, setGuilds] = useState<any[]>([]);
   const [channels, setChannels] = useState<any[]>([]);
   const [selectedGuildId, setSelectedGuildId] = useState('');
@@ -181,7 +182,15 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const data = await fetchAPI('/api/settings/guild_settings');
+        const [data, health] = await Promise.all([
+          fetchAPI('/api/settings/guild_settings'),
+          fetchAPI('/api/health')
+        ]);
+        
+        if (health && health.env) {
+          setIsDiscordConfigured(health.env.hasDiscord);
+        }
+
         if (data && Object.keys(data).length > 0) {
           const newSettings = {
             name: data.name || '',
@@ -431,17 +440,41 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
             </div>
 
             <div className="space-y-6">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-orange-500" />
-                Discord Integration
+              <h2 className="text-lg font-bold text-white flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-orange-500" />
+                  Discord Integration
+                </div>
+                {!isDiscordConfigured && (
+                  <span className="text-[10px] bg-red-500/20 text-red-500 px-2 py-0.5 rounded-full border border-red-500/20">
+                    Not Configured
+                  </span>
+                )}
               </h2>
 
               <div className="space-y-4">
+                {!isDiscordConfigured && (
+                  <div className="p-4 bg-red-500/5 border border-red-500/20 rounded-xl space-y-2">
+                    <div className="flex items-center gap-2 text-red-500 text-xs font-bold">
+                      <AlertTriangle className="w-4 h-4" />
+                      Missing Environment Variables
+                    </div>
+                    <p className="text-[10px] text-zinc-500 leading-relaxed">
+                      To enable Discord integration, you must set the following environment variables in your Vercel project settings:
+                    </p>
+                    <ul className="text-[10px] font-mono text-zinc-400 list-disc list-inside space-y-1">
+                      <li>DISCORD_CLIENT_ID</li>
+                      <li>DISCORD_CLIENT_SECRET</li>
+                      <li>DISCORD_BOT_TOKEN</li>
+                    </ul>
+                  </div>
+                )}
                 {!isDiscordConnected ? (
                   <button
                     type="button"
                     onClick={handleDiscordConnect}
-                    className="w-full flex items-center justify-center gap-2 bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold py-3 px-6 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-[#5865F2]/20"
+                    disabled={!isDiscordConfigured}
+                    className="w-full flex items-center justify-center gap-2 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 disabled:grayscale text-white font-bold py-3 px-6 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-[#5865F2]/20"
                   >
                     <MessageSquare className="w-5 h-5" />
                     Connect Discord Server
