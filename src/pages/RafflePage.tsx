@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, Sparkles, UserPlus, Calendar, ChevronRight, History, Settings, Play, RotateCcw, Check, X, ArrowLeft, Clock, Trash2 } from 'lucide-react';
+import { Trophy, Sparkles, UserPlus, UserMinus, Calendar, ChevronRight, History, Settings, Play, RotateCcw, Check, X, ArrowLeft, Clock, Trash2, RefreshCw, ShieldAlert, Edit2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { fetchAPI } from '../lib/api';
 import RaffleAnimation from '../components/RaffleAnimation';
@@ -16,12 +16,20 @@ export default function RafflePage() {
   const [showAnimation, setShowAnimation] = useState(false);
   const [isAnimationRunning, setIsAnimationRunning] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [lastWinners, setLastWinners] = useState<any[]>([]);
   const [testEntries, setTestEntries] = useState<any[]>([]);
   const [testWinners, setTestWinners] = useState<any[]>([]);
   const [isTest, setIsTest] = useState(false);
   const [revealedWinners, setRevealedWinners] = useState<any[]>([]);
   const [tick, setTick] = useState(0);
+  const [isEditingHeader, setIsEditingHeader] = useState(false);
+  const [headerSettings, setHeaderSettings] = useState({
+    title: 'GUILD <span class="text-orange-500">RAFFLE</span>',
+    description: 'Join the weekly raffle for a chance to bid on puppet card fragments. Two winners are selected every week! A total of 20 puppet card fragments which means it\'s 10 fragments to buy for each player weekly!',
+    clockText: 'Raffle draw starts at 10pm Sunday Philippine Standard Time',
+    sparkleText: 'Weekly Card Bidding Raffle'
+  });
 
   const isRaffleLocked = () => {
     const now = new Date();
@@ -37,6 +45,12 @@ export default function RafflePage() {
     return false;
   };
 
+  const [isRestrictedModalOpen, setIsRestrictedModalOpen] = useState(false);
+  const [restrictedMemberIds, setRestrictedMemberIds] = useState<string[]>([]);
+  const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
+  const [overrideWinnerId, setOverrideWinnerId] = useState<string | null>(null);
+  const [overrideMemberId, setOverrideMemberId] = useState('');
+
   const loadData = async () => {
     try {
       const [raffleData, membersData] = await Promise.all([
@@ -45,17 +59,36 @@ export default function RafflePage() {
       ]);
       setRaffle(raffleData);
       setMembers(membersData);
+      setRestrictedMemberIds(raffleData.settings.restrictedMemberIds || []);
+      
+      if (raffleData.settings.header) {
+        setHeaderSettings(prev => ({ ...prev, ...raffleData.settings.header }));
+      }
       
       // Check if current user is admin
       const storedUser = localStorage.getItem('user');
       if (storedUser) {
         const user = JSON.parse(storedUser);
         setIsAdmin(user.role === 'admin' || user.role === 'superadmin');
+        setIsSuperAdmin(user.role === 'superadmin');
       }
     } catch (err) {
       console.error('Failed to load raffle data:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveHeader = async () => {
+    try {
+      await fetchAPI('/api/raffle/settings', {
+        method: 'POST',
+        body: JSON.stringify({ header: headerSettings })
+      });
+      setIsEditingHeader(false);
+      await loadData();
+    } catch (err: any) {
+      alert('Failed to save header settings: ' + err.message);
     }
   };
 
@@ -190,6 +223,60 @@ export default function RafflePage() {
     setIsAnimationRunning(true);
   };
 
+  const handleReroll = async (winnerId: string) => {
+    if (!confirm('Are you sure you want to reroll this winner?')) return;
+    try {
+      const result = await fetchAPI('/api/raffle/reroll', {
+        method: 'POST',
+        body: JSON.stringify({ winnerId })
+      });
+      alert('Winner rerolled successfully!');
+      await loadData();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleOverride = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!overrideWinnerId || !overrideMemberId) return;
+    try {
+      await fetchAPI('/api/raffle/override', {
+        method: 'POST',
+        body: JSON.stringify({ winnerId: overrideWinnerId, newMemberId: overrideMemberId })
+      });
+      alert('Winner overridden successfully!');
+      setIsOverrideModalOpen(false);
+      setOverrideWinnerId(null);
+      setOverrideMemberId('');
+      await loadData();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleUpdateRestrictions = async () => {
+    try {
+      await fetchAPI('/api/raffle/settings', {
+        method: 'POST',
+        body: JSON.stringify({ restrictedMemberIds })
+      });
+      alert('Restrictions updated successfully!');
+      setIsRestrictedModalOpen(false);
+      await loadData();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const toggleRestriction = (memberId: string) => {
+    setRestrictedMemberIds(prev => 
+      prev.includes(memberId) 
+        ? prev.filter(id => id !== memberId) 
+        : [...prev, memberId]
+    );
+  };
+
   if (loading) return (
     <div className="min-h-screen bg-zinc-950 flex items-center justify-center">
       <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
@@ -303,23 +390,22 @@ export default function RafflePage() {
             className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-orange-500/10 border border-orange-500/20 text-orange-500 text-xs font-bold uppercase tracking-widest mb-4"
           >
             <Sparkles className="w-3 h-3" />
-            Weekly Card Bidding Raffle
+            {headerSettings.sparkleText}
           </motion.div>
           <motion.h1 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
             className="text-4xl md:text-6xl font-black tracking-tighter italic mb-4"
-          >
-            GUILD <span className="text-orange-500">RAFFLE</span>
-          </motion.h1>
+            dangerouslySetInnerHTML={{ __html: headerSettings.title }}
+          />
           <motion.p
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
             className="text-zinc-300 text-lg font-medium leading-relaxed"
           >
-            Join the weekly raffle for a chance to bid on puppet card fragments. Two winners are selected every week! A total of 20 puppet card fragments which means it's 10 fragments to buy for each player weekly!
+            {headerSettings.description}
           </motion.p>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -328,7 +414,7 @@ export default function RafflePage() {
             className="mt-8 flex items-center justify-center gap-2 text-orange-500 font-bold text-base bg-orange-500/10 py-3 px-6 rounded-2xl border border-orange-500/20 shadow-lg shadow-orange-500/10"
           >
             <Clock className="w-5 h-5" />
-            Raffle draw starts at 10pm Sunday Philippine Standard Time
+            {headerSettings.clockText}
           </motion.div>
         </div>
       </div>
@@ -371,7 +457,30 @@ export default function RafflePage() {
                               <div className="w-8 h-8 rounded-full bg-yellow-500/10 flex items-center justify-center">
                                 <Trophy className="w-4 h-4 text-yellow-500" />
                               </div>
-                              <span className="font-bold text-sm">{winner.ign}</span>
+                              <span className="font-bold text-sm flex-1">{winner.ign}</span>
+                              {isAdmin && raffle.settings.currentWeek === week && (
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    onClick={() => handleReroll(winner.id)}
+                                    className="p-1.5 text-zinc-500 hover:text-orange-500 transition-colors"
+                                    title="Reroll Winner"
+                                  >
+                                    <RefreshCw className="w-3.5 h-3.5" />
+                                  </button>
+                                  {isSuperAdmin && (
+                                    <button
+                                      onClick={() => {
+                                        setOverrideWinnerId(winner.id);
+                                        setIsOverrideModalOpen(true);
+                                      }}
+                                      className="p-1.5 text-zinc-500 hover:text-blue-500 transition-colors"
+                                      title="Superadmin Override"
+                                    >
+                                      <ShieldAlert className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           ))
                         ) : (
@@ -402,6 +511,11 @@ export default function RafflePage() {
                     setRevealedWinners(prev => [...prev, winner]);
                   }}
                   onComplete={() => setIsAnimationRunning(false)}
+                  onClose={() => {
+                    setShowAnimation(false);
+                    setIsTest(false);
+                    setIsAnimationRunning(false);
+                  }}
                 />
                 <div className="flex justify-center">
                   <button
@@ -568,6 +682,14 @@ export default function RafflePage() {
                 </h2>
                 <div className="flex flex-wrap gap-4">
                   <button
+                    onClick={() => setIsEditingHeader(true)}
+                    className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold px-4 py-2 rounded-xl border border-zinc-700 transition-all"
+                  >
+                    <Edit2 className="w-4 h-4 text-blue-500" />
+                    Edit Header Text
+                  </button>
+
+                  <button
                     onClick={handleReset}
                     className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold px-4 py-2 rounded-xl border border-zinc-700 transition-all"
                   >
@@ -580,6 +702,14 @@ export default function RafflePage() {
                   >
                     <Sparkles className="w-4 h-4 text-orange-500" />
                     Test Animation
+                  </button>
+
+                  <button
+                    onClick={() => setIsRestrictedModalOpen(true)}
+                    className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold px-4 py-2 rounded-xl border border-zinc-700 transition-all"
+                  >
+                    <UserMinus className="w-4 h-4 text-red-500" />
+                    Monthly Restrictions
                   </button>
 
                   <button
@@ -607,6 +737,232 @@ export default function RafflePage() {
           </div>
         </div>
       </div>
+      {/* Header Edit Modal */}
+      <AnimatePresence>
+        {isEditingHeader && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsEditingHeader(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-3xl p-8 shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-8">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500">
+                    <Edit2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Edit Raffle Header</h2>
+                    <p className="text-xs text-zinc-500 uppercase font-bold tracking-widest mt-1">Customize the top section text</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setIsEditingHeader(false)}
+                  className="p-2 hover:bg-zinc-800 rounded-xl transition-colors text-zinc-400 hover:text-white"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Sparkle Badge Text</label>
+                  <input
+                    type="text"
+                    value={headerSettings.sparkleText}
+                    onChange={(e) => setHeaderSettings({ ...headerSettings, sparkleText: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500 transition-colors"
+                    placeholder="e.g. Weekly Card Bidding Raffle"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Main Title (HTML allowed)</label>
+                  <input
+                    type="text"
+                    value={headerSettings.title}
+                    onChange={(e) => setHeaderSettings({ ...headerSettings, title: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500 transition-colors"
+                    placeholder='e.g. GUILD <span class="text-orange-500">RAFFLE</span>'
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Description Text</label>
+                  <textarea
+                    value={headerSettings.description}
+                    onChange={(e) => setHeaderSettings({ ...headerSettings, description: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500 transition-colors h-32 resize-none"
+                    placeholder="Describe the raffle..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">Clock/Schedule Text</label>
+                  <input
+                    type="text"
+                    value={headerSettings.clockText}
+                    onChange={(e) => setHeaderSettings({ ...headerSettings, clockText: e.target.value })}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-orange-500 transition-colors"
+                    placeholder="e.g. Raffle draw starts at 10pm Sunday..."
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={() => setIsEditingHeader(false)}
+                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-4 rounded-2xl transition-all active:scale-95"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveHeader}
+                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-bold py-4 rounded-2xl transition-all active:scale-95 shadow-lg shadow-orange-500/20"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Monthly Restrictions Modal */}
+      <AnimatePresence>
+        {isRestrictedModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsRestrictedModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl"
+            >
+              <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-bold">Monthly Restrictions</h2>
+                  <p className="text-zinc-500 text-sm">Select members to disallow from entering the raffle this month</p>
+                </div>
+                <button onClick={() => setIsRestrictedModalOpen(false)} className="p-2 hover:bg-zinc-800 rounded-full transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-6 max-h-[60vh] overflow-y-auto">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {members.sort((a, b) => a.ign.localeCompare(b.ign)).map(member => (
+                    <button
+                      key={member.id}
+                      onClick={() => toggleRestriction(member.id)}
+                      className={cn(
+                        "flex items-center justify-between p-3 rounded-xl border transition-all text-left",
+                        restrictedMemberIds.includes(member.id)
+                          ? "bg-red-500/10 border-red-500/50 text-red-500"
+                          : "bg-zinc-800/50 border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                      )}
+                    >
+                      <span className="font-bold text-sm">{member.ign}</span>
+                      {restrictedMemberIds.includes(member.id) && <Check className="w-4 h-4" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-6 bg-zinc-950/50 border-t border-zinc-800 flex justify-end gap-3">
+                <button
+                  onClick={() => setIsRestrictedModalOpen(false)}
+                  className="px-6 py-2 rounded-xl text-sm font-bold text-zinc-400 hover:text-white transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateRestrictions}
+                  className="px-6 py-2 rounded-xl text-sm font-bold bg-orange-500 hover:bg-orange-600 text-white transition-all shadow-lg shadow-orange-500/20"
+                >
+                  Save Restrictions
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Superadmin Override Modal */}
+      <AnimatePresence>
+        {isOverrideModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsOverrideModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl"
+            >
+              <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
+                <h2 className="text-xl font-bold">Superadmin Override</h2>
+                <button onClick={() => setIsOverrideModalOpen(false)} className="p-2 hover:bg-zinc-800 rounded-full transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <form onSubmit={handleOverride} className="p-6 space-y-4">
+                <p className="text-zinc-400 text-sm">Select a member who has an entry for this week to override the current winner.</p>
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Select New Winner</label>
+                  <select
+                    required
+                    value={overrideMemberId}
+                    onChange={(e) => setOverrideMemberId(e.target.value)}
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-white outline-none focus:ring-2 focus:ring-blue-500/50"
+                  >
+                    <option value="">Select Member</option>
+                    {currentWeekEntries.map((entry: any) => (
+                      <option key={entry.memberId} value={entry.memberId}>{entry.ign}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="pt-4 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsOverrideModalOpen(false)}
+                    className="px-6 py-2 rounded-xl text-sm font-bold text-zinc-400 hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2 rounded-xl text-sm font-bold bg-blue-500 hover:bg-blue-600 text-white transition-all shadow-lg shadow-blue-500/20"
+                  >
+                    Confirm Override
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

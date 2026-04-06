@@ -7,9 +7,10 @@ interface RaffleAnimationProps {
   winners: any[];
   onWinnerRevealed?: (winner: any) => void;
   onComplete?: () => void;
+  onClose?: () => void;
 }
 
-export default function RaffleAnimation({ entries, winners, onWinnerRevealed, onComplete }: RaffleAnimationProps) {
+export default function RaffleAnimation({ entries, winners, onWinnerRevealed, onComplete, onClose }: RaffleAnimationProps) {
   const [round, setRound] = useState(1);
   const [isSpinning, setIsSpinning] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -286,7 +287,7 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 1 }}
-              onClick={onComplete}
+              onClick={onClose || onComplete}
               className="mt-12 text-zinc-500 hover:text-white text-sm font-bold uppercase tracking-widest transition-colors"
             >
               Close Results

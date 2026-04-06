@@ -112,11 +112,11 @@ export class FileDatabase implements Database {
     try {
       if (fs.existsSync(DB_FILE)) {
         const data = fs.readFileSync(DB_FILE, "utf-8");
-        return JSON.parse(data);
+        return ensureDataIntegrity(JSON.parse(data));
       }
-      return initialDb;
+      return ensureDataIntegrity(initialDb);
     } catch (e) {
-      return initialDb;
+      return ensureDataIntegrity(initialDb);
     }
   }
 
@@ -193,6 +193,7 @@ export class FileDatabase implements Database {
   }
 
   async saveEvent(event: any) {
+    console.log("Saving event:", event.id, "Schedule:", event.schedule);
     const data = await this.get();
     const index = data.events.findIndex((e: any) => e.id === event.id);
     if (index !== -1) data.events[index] = event;
@@ -506,16 +507,77 @@ export class SupabaseDatabase implements Database {
         }
         return [];
       }
-      return data || [];
+      return (data || []).map((event: any) => ({
+        ...event,
+        schedule: Array.isArray(event.schedule) ? event.schedule : [],
+        absences: Array.isArray(event.absences) ? event.absences : []
+      }));
     } catch (e: any) {
       console.error("Supabase Exception in getEvents():", e.message);
       return [];
     }
   }
 
+  /**
+   * Saves an event to Supabase.
+   * NOTE: If you are using Supabase, you MUST add 'schedule' and 'absences' columns to your 'events' table.
+   * Run this SQL in your Supabase SQL Editor:
+   * 
+   * ALTER TABLE events ADD COLUMN IF NOT EXISTS schedule JSONB DEFAULT '[]'::jsonb;
+   * ALTER TABLE events ADD COLUMN IF NOT EXISTS absences JSONB DEFAULT '[]'::jsonb;
+   */
   async saveEvent(event: any) {
-    const { error } = await this.supabase.from('events').upsert(event);
-    if (error) console.error("Supabase Save Event Error:", error.message);
+    try {
+      const { error } = await this.supabase.from('events').upsert(event);
+      if (error) {
+        // If the error is about a missing column, try saving without the problematic fields
+        if (error.message.includes("Could not find the 'schedule' column") || 
+            error.message.includes("Could not find the 'absences' column")) {
+          
+          console.warn(`Supabase Warning: Missing column in 'events' table. Retrying without missing fields.`);
+          
+          const eventToSave = { ...event };
+          if (error.message.includes("Could not find the 'schedule' column")) {
+            delete eventToSave.schedule;
+          }
+          if (error.message.includes("Could not find the 'absences' column")) {
+            delete eventToSave.absences;
+          }
+
+          const { error: retryError } = await this.supabase.from('events').upsert(eventToSave);
+          if (retryError) {
+            // If it fails again, it might be the OTHER column missing
+            if (retryError.message.includes("Could not find the 'schedule' column") || 
+                retryError.message.includes("Could not find the 'absences' column")) {
+              
+              const finalEventToSave = { ...eventToSave };
+              if (retryError.message.includes("Could not find the 'schedule' column")) {
+                delete finalEventToSave.schedule;
+              }
+              if (retryError.message.includes("Could not find the 'absences' column")) {
+                delete finalEventToSave.absences;
+              }
+              
+              const { error: finalRetryError } = await this.supabase.from('events').upsert(finalEventToSave);
+              if (finalRetryError) {
+                console.error("Supabase Final Retry Save Event Error:", finalRetryError.message);
+                throw new Error(`Failed to save event after final retry: ${finalRetryError.message}`);
+              }
+              return;
+            }
+            
+            console.error("Supabase Retry Save Event Error:", retryError.message);
+            throw new Error(`Failed to save event after retry: ${retryError.message}`);
+          }
+          return;
+        }
+        console.error("Supabase Save Event Error:", error.message, error.details, error.hint);
+        throw new Error(`Failed to save event: ${error.message}`);
+      }
+    } catch (e: any) {
+      console.error("Supabase Exception in saveEvent():", e.message);
+      throw e;
+    }
   }
 
   async deleteEvent(id: string) {
@@ -649,7 +711,11 @@ export class SupabaseDatabase implements Database {
   async getEventById(id: string) {
     const { data, error } = await this.supabase.from('events').select('*').eq('id', id).single();
     if (error) return null;
-    return data;
+    return {
+      ...data,
+      schedule: Array.isArray(data.schedule) ? data.schedule : [],
+      absences: Array.isArray(data.absences) ? data.absences : []
+    };
   }
 
   async getUserById(id: string) {
@@ -723,10 +789,18 @@ export class SupabaseDatabase implements Database {
 
 export const ensureDataIntegrity = (data: any) => {
   if (!data) return initialDb;
+  
+  // Ensure events have schedules and absences
+  const events = (data.events || initialDb.events).map((event: any) => ({
+    ...event,
+    schedule: Array.isArray(event.schedule) ? event.schedule : [],
+    absences: Array.isArray(event.absences) ? event.absences : []
+  }));
+
   return {
     users: data.users || initialDb.users,
     members: data.members || initialDb.members,
-    events: data.events || initialDb.events,
+    events,
     jobs: data.jobs || initialDb.jobs,
     settings: {
       guild_settings: {

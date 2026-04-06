@@ -8,11 +8,21 @@ export interface Member {
   discordId?: string;
 }
 
+export interface Absence {
+  memberId: string;
+  ign: string;
+  reason: string;
+  dates?: string[];
+  timestamp: string;
+}
+
 export interface GuildEvent {
   id?: string;
   name: string;
   description?: string;
   instructions?: string;
+  absences?: Absence[];
+  schedule?: number[]; // 0-6 for Sunday-Saturday
 }
 
 export interface SubEvent {

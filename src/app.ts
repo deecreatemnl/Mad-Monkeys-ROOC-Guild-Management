@@ -275,12 +275,14 @@ export function createApp() {
   }));
 
   app.post("/api/events", asyncHandler(async (req: any, res: any) => {
+    console.log("POST /api/events body:", req.body);
     const newEvent = { ...req.body, id: Date.now().toString(), subevents: [] };
     await db.saveEvent(newEvent);
     res.json(newEvent);
   }));
 
   app.put("/api/events/:id", asyncHandler(async (req: any, res: any) => {
+    console.log("PUT /api/events/:id body:", req.body);
     const event = await db.getEventById(req.params.id);
     if (event) {
       const updatedEvent = { ...event, ...req.body };
@@ -297,7 +299,7 @@ export function createApp() {
   }));
 
   app.post("/api/events/:eventId/absent", asyncHandler(async (req: any, res: any) => {
-    const { memberId, message } = req.body;
+    const { memberId, message, dates } = req.body;
     const eventId = req.params.eventId;
     const event = await db.getEventById(eventId);
     if (!event) return res.status(404).json({ error: "Event not found" });
@@ -314,7 +316,17 @@ export function createApp() {
           ...party,
           assignments: (party.assignments || []).filter((a: any) => a.memberId !== member.id)
         }))
-      }))
+      })),
+      absences: [
+        ...(event.absences || []).filter((a: any) => a.memberId !== member.id),
+        {
+          memberId: member.id,
+          ign: member.ign,
+          reason: message || 'No reason provided',
+          dates: dates || [],
+          timestamp: new Date().toISOString()
+        }
+      ]
     };
 
     await db.saveEvent(updatedEvent);
@@ -335,10 +347,36 @@ export function createApp() {
     }
 
     // Send message to Discord if configured
-    const discordMsg = `${dateStr}\n${timeStr}\n\n**${member.ign}** won't be able to attend **${event.name}** because of the following reasons\n${message || 'No reason provided'}`;
+    let dateRangeStr = '';
+    if (dates && dates.length > 0) {
+      dateRangeStr = `\n**Dates:** ${dates.join(', ')}`;
+    }
+
+    const discordMsg = `${dateStr}\n${timeStr}\n\n**${member.ign}** won't be able to attend **${event.name}** because of the following reasons\n${message || 'No reason provided'}${dateRangeStr}`;
     await sendDiscordMessage(discordMsg, 'absence');
 
     res.json({ success: true });
+  }));
+
+  app.delete("/api/events/:eventId/absent/:memberId", asyncHandler(async (req: any, res: any) => {
+    const { eventId, memberId } = req.params;
+    console.log(`[DELETE /api/events/${eventId}/absent/${memberId}] Request received`);
+    const event = await db.getEventById(eventId);
+    if (!event) {
+      console.error(`[DELETE /api/events/${eventId}/absent/${memberId}] Event not found`);
+      return res.status(404).json({ error: "Event not found" });
+    }
+
+    console.log(`[DELETE /api/events/${eventId}/absent/${memberId}] Current absences:`, event.absences);
+    const updatedEvent = {
+      ...event,
+      absences: (event.absences || []).filter((a: any) => a.memberId !== memberId)
+    };
+
+    console.log(`[DELETE /api/events/${eventId}/absent/${memberId}] Updated absences:`, updatedEvent.absences);
+    await db.saveEvent(updatedEvent);
+    console.log(`[DELETE /api/events/${eventId}/absent/${memberId}] Event saved successfully`);
+    res.json(updatedEvent);
   }));
 
   app.post("/api/events/:eventId/share-discord", asyncHandler(async (req: any, res: any) => {
@@ -686,22 +724,21 @@ export function createApp() {
 
   app.post("/api/raffle/draw", asyncHandler(async (req: any, res: any) => {
     const userRole = req.headers['user-role'];
-    console.log(`[Raffle Draw] Role: ${userRole}, Headers:`, req.headers);
     if (userRole !== 'admin' && userRole !== 'superadmin') {
       return res.status(403).json({ error: "Only admins can draw winners" });
     }
 
     const raffle = await db.getRaffle();
-    console.log(`[Raffle Draw] Raffle Settings:`, raffle.settings);
+    const restrictedIds = raffle.settings.restrictedMemberIds || [];
     
     const currentWeekEntries = (raffle.entries || []).filter((e: any) => {
       const match = Number(e.week) === Number(raffle.settings.currentWeek) &&
                   Number(e.month) === Number(raffle.settings.currentMonth) &&
                   Number(e.year) === Number(raffle.settings.currentYear);
-      return match;
+      const notRestricted = !restrictedIds.includes(e.memberId);
+      return match && notRestricted;
     });
 
-    console.log(`[Raffle Draw] Found ${currentWeekEntries.length} entries for current week.`);
     if (currentWeekEntries.length < 2) {
       return res.status(400).json({ error: "Not enough entries to draw 2 winners." });
     }
@@ -722,9 +759,99 @@ export function createApp() {
     raffle.winners.push(...winners);
     raffle.settings.isOpen = false; // Close raffle after draw
     
-    console.log(`[Raffle Draw] Success: ${winners.length} winners drawn.`);
     await db.saveRaffle(raffle);
     res.json({ success: true, winners });
+  }));
+
+  app.post("/api/raffle/reroll", asyncHandler(async (req: any, res: any) => {
+    const userRole = req.headers['user-role'];
+    if (userRole !== 'admin' && userRole !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can reroll winners" });
+    }
+
+    const { winnerId } = req.body;
+    const raffle = await db.getRaffle();
+    const restrictedIds = raffle.settings.restrictedMemberIds || [];
+
+    const winnerIndex = (raffle.winners || []).findIndex((w: any) => w.id === winnerId);
+    if (winnerIndex === -1) return res.status(404).json({ error: "Winner not found" });
+
+    const oldWinner = raffle.winners[winnerIndex];
+    
+    // Get current month winners to exclude them
+    const monthWinners = (raffle.winners || []).filter((w: any) => 
+      w.month === oldWinner.month && w.year === oldWinner.year && w.id !== winnerId
+    );
+    const monthWinnerIds = new Set(monthWinners.map((w: any) => w.memberId));
+
+    const currentWeekEntries = (raffle.entries || []).filter((e: any) => {
+      const match = Number(e.week) === Number(oldWinner.week) &&
+                  Number(e.month) === Number(oldWinner.month) &&
+                  Number(e.year) === Number(oldWinner.year);
+      const notAlreadyWinner = !monthWinnerIds.has(e.memberId);
+      const notRestricted = !restrictedIds.includes(e.memberId);
+      return match && notAlreadyWinner && notRestricted;
+    });
+
+    if (currentWeekEntries.length === 0) {
+      return res.status(400).json({ error: "No other entries available for reroll." });
+    }
+
+    const newWinnerEntry = currentWeekEntries[Math.floor(Math.random() * currentWeekEntries.length)];
+    const newWinner = {
+      ...oldWinner,
+      id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5),
+      memberId: newWinnerEntry.memberId,
+      ign: newWinnerEntry.ign,
+      timestamp: new Date().toISOString()
+    };
+
+    raffle.winners[winnerIndex] = newWinner;
+    await db.saveRaffle(raffle);
+    res.json({ success: true, winner: newWinner });
+  }));
+
+  app.post("/api/raffle/override", asyncHandler(async (req: any, res: any) => {
+    const userRole = req.headers['user-role'];
+    if (userRole !== 'superadmin') {
+      return res.status(403).json({ error: "Only superadmins can override winners" });
+    }
+
+    const { winnerId, newMemberId } = req.body;
+    const raffle = await db.getRaffle();
+    const members = await db.getMembers();
+    const newMember = members.find((m: any) => m.id === newMemberId);
+
+    if (!newMember) return res.status(404).json({ error: "Member not found" });
+
+    const winnerIndex = (raffle.winners || []).findIndex((w: any) => w.id === winnerId);
+    if (winnerIndex === -1) return res.status(404).json({ error: "Winner not found" });
+
+    const oldWinner = raffle.winners[winnerIndex];
+    
+    // Check if new member has an entry for that week
+    const hasEntry = (raffle.entries || []).some((e: any) => 
+      e.memberId === newMemberId && 
+      Number(e.week) === Number(oldWinner.week) &&
+      Number(e.month) === Number(oldWinner.month) &&
+      Number(e.year) === Number(oldWinner.year)
+    );
+
+    if (!hasEntry) {
+      return res.status(400).json({ error: "Member must have an entry for that week to be an override winner." });
+    }
+
+    const newWinner = {
+      ...oldWinner,
+      id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5),
+      memberId: newMemberId,
+      ign: newMember.ign,
+      timestamp: new Date().toISOString()
+    };
+
+    raffle.winners[winnerIndex] = newWinner;
+    await db.saveRaffle(raffle);
+    res.json({ success: true, winner: newWinner });
   }));
 
   app.post("/api/raffle/clear-entries", asyncHandler(async (req: any, res: any) => {
@@ -854,15 +981,16 @@ export function createApp() {
   app.get("/api/auth/discord/url", (req: any, res: any) => {
     const { origin } = req.query;
     const clientId = process.env.DISCORD_CLIENT_ID;
-    // Use consistent redirect URI construction
+    
     const protocol = req.headers['x-forwarded-proto'] || 'https';
     const host = req.get('host');
     const defaultRedirectUri = `${protocol}://${host}/auth/discord/callback`;
-    const redirectUri = process.env.APP_URL 
-      ? `${process.env.APP_URL}/auth/discord/callback` 
-      : (origin ? `${origin}/auth/discord/callback` : defaultRedirectUri);
+    const redirectUri = origin ? `${origin}/auth/discord/callback` : defaultRedirectUri;
     
-    console.log(`[Discord Auth URL] Origin: ${origin}, Host: ${host}, RedirectURI: ${redirectUri}`);
+    // Store origin in state to retrieve it in the callback
+    const state = origin ? Buffer.from(origin as string).toString('base64') : '';
+    
+    console.log(`[Discord Auth URL] Origin: ${origin}, Host: ${host}, RedirectURI: ${redirectUri}, State: ${state}`);
     
     if (!clientId) {
       return res.status(500).json({ error: "Discord Client ID not configured" });
@@ -873,7 +1001,8 @@ export function createApp() {
       redirect_uri: redirectUri,
       response_type: 'code',
       scope: 'identify guilds bot applications.commands',
-      permissions: '3088', // View Channels (1024) + Send Messages (2048) + Manage Channels (16)
+      permissions: '3088',
+      state: state
     });
 
     const authUrl = `https://discord.com/api/oauth2/authorize?${params.toString()}`;
@@ -892,26 +1021,39 @@ export function createApp() {
   });
 
   app.get("/auth/discord/callback", asyncHandler(async (req: any, res: any) => {
-    const { code, guild_id } = req.query;
+    const { code, guild_id, state } = req.query;
     if (!code) return res.status(400).send("Code missing");
 
     const clientId = process.env.DISCORD_CLIENT_ID;
     const clientSecret = process.env.DISCORD_CLIENT_SECRET;
     
-    // Reconstruct redirectUri consistently
+    // Retrieve origin from state
+    let origin = '';
+    if (state) {
+      try {
+        origin = Buffer.from(state as string, 'base64').toString('utf-8');
+      } catch (e) {
+        console.error("Failed to decode state:", e);
+      }
+    }
+
+    // Reconstruct redirectUri consistently using the origin from state if available
     const protocol = req.headers['x-forwarded-proto'] || 'https';
     const host = req.get('host');
-    const redirectUri = process.env.APP_URL 
-      ? `${process.env.APP_URL}/auth/discord/callback` 
-      : `${protocol}://${host}/auth/discord/callback`;
+    const defaultRedirectUri = `${protocol}://${host}/auth/discord/callback`;
+    const redirectUri = origin ? `${origin}/auth/discord/callback` : defaultRedirectUri;
 
-    console.log(`[Discord Callback] Code: ${code ? 'present' : 'missing'}, Host: ${host}, RedirectURI: ${redirectUri}`);
+    console.log(`[Discord Callback] Code: ${code ? 'present' : 'missing'}, Host: ${host}, RedirectURI: ${redirectUri}, Origin: ${origin}`);
 
     try {
+      if (!clientId || !clientSecret) {
+        throw new Error("Discord credentials not configured");
+      }
+
       // Exchange code for token
       const tokenResponse = await axios.post('https://discord.com/api/oauth2/token', new URLSearchParams({
-        client_id: clientId!,
-        client_secret: clientSecret!,
+        client_id: clientId,
+        client_secret: clientSecret,
         grant_type: 'authorization_code',
         code: code as string,
         redirect_uri: redirectUri,
@@ -927,18 +1069,21 @@ export function createApp() {
       });
 
       const discordUser = userResponse.data;
+      
+      const authData = { 
+        type: 'DISCORD_AUTH_SUCCESS', 
+        discordId: discordUser.id,
+        username: discordUser.username,
+        accessToken: access_token,
+        guildId: guild_id || ''
+      };
 
       res.send(`
         <html>
           <body>
             <script>
-              const authData = { 
-                type: 'DISCORD_AUTH_SUCCESS', 
-                discordId: '${discordUser.id}',
-                username: '${discordUser.username}',
-                accessToken: '${access_token}',
-                guildId: '${guild_id || ''}'
-              };
+              const authData = ${JSON.stringify(authData)};
+              authData.timestamp = Date.now();
               
               // Try postMessage to opener
               if (window.opener) {
@@ -950,16 +1095,13 @@ export function createApp() {
               }
               
               // Always store in localStorage as fallback for same-origin
-              localStorage.setItem('discord_auth_result', JSON.stringify({
-                ...authData,
-                timestamp: Date.now()
-              }));
+              localStorage.setItem('discord_auth_result', JSON.stringify(authData));
               
               // Close if it's a popup, otherwise redirect
               if (window.opener) {
                 setTimeout(() => window.close(), 1000);
               } else {
-                window.location.href = '/settings?discord_success=true';
+                window.location.href = '${origin || ''}/settings?discord_success=true';
               }
             </script>
             <p>Discord authentication successful. This window should close automatically.</p>
@@ -976,14 +1118,32 @@ export function createApp() {
     const accessToken = req.headers.authorization?.split(' ')[1];
     if (!accessToken) return res.status(401).json({ error: "Access token required" });
 
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) return res.status(500).json({ error: "Bot token not configured" });
+
     try {
-      const response = await axios.get('https://discord.com/api/users/@me/guilds', {
+      // Fetch user's guilds
+      const userGuildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
-      // Filter for guilds where user has MANAGE_GUILD (0x20) or is owner
-      const managedGuilds = response.data.filter((g: any) => (BigInt(g.permissions) & BigInt(0x20)) === BigInt(0x20) || g.owner);
+      
+      // Fetch bot's guilds
+      const botGuildsResponse = await axios.get('https://discord.com/api/users/@me/guilds', {
+        headers: { Authorization: `Bot ${botToken}` }
+      });
+
+      const botGuildIds = new Set(botGuildsResponse.data.map((g: any) => g.id));
+
+      // Filter for guilds where user has MANAGE_GUILD (0x20) or is owner AND the bot is present
+      const managedGuilds = userGuildsResponse.data.filter((g: any) => {
+        const hasPermission = (BigInt(g.permissions) & BigInt(0x20)) === BigInt(0x20) || g.owner;
+        const botPresent = botGuildIds.has(g.id);
+        return hasPermission && botPresent;
+      });
+
       res.json(managedGuilds);
     } catch (err: any) {
+      console.error("Failed to fetch guilds:", err.response?.data || err.message);
       res.status(500).json({ error: err.message });
     }
   }));

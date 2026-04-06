@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { fetchAPI } from '../lib/api';
 import { GuildEvent, Member, Assignment, Party, SubEvent, GuildSettings } from '../types';
-import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, ChevronDown, ChevronRight, Cross, Zap, Target, Skull, Hammer, FlaskConical, Music, Hand, UserMinus, Check, MessageSquare, Trophy } from 'lucide-react';
+import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, ChevronDown, ChevronRight, Cross, Zap, Target, Skull, Hammer, FlaskConical, Music, Hand, UserMinus, Check, MessageSquare, Trophy, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Link } from 'react-router-dom';
@@ -139,7 +139,51 @@ export default function PublicEventPage() {
   const [reportingAbsence, setReportingAbsence] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [absenceSuccess, setAbsenceSuccess] = useState(false);
+
   const [discordMessage, setDiscordMessage] = useState('');
+  const [selectedDates, setSelectedDates] = useState<string[]>([]);
+
+  const nextEventDays = useMemo(() => {
+    const days = [];
+    const now = new Date();
+    const schedule = event?.schedule || [];
+    
+    if (schedule.length === 0) {
+      // Fallback to next 15 days if no schedule set
+      for (let i = 0; i < 15; i++) {
+        const date = new Date(now);
+        date.setDate(now.getDate() + i);
+        days.push(date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }));
+      }
+      return days;
+    }
+
+    // Find next 15 occurrences based on schedule
+    let currentDate = new Date(now);
+    let count = 0;
+    let safety = 0;
+    while (count < 15 && safety < 365) {
+      if (schedule.includes(currentDate.getDay())) {
+        days.push(currentDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }));
+        count++;
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+      safety++;
+    }
+    return days;
+  }, [event?.schedule]);
+
+  const toggleDate = (date: string) => {
+    setSelectedDates(prev => {
+      if (prev.includes(date)) return prev.filter(d => d !== date);
+      if (prev.length >= 15) return prev;
+      return [...prev, date];
+    });
+  };
+
+  useEffect(() => {
+    setSelectedDates([]);
+  }, [eventId]);
 
   const handleReportAbsence = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,12 +195,15 @@ export default function PublicEventPage() {
         method: 'POST',
         body: JSON.stringify({ 
           memberId: selectedMemberId,
-          message: discordMessage 
+          message: discordMessage,
+          dates: selectedDates
         })
       });
       setAbsenceSuccess(true);
       setSelectedMemberId('');
       setDiscordMessage('');
+      setSelectedDates([]);
+      
       // Reload data to show updated list
       const [eventData, membersData] = await Promise.all([
         fetchAPI(`/api/events/${eventId}`),
@@ -220,12 +267,12 @@ export default function PublicEventPage() {
           <p className="text-zinc-500 max-w-2xl mx-auto text-lg">
             {event.description || guildSettings?.subtitle}
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8 max-w-5xl mx-auto text-left">
+          <div className="mt-8 max-w-5xl mx-auto text-left space-y-6">
             {event.instructions && (
               <motion.div 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="p-6 bg-orange-500/5 border border-orange-500/10 rounded-2xl"
+                className="p-6 bg-orange-500/5 border border-orange-500/10 rounded-2xl w-full"
               >
                 <h4 className="text-xs font-bold text-orange-500 uppercase tracking-widest mb-4 flex items-center gap-2">
                   <Zap className="w-3 h-3" />
@@ -240,21 +287,18 @@ export default function PublicEventPage() {
             <motion.div 
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={cn(
-                "p-6 bg-zinc-900/80 border border-zinc-800 rounded-2xl",
-                !event.instructions && "md:col-start-2"
-              )}
+              className="p-6 bg-zinc-900/80 border border-zinc-800 rounded-2xl max-w-xl mx-auto w-full"
             >
               <h4 className="text-xs font-bold text-blue-500 uppercase tracking-widest mb-4 flex items-center gap-2">
                 <Shield className="w-3 h-3" />
                 Leave of Absence
               </h4>
               <p className="text-sm text-zinc-400 mb-4">
-                If you cannot attend this event, please select your name and provide a reason.
+                If you cannot attend this event or will be away, please select your name and provide details.
               </p>
               
               <div className="space-y-4">
-                <form onSubmit={handleReportAbsence} className="space-y-3">
+                <form onSubmit={handleReportAbsence} className="space-y-4">
                   <div className="relative">
                     <select
                       required
@@ -277,6 +321,27 @@ export default function PublicEventPage() {
 
                   {selectedMemberId && (
                     <>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Select Dates of Absence (Max 15 Event Days)</label>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {nextEventDays.map(date => (
+                            <button
+                              key={date}
+                              type="button"
+                              onClick={() => toggleDate(date)}
+                              className={cn(
+                                "px-2 py-2 rounded-lg text-[10px] font-bold transition-all border",
+                                selectedDates.includes(date)
+                                  ? "bg-blue-500 border-blue-400 text-white shadow-lg shadow-blue-500/20"
+                                  : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                              )}
+                            >
+                              {date}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
                       <textarea
                         required
                         value={discordMessage}
@@ -409,7 +474,7 @@ export default function PublicEventPage() {
             </div>
           )}
 
-          {/* Absent Members Section */}
+          {/* Bottom Sections: Unassigned and Unavailable Members */}
           {(() => {
             const assignedMemberIds = new Set<string>();
             Object.values(assignments).forEach(partyAssignments => {
@@ -417,42 +482,104 @@ export default function PublicEventPage() {
                 assignedMemberIds.add(a.memberId);
               });
             });
-            const absentMembers = members.filter(m => !assignedMemberIds.has(m.id!));
+            
+            const unavailableMembers = event.absences || [];
+            const unassignedMembers = members.filter(m => 
+              !assignedMemberIds.has(m.id!) && 
+              !unavailableMembers.some(a => a.memberId === m.id)
+            );
 
-            if (absentMembers.length === 0) return null;
+            if (unassignedMembers.length === 0 && unavailableMembers.length === 0) return null;
 
             return (
-              <div className="mt-20 pt-12 border-t border-zinc-900">
-                <div className="flex items-center gap-3 mb-8">
-                  <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500">
-                    <UserMinus className="w-6 h-6" />
-                  </div>
+              <div className="mt-20 pt-12 border-t border-zinc-900 space-y-16">
+                {unassignedMembers.length > 0 && (
                   <div>
-                    <h2 className="text-2xl font-bold uppercase tracking-tight">Absent / Unassigned Members</h2>
-                    <p className="text-xs text-zinc-500 font-bold uppercase tracking-[0.2em] mt-1">
-                      {absentMembers.length} {absentMembers.length === 1 ? 'Member' : 'Members'} not in any party
-                    </p>
+                    <div className="flex items-center gap-3 mb-8">
+                      <div className="w-12 h-12 bg-zinc-500/10 rounded-2xl flex items-center justify-center text-zinc-500">
+                        <UserMinus className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <h2 className="text-2xl font-bold uppercase tracking-tight">Unassigned Members</h2>
+                        <p className="text-xs text-zinc-500 font-bold uppercase tracking-[0.2em] mt-1">
+                          {unassignedMembers.length} {unassignedMembers.length === 1 ? 'Member' : 'Members'} not in any party
+                        </p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+                      {unassignedMembers.map(m => (
+                        <motion.div 
+                          key={m.id}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-900/30 border border-zinc-800/50"
+                        >
+                          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-900 shrink-0 border border-zinc-800">
+                            {getJobIcon(m)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-zinc-300 truncate">{m.ign}</p>
+                            <p className="text-[10px] text-zinc-600 truncate uppercase font-bold tracking-wider">{m.job}</p>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-                
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
-                  {absentMembers.map(m => (
-                    <motion.div 
-                      key={m.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-900/30 border border-zinc-800/50"
-                    >
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-900 shrink-0 border border-zinc-800">
-                        {getJobIcon(m)}
+                )}
+
+                {unavailableMembers.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-3 mb-8">
+                      <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500">
+                        <Skull className="w-6 h-6" />
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-zinc-300 truncate">{m.ign}</p>
-                        <p className="text-[10px] text-zinc-600 truncate uppercase font-bold tracking-wider">{m.job}</p>
+                      <div>
+                        <h2 className="text-2xl font-bold uppercase tracking-tight text-red-500/80">Not Available to Play</h2>
+                        <p className="text-xs text-zinc-500 font-bold uppercase tracking-[0.2em] mt-1">
+                          {unavailableMembers.length} {unavailableMembers.length === 1 ? 'Member' : 'Members'} reported absence
+                        </p>
                       </div>
-                    </motion.div>
-                  ))}
-                </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {unavailableMembers.map(absence => (
+                        <motion.div 
+                          key={absence.memberId}
+                          initial={{ opacity: 0, scale: 0.95 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="bg-red-500/5 border border-red-500/10 p-6 rounded-3xl relative group"
+                        >
+                          <div className="flex items-start gap-4 mb-4">
+                            <div className="w-12 h-12 rounded-2xl bg-red-500/10 flex items-center justify-center text-red-500 font-bold text-xl">
+                              {absence.ign.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="font-bold text-zinc-100 text-lg">{absence.ign}</p>
+                              <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">{new Date(absence.timestamp).toLocaleDateString()}</p>
+                            </div>
+                          </div>
+                          <div className="space-y-4">
+                            <div className="bg-zinc-950/50 p-4 rounded-2xl border border-zinc-800/50">
+                              <p className="text-sm text-zinc-400 italic leading-relaxed">
+                                "{absence.reason}"
+                              </p>
+                            </div>
+                            {absence.dates && absence.dates.length > 0 && (
+                              <div className="flex flex-wrap gap-2">
+                                {absence.dates.map(date => (
+                                  <span key={date} className="text-[10px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 px-3 py-1 rounded-full border border-red-500/20">
+                                    {date}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </motion.div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })()}

@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { fetchAPI } from '../lib/api';
 import { GuildEvent, Member, Assignment, Party, SubEvent } from '../types';
-import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Shield, Sword, Heart, Star, Share2, Check, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search, Zap, Target, Music, Hammer, FlaskConical, Hand, Cross, Skull, MessageSquare, Loader2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Clock, Shield, Sword, Heart, Star, Share2, Check, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search, Zap, Target, Music, Hammer, FlaskConical, Hand, Cross, Skull, MessageSquare, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import ConfirmModal from '../components/ConfirmModal';
@@ -462,6 +462,7 @@ function SortableSubEventItem({
 
 export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [events, setEvents] = useState<GuildEvent[]>([]);
+  const [removingAbsence, setRemovingAbsence] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [subEvents, setSubEvents] = useState<Record<string, SubEvent[]>>({});
   const [parties, setParties] = useState<Record<string, Party[]>>({});
@@ -494,8 +495,23 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [activeSubEventId, setActiveSubEventId] = useState<string | null>(null);
   const [activePartyId, setActivePartyId] = useState<string | null>(null);
   
-  const [collapsedEvents, setCollapsedEvents] = useState<Set<string>>(new Set());
-  const [collapsedSubEvents, setCollapsedSubEvents] = useState<Set<string>>(new Set());
+  const [collapsedEvents, setCollapsedEvents] = useState<Set<string>>(() => {
+    const stored = localStorage.getItem('collapsedEvents');
+    return stored ? new Set(JSON.parse(stored)) : new Set();
+  });
+  const [collapsedSubEvents, setCollapsedSubEvents] = useState<Set<string>>(() => {
+    const stored = localStorage.getItem('collapsedSubEvents');
+    return stored ? new Set(JSON.parse(stored)) : new Set();
+  });
+  const [expandedInstructions, setExpandedInstructions] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    localStorage.setItem('collapsedEvents', JSON.stringify(Array.from(collapsedEvents)));
+  }, [collapsedEvents]);
+
+  useEffect(() => {
+    localStorage.setItem('collapsedSubEvents', JSON.stringify(Array.from(collapsedSubEvents)));
+  }, [collapsedSubEvents]);
   
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [memberRoleFilter, setMemberRoleFilter] = useState<'All' | 'DPS' | 'Support' | 'Tank'>('All');
@@ -530,13 +546,48 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       return next;
     });
   };
+
+  const toggleInstructions = (id: string) => {
+    setExpandedInstructions(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   
-  const [eventFormData, setEventFormData] = useState({ name: '', description: '', instructions: '' });
+  const [eventFormData, setEventFormData] = useState({ name: '', description: '', instructions: '', schedule: [] as number[] });
   const [subEventFormData, setSubEventFormData] = useState({ name: '' });
   const [partyFormData, setPartyFormData] = useState({ name: '' });
   const [assignFormData, setAssignFormData] = useState({ memberId: '', role: ROLES[0].name });
 
   const [settings, setSettings] = useState<any>(null);
+
+  const handleRemoveAbsence = async (eventId: string, memberId: string) => {
+    console.log(`[handleRemoveAbsence] EventID: ${eventId}, MemberID: ${memberId}`);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Make Player Available',
+      message: 'Are you sure you want to make this player available again? This will remove their absence record for this event.',
+      variant: 'info',
+      onConfirm: async () => {
+        console.log(`[handleRemoveAbsence] Confirmed. Removing absence for ${memberId} in event ${eventId}`);
+        setRemovingAbsence(memberId);
+        try {
+          const result = await fetchAPI(`/api/events/${eventId}/absent/${memberId}`, { method: 'DELETE' });
+          console.log('[handleRemoveAbsence] API Result:', result);
+          // Refresh data to update the UI
+          await loadData();
+          console.log('[handleRemoveAbsence] Data reloaded');
+        } catch (error) {
+          console.error('Error removing absence:', error);
+        } finally {
+          setRemovingAbsence(null);
+          setConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -546,7 +597,11 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         fetchAPI('/api/settings/guild_settings')
       ]);
       
-      setEvents(eventsData);
+      // Stable sort for events: newest first (by ID descending)
+      const sortedEvents = [...eventsData].sort((a: any, b: any) => 
+        (b.id || '').localeCompare(a.id || '')
+      );
+      setEvents(sortedEvents);
       setMembers(membersData);
       setSettings(settingsData);
       
@@ -554,7 +609,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       const newParties: Record<string, Party[]> = {};
       const newAssignments: Record<string, Assignment[]> = {};
 
-      for (const event of eventsData) {
+      for (const event of sortedEvents) {
         const subEventsData = [...(event.subevents || [])];
         subEventsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
         newSubEvents[event.id!] = subEventsData;
@@ -625,6 +680,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
 
   const handleEventSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Submitting event form data:', eventFormData);
     try {
       if (editingEvent) {
         await fetchAPI(`/api/events/${editingEvent.id}`, {
@@ -722,9 +778,11 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       return;
     }
 
+    const member = members.find(m => m.id === assignFormData.memberId);
     const nextOrder = currentAssignments.length;
+    const tempId = 'temp-' + Date.now();
     const newAssignment = {
-      id: 'temp-' + Date.now(),
+      id: tempId,
       memberId: assignFormData.memberId,
       role: assignFormData.role,
       eventId: activeEventId,
@@ -742,7 +800,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     setAssignFormData({ memberId: '', role: ROLES[0].name });
 
     try {
-      await fetchAPI(`/api/events/${activeEventId}/subevents/${activeSubEventId}/parties/${activePartyId}/assignments`, {
+      const result = await fetchAPI(`/api/events/${activeEventId}/subevents/${activeSubEventId}/parties/${activePartyId}/assignments`, {
         method: 'POST',
         body: JSON.stringify({
           memberId: assignFormData.memberId,
@@ -753,15 +811,21 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           order: nextOrder
         })
       });
-      loadData();
+      
+      // Update the temp ID with the real ID from server to avoid "ghosting" or jumping
+      setAssignments(prev => ({
+        ...prev,
+        [activePartyId]: (prev[activePartyId] || []).map(a => a.id === tempId ? result : a)
+      }));
     } catch (error) {
       console.error('Failed to assign member:', error);
-      loadData(); // Rollback
+      loadData(); // Rollback on error
     }
   };
 
   const unassignMember = async (eventId: string, subEventId: string, partyId: string, assignmentId: string) => {
     // Optimistic update
+    const originalAssignments = assignments[partyId];
     setAssignments(prev => ({
       ...prev,
       [partyId]: (prev[partyId] || []).filter(a => a.id !== assignmentId)
@@ -771,10 +835,14 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       await fetchAPI(`/api/events/${eventId}/subevents/${subEventId}/parties/${partyId}/assignments/${assignmentId}`, {
         method: 'DELETE'
       });
-      loadData();
+      // No need to reload everything if successful
     } catch (error) {
       console.error('Failed to unassign member:', error);
-      loadData(); // Rollback
+      // Rollback
+      setAssignments(prev => ({
+        ...prev,
+        [partyId]: originalAssignments
+      }));
     }
   };
 
@@ -1158,11 +1226,12 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       setEventFormData({ 
         name: event.name, 
         description: event.description || '',
-        instructions: event.instructions || ''
+        instructions: event.instructions || '',
+        schedule: event.schedule || []
       });
     } else {
       setEditingEvent(null);
-      setEventFormData({ name: '', description: '', instructions: '' });
+      setEventFormData({ name: '', description: '', instructions: '', schedule: [] });
     }
     setIsEventModalOpen(true);
   };
@@ -1170,6 +1239,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const closeEventModal = () => {
     setIsEventModalOpen(false);
     setEditingEvent(null);
+    setEventFormData({ name: '', description: '', instructions: '', schedule: [] });
   };
 
   const openSubEventModal = (eventId: string, subEvent?: SubEvent) => {
@@ -1212,29 +1282,34 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     return getMemberCategory(member);
   };
 
-  const filteredMembersForAssign = members
-    .filter(m => {
-      // Filter out members already assigned to ANY party in ANY sub-event of the current event
-      const eventSubEvents = subEvents[activeEventId!] || [];
-      const assignedMemberIds = eventSubEvents
+  const filteredMembersForAssign = useMemo(() => {
+    if (!activeEventId) return [];
+    
+    // Filter out members already assigned to ANY party in ANY sub-event of the current event
+    const eventSubEvents = subEvents[activeEventId] || [];
+    const assignedMemberIds = new Set(
+      eventSubEvents
         .flatMap(se => parties[se.id!] || [])
         .flatMap(p => assignments[p.id!] || [])
-        .map(a => a.memberId);
-      return !assignedMemberIds.includes(m.id!);
-    })
-    .filter(m => {
-      // Search term filter
-      if (!memberSearchTerm) return true;
-      const ign = m.ign || '';
-      const job = m.job || '';
-      return ign.toLowerCase().includes(memberSearchTerm.toLowerCase()) || 
-             job.toLowerCase().includes(memberSearchTerm.toLowerCase());
-    })
-    .filter(m => {
-      // Role filter
-      if (memberRoleFilter === 'All') return true;
-      return getMemberCategory(m) === memberRoleFilter;
-    });
+        .map(a => a.memberId)
+    );
+
+    return members
+      .filter(m => !assignedMemberIds.has(m.id!))
+      .filter(m => {
+        // Search term filter
+        if (!memberSearchTerm) return true;
+        const ign = m.ign || '';
+        const job = m.job || '';
+        return ign.toLowerCase().includes(memberSearchTerm.toLowerCase()) || 
+               job.toLowerCase().includes(memberSearchTerm.toLowerCase());
+      })
+      .filter(m => {
+        // Role filter
+        if (memberRoleFilter === 'All') return true;
+        return getMemberCategory(m) === memberRoleFilter;
+      });
+  }, [members, subEvents, parties, assignments, activeEventId, memberSearchTerm, memberRoleFilter]);
 
   return (
     <div className="p-6 max-w-[1600px] mx-auto">
@@ -1283,15 +1358,40 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                       <Info className="w-3.5 h-3.5" />
                       {event.description || 'Regular weekly event'}
                     </p>
+                    {event.schedule && event.schedule.length > 0 && (
+                      <p className="text-xs text-orange-500/80 flex items-center gap-1.5 mt-1.5 font-medium">
+                        <Clock className="w-3.5 h-3.5" />
+                        Recurring: {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                          .filter((_, i) => event.schedule?.includes(i))
+                          .join(', ')}
+                      </p>
+                    )}
                     {event.instructions && (
-                      <div className="mt-3 p-3 bg-orange-500/5 border border-orange-500/10 rounded-xl">
-                        <p className="text-xs font-bold text-orange-500 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                          <Zap className="w-3 h-3" />
-                          Instructions / Notes
-                        </p>
-                        <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap">
-                          {event.instructions}
-                        </p>
+                      <div className="mt-3 bg-orange-500/5 border border-orange-500/10 rounded-xl overflow-hidden">
+                        <button 
+                          onClick={() => toggleInstructions(event.id!)}
+                          className="w-full p-3 flex items-center justify-between hover:bg-orange-500/10 transition-colors"
+                        >
+                          <p className="text-xs font-bold text-orange-500 uppercase tracking-wider flex items-center gap-1.5">
+                            <Zap className="w-3 h-3" />
+                            Instructions / Notes
+                          </p>
+                          {expandedInstructions.has(event.id!) ? <ChevronUp className="w-3 h-3 text-orange-500" /> : <ChevronDown className="w-3 h-3 text-orange-500" />}
+                        </button>
+                        <AnimatePresence>
+                          {expandedInstructions.has(event.id!) && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              className="px-3 pb-3"
+                            >
+                              <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap pt-1 border-t border-orange-500/10">
+                                {event.instructions}
+                              </p>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     )}
                   </div>
@@ -1407,39 +1507,103 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                             });
                           });
                         });
-                        const absentMembers = members.filter(m => !assignedMemberIds.has(m.id!));
+                        const absentMembers = members.filter(m => !assignedMemberIds.has(m.id!) && !(event.absences || []).some(a => a.memberId === m.id));
+                        const unavailableMembers = event.absences || [];
 
-                        if (absentMembers.length === 0) return null;
+                        if (absentMembers.length === 0 && unavailableMembers.length === 0) return null;
 
                         return (
-                          <div className="mt-8 pt-8 border-t border-zinc-800/50">
-                            <div className="flex items-center justify-between mb-4">
-                              <div className="flex items-center gap-2">
-                                <div className="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center text-red-500">
-                                  <UserMinus className="w-4 h-4" />
+                          <div className="mt-8 pt-8 border-t border-zinc-800/50 space-y-8">
+                            {absentMembers.length > 0 && (
+                              <div>
+                                <div className="flex items-center justify-between mb-4">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center text-red-500">
+                                      <UserMinus className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                      <h4 className="font-bold text-white text-sm uppercase tracking-wider">Absent / Unassigned Members</h4>
+                                      <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mt-0.5">
+                                        {absentMembers.length} {absentMembers.length === 1 ? 'Member' : 'Members'} not in any party
+                                      </p>
+                                    </div>
+                                  </div>
                                 </div>
-                                <div>
-                                  <h4 className="font-bold text-white text-sm uppercase tracking-wider">Absent / Unassigned Members</h4>
-                                  <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mt-0.5">
-                                    {absentMembers.length} {absentMembers.length === 1 ? 'Member' : 'Members'} not in any party
-                                  </p>
+                                
+                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                                  {absentMembers.map(m => (
+                                    <div key={m.id} className="flex items-center gap-2 p-2 rounded-lg bg-zinc-900/30 border border-zinc-800/50">
+                                      <div className="w-6 h-6 rounded flex items-center justify-center bg-zinc-800 shrink-0">
+                                        {getJobIcon(m)}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <p className="text-xs font-bold text-zinc-300 truncate">{m.ign}</p>
+                                        <p className="text-[9px] text-zinc-600 truncate uppercase font-bold">{m.job}</p>
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
                               </div>
-                            </div>
-                            
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                              {absentMembers.map(m => (
-                                <div key={m.id} className="flex items-center gap-2 p-2 rounded-lg bg-zinc-900/30 border border-zinc-800/50">
-                                  <div className="w-6 h-6 rounded flex items-center justify-center bg-zinc-800 shrink-0">
-                                    {getJobIcon(m)}
-                                  </div>
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-bold text-zinc-300 truncate">{m.ign}</p>
-                                    <p className="text-[9px] text-zinc-600 truncate uppercase font-bold">{m.job}</p>
+                            )}
+
+                            {unavailableMembers.length > 0 && (
+                              <div>
+                                <div className="flex items-center justify-between mb-4">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center text-red-500">
+                                      <Skull className="w-4 h-4" />
+                                    </div>
+                                    <div>
+                                      <h4 className="font-bold text-white text-sm uppercase tracking-wider">Not Available to Play</h4>
+                                      <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mt-0.5">
+                                        {unavailableMembers.length} {unavailableMembers.length === 1 ? 'Member' : 'Members'} reported absence
+                                      </p>
+                                    </div>
                                   </div>
                                 </div>
-                              ))}
-                            </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                  {unavailableMembers.map(absence => (
+                                    <div key={absence.memberId} className="bg-red-500/5 border border-red-500/10 p-4 rounded-2xl relative group">
+                                      {isAdmin && (
+                                        <button
+                                          onClick={() => handleRemoveAbsence(event.id!, absence.memberId)}
+                                          disabled={removingAbsence === absence.memberId}
+                                          className="absolute top-4 right-4 p-2 rounded-xl bg-red-500/10 text-red-500 opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white disabled:opacity-50 z-10 border border-red-500/20 shadow-lg"
+                                          title="Make player available"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                      <div className="flex items-start justify-between mb-2">
+                                        <div className="flex items-center gap-3">
+                                          <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-500 font-bold">
+                                            {absence.ign.charAt(0)}
+                                          </div>
+                                          <div>
+                                            <p className="font-bold text-zinc-200">{absence.ign}</p>
+                                            <p className="text-[10px] text-zinc-500">{new Date(absence.timestamp).toLocaleDateString()}</p>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <p className="text-xs text-zinc-400 bg-zinc-950/50 p-2 rounded-lg italic">
+                                          "{absence.reason}"
+                                        </p>
+                                        {absence.dates && absence.dates.length > 0 && (
+                                          <div className="flex flex-wrap gap-1">
+                                            {absence.dates.map(date => (
+                                              <span key={date} className="text-[9px] bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded-full border border-red-500/20">
+                                                {date}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })()}
@@ -1471,6 +1635,31 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                 <div>
                   <label className="block text-sm font-medium text-zinc-400 mb-1.5">Instructions / Notes (Visible Publicly)</label>
                   <textarea value={eventFormData.instructions} onChange={(e) => setEventFormData({ ...eventFormData, instructions: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white h-32 resize-none" placeholder="Add specific instructions for this event..." />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Recurring Schedule (Event Days)</label>
+                  <div className="flex flex-wrap gap-2">
+                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => {
+                          const newSchedule = eventFormData.schedule.includes(index)
+                            ? eventFormData.schedule.filter(d => d !== index)
+                            : [...eventFormData.schedule, index];
+                          setEventFormData({ ...eventFormData, schedule: newSchedule });
+                        }}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
+                          eventFormData.schedule.includes(index)
+                            ? "bg-orange-500 border-orange-400 text-white shadow-lg shadow-orange-500/20"
+                            : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600"
+                        )}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="pt-4 flex gap-3">
                   <button type="button" onClick={closeEventModal} className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 font-medium hover:bg-zinc-800">Cancel</button>
