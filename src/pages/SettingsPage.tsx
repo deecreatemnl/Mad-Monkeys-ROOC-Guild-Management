@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchAPI } from '../lib/api';
 import { GuildSettings } from '../types';
-import { Save, Globe, Type, Image as ImageIcon, Loader2, CheckCircle2, Upload, Calendar, MessageSquare, Check, ChevronDown, Users, RotateCcw, AlertTriangle } from 'lucide-react';
+import { Save, Globe, Type, Image as ImageIcon, Loader2, CheckCircle2, Upload, Calendar, MessageSquare, Check, ChevronDown, Users, RotateCcw, AlertTriangle, CloudDownload } from 'lucide-react';
 import { motion } from 'motion/react';
 
 const TIMEZONES = [
@@ -39,6 +39,9 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
   const [fetchingGuilds, setFetchingGuilds] = useState(false);
   const [fetchingChannels, setFetchingChannels] = useState(false);
   const [channelError, setChannelError] = useState<string | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<{ currentVersion: string, latestVersion: string, hasUpdate: boolean } | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -327,6 +330,33 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
       alert('Force reset failed: ' + err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const checkForUpdates = async () => {
+    if (!settings.githubRepo) return;
+    setCheckingUpdate(true);
+    try {
+      const data = await fetchAPI('/api/system/update-check');
+      setUpdateInfo(data);
+    } catch (err) {
+      console.error('Update check failed:', err);
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const handleInstallUpdate = async () => {
+    if (!confirm('Are you sure you want to install this update? The system will be temporarily unavailable.')) return;
+    setInstallingUpdate(true);
+    try {
+      await fetchAPI('/api/system/install-update', { method: 'POST' });
+      alert('Update triggered successfully. The system will restart shortly.');
+    } catch (err) {
+      console.error('Install update failed:', err);
+      alert('Failed to trigger update.');
+    } finally {
+      setInstallingUpdate(false);
     }
   };
 
@@ -730,6 +760,91 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
+        className="mt-8 bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-xl"
+      >
+        <div className="p-8">
+          <div className="flex items-center gap-3 mb-6">
+            <CloudDownload className="w-6 h-6 text-orange-500" />
+            <h2 className="text-xl font-bold text-white">System Updates</h2>
+          </div>
+          
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">GitHub Repository</label>
+                <input
+                  type="text"
+                  value={settings.githubRepo || ''}
+                  onChange={(e) => setSettings({ ...settings, githubRepo: e.target.value })}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                  placeholder="e.g. username/repo-name"
+                />
+                <p className="mt-2 text-[10px] text-zinc-500 italic">The public repository to check for updates.</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Vercel Deploy Hook URL</label>
+                <input
+                  type="password"
+                  value={settings.vercelDeployHookUrl || ''}
+                  onChange={(e) => setSettings({ ...settings, vercelDeployHookUrl: e.target.value })}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                  placeholder="https://api.vercel.com/v1/integrations/deploy/..."
+                />
+                <p className="mt-2 text-[10px] text-zinc-500 italic">Used to trigger the update installation.</p>
+              </div>
+            </div>
+
+            <div className="pt-6 border-t border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div>
+                <h3 className="text-sm font-bold text-white mb-1">Check for Updates</h3>
+                {updateInfo ? (
+                  <div className="text-xs text-zinc-400 space-y-1">
+                    <p>Current Version: <span className="text-white font-mono">{updateInfo.currentVersion}</span></p>
+                    <p>Latest Version: <span className="text-white font-mono">{updateInfo.latestVersion}</span></p>
+                    {updateInfo.hasUpdate ? (
+                      <p className="text-green-500 font-bold mt-2">✨ A new update is available!</p>
+                    ) : (
+                      <p className="text-zinc-500 mt-2">You are on the latest version.</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500">Check if a new version is available on GitHub.</p>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={checkForUpdates}
+                  disabled={checkingUpdate || !settings.githubRepo}
+                  className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white font-bold py-2.5 px-5 rounded-xl transition-all active:scale-95 border border-zinc-700"
+                >
+                  {checkingUpdate ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                  Check Now
+                </button>
+                
+                {updateInfo?.hasUpdate && (
+                  <button
+                    type="button"
+                    onClick={handleInstallUpdate}
+                    disabled={installingUpdate || !settings.vercelDeployHookUrl}
+                    className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-2.5 px-5 rounded-xl transition-all active:scale-95 shadow-lg shadow-green-600/20"
+                  >
+                    {installingUpdate ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" />}
+                    Install Update
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2 }}
         className="mt-8 bg-red-500/5 border border-red-500/20 rounded-2xl overflow-hidden"
       >
         <div className="p-8">

@@ -1,24 +1,35 @@
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { fetchAPI } from './lib/api';
 import { Users, Calendar, MessageSquare, LogIn, LogOut, Menu, X, Shield, Briefcase, Mail, Lock, UserPlus as UserPlusIcon, Settings, BarChart3, Trophy } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
-import MembersPage from './pages/MembersPage';
-import EventsPage from './pages/EventsPage';
-import AdminsPage from './pages/UsersPage';
-import JobsPage from './pages/JobsPage';
-import StatisticsPage from './pages/StatisticsPage';
-import SettingsPage from './pages/SettingsPage';
-import RafflePage from './pages/RafflePage';
-import PublicEventPage from './pages/PublicEventPage';
-import AccountPage from './pages/AccountPage';
 import { UserProfile, GuildSettings } from './types';
+
+// Lazy load pages for performance
+const MembersPage = lazy(() => import('./pages/MembersPage'));
+const EventsPage = lazy(() => import('./pages/EventsPage'));
+const AdminsPage = lazy(() => import('./pages/UsersPage'));
+const JobsPage = lazy(() => import('./pages/JobsPage'));
+const StatisticsPage = lazy(() => import('./pages/StatisticsPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const RafflePage = lazy(() => import('./pages/RafflePage'));
+const PublicEventPage = lazy(() => import('./pages/PublicEventPage'));
+const AccountPage = lazy(() => import('./pages/AccountPage'));
+const SetupWizard = lazy(() => import('./pages/SetupWizard'));
+
+// Loading component
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-[60vh]">
+    <div className="w-12 h-12 border-4 border-red-500/20 border-t-red-500 rounded-full animate-spin"></div>
+  </div>
+);
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
   const [guildSettings, setGuildSettings] = useState<GuildSettings>({
     name: 'MadMonkeys',
     subtitle: 'Guild Management System',
@@ -35,8 +46,18 @@ export default function App() {
     }
   };
 
+  const checkSetupStatus = async () => {
+    try {
+      const { isSetup } = await fetchAPI('/api/setup/status');
+      setNeedsSetup(!isSetup);
+    } catch (err) {
+      console.error('Failed to check setup status:', err);
+    }
+  };
+
   useEffect(() => {
     const init = async () => {
+      await checkSetupStatus();
       await loadSettings();
       const storedUser = localStorage.getItem('user');
       if (storedUser) {
@@ -215,6 +236,14 @@ export default function App() {
     );
   }
 
+  if (needsSetup) {
+    return (
+      <Suspense fallback={<PageLoader />}>
+        <SetupWizard onComplete={() => setNeedsSetup(false)} />
+      </Suspense>
+    );
+  }
+
   const isAdmin = user?.role === 'admin' || user?.role === 'superadmin';
   const isApproved = user?.isApproved || isAdmin;
 
@@ -359,20 +388,23 @@ export default function App() {
 
               {/* Main Content */}
               <main className="flex-1 overflow-auto p-4 md:p-8">
-                <Routes>
-                  <Route path="/" element={<MembersPage isAdmin={isAdmin} />} />
-                  <Route path="/events" element={<EventsPage isAdmin={isAdmin} />} />
-                  <Route path="/jobs" element={isAdmin ? <JobsPage isAdmin={isAdmin} /> : <Navigate to="/" replace />} />
-                  <Route path="/statistics" element={<StatisticsPage isAdmin={isAdmin} />} />
-                  <Route path="/account" element={<AccountPage user={user} onUpdateUser={setUser} onLogout={handleLogout} />} />
-                  {isAdmin && (
-                    <>
-                      <Route path="/admins" element={<AdminsPage isSuperAdmin={user?.role === 'superadmin'} />} />
-                      <Route path="/settings" element={<SettingsPage onUpdateSettings={loadSettings} />} />
-                    </>
-                  )}
-                  <Route path="*" element={<Navigate to="/" replace />} />
-                </Routes>
+                <Suspense fallback={<PageLoader />}>
+                  <Routes>
+                    <Route path="/" element={<MembersPage isAdmin={isAdmin} />} />
+                    <Route path="/events" element={<EventsPage isAdmin={isAdmin} />} />
+                    <Route path="/jobs" element={isAdmin ? <JobsPage isAdmin={isAdmin} /> : <Navigate to="/" replace />} />
+                    <Route path="/statistics" element={<StatisticsPage isAdmin={isAdmin} />} />
+                    <Route path="/raffle" element={<RafflePage user={user} />} />
+                    <Route path="/account" element={<AccountPage user={user} onUpdateUser={setUser} onLogout={handleLogout} />} />
+                    {isAdmin && (
+                      <>
+                        <Route path="/admins" element={<AdminsPage isSuperAdmin={user?.role === 'superadmin'} />} />
+                        <Route path="/settings" element={<SettingsPage onUpdateSettings={loadSettings} />} />
+                      </>
+                    )}
+                    <Route path="*" element={<Navigate to="/" replace />} />
+                  </Routes>
+                </Suspense>
               </main>
             </div>
           )

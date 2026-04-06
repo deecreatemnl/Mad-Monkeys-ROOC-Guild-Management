@@ -1568,7 +1568,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                                         <button
                                           onClick={() => handleRemoveAbsence(event.id!, absence.memberId)}
                                           disabled={removingAbsence === absence.memberId}
-                                          className="absolute top-4 right-4 p-2 rounded-xl bg-red-500/10 text-red-500 opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white disabled:opacity-50 z-10 border border-red-500/20 shadow-lg"
+                                          className="absolute top-4 right-4 p-2 rounded-xl bg-red-500/10 text-red-500 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-all hover:bg-red-500 hover:text-white disabled:opacity-50 z-10 border border-red-500/20 shadow-lg"
                                           title="Make player available"
                                         >
                                           <Trash2 className="w-4 h-4" />

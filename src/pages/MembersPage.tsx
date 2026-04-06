@@ -262,7 +262,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                     </div>
                   </div>
                   {isAdmin && (
-                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity">
                       <button
                         onClick={() => openModal(member)}
                         className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
@@ -330,7 +330,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                     </td>
                     {isAdmin && (
                       <td className="p-4 text-right">
-                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex justify-end gap-1 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity">
                           <button
                             onClick={() => openModal(member)}
                             className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"

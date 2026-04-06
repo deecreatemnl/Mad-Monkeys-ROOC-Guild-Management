@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
 import axios from "axios";
+import fs from "fs";
+import path from "path";
 import { Database, FileDatabase, SupabaseDatabase, ensureDataIntegrity } from "./db.js";
 
 export const asyncHandler = (fn: any) => (req: any, res: any, next: any) => {
@@ -55,6 +57,71 @@ export function createApp() {
     next();
   });
 
+  // Security Middleware
+  const checkAdmin = (req: any, res: any, next: any) => {
+    const role = req.headers['user-role'];
+    if (role === 'admin' || role === 'superadmin') {
+      next();
+    } else {
+      res.status(403).json({ error: "Access denied. Admin privileges required." });
+    }
+  };
+
+  const checkSuperAdmin = (req: any, res: any, next: any) => {
+    const role = req.headers['user-role'];
+    if (role === 'superadmin') {
+      next();
+    } else {
+      res.status(403).json({ error: "Access denied. Superadmin privileges required." });
+    }
+  };
+
+  const checkSelf = (req: any, res: any, next: any) => {
+    const loggedInUser = req.headers['user-id'];
+    const targetUser = req.body.username?.trim().toLowerCase() || req.params.id?.trim().toLowerCase();
+    
+    if (loggedInUser === targetUser || req.headers['user-role'] === 'superadmin') {
+      next();
+    } else {
+      res.status(403).json({ error: "Access denied. You can only modify your own account." });
+    }
+  };
+
+  // Setup API - For initial configuration
+  app.get("/api/setup/status", asyncHandler(async (req: any, res: any) => {
+    const users = await db.getUsers();
+    const hasSuperAdmin = Object.values(users).some((u: any) => u.role === 'superadmin');
+    res.json({ isSetup: hasSuperAdmin });
+  }));
+
+  app.post("/api/setup/init", asyncHandler(async (req: any, res: any) => {
+    const users = await db.getUsers();
+    const hasSuperAdmin = Object.values(users).some((u: any) => u.role === 'superadmin');
+    
+    if (hasSuperAdmin) {
+      return res.status(403).json({ error: "System already setup" });
+    }
+
+    const { username, password, displayName } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username and password required" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const superAdmin = {
+      id: username.toLowerCase(),
+      username,
+      displayName: displayName || username,
+      role: 'superadmin',
+      isApproved: true,
+      createdAt: new Date().toISOString(),
+      password: hashedPassword
+    };
+
+    await db.saveUser(superAdmin);
+    res.json({ success: true, message: "Superadmin created successfully" });
+  }));
+
   // Health check
   app.get("/api/health", asyncHandler(async (req: any, res: any) => {
     let dbStatus = "unknown";
@@ -79,7 +146,7 @@ export function createApp() {
   }));
 
   // Admin Management
-  app.post("/api/admins/create", asyncHandler(async (req: any, res: any) => {
+  app.post("/api/admins/create", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const { username, displayName, role, password, ign, uid } = req.body;
     const targetRole = role || "admin";
     const userId = username.trim().toLowerCase();
@@ -105,12 +172,12 @@ export function createApp() {
   }));
 
   // Users API
-  app.get("/api/users", asyncHandler(async (req: any, res: any) => {
+  app.get("/api/users", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const users = await db.getUsers();
     res.json(Object.values(users));
   }));
 
-  app.put("/api/users/:id", asyncHandler(async (req: any, res: any) => {
+  app.put("/api/users/:id", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const id = req.params.id;
     const user = await db.getUserById(id);
     if (user) {
@@ -132,7 +199,7 @@ export function createApp() {
     }
   }));
 
-  app.delete("/api/users/:id", asyncHandler(async (req: any, res: any) => {
+  app.delete("/api/users/:id", checkSuperAdmin, asyncHandler(async (req: any, res: any) => {
     const user = await db.getUserById(req.params.id);
     if (user && user.role === 'superadmin') {
       return res.status(403).json({ error: "Cannot delete superadmin account" });
@@ -153,7 +220,7 @@ export function createApp() {
     res.json(newMember);
   }));
 
-  app.put("/api/members/:id", asyncHandler(async (req: any, res: any) => {
+  app.put("/api/members/:id", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const member = await db.getMemberById(req.params.id);
     if (member) {
       const oldRole = member.role;
@@ -171,7 +238,7 @@ export function createApp() {
     }
   }));
 
-  app.delete("/api/members/:id", asyncHandler(async (req: any, res: any) => {
+  app.delete("/api/members/:id", checkAdmin, asyncHandler(async (req: any, res: any) => {
     await db.deleteMember(req.params.id);
     res.json({ success: true });
   }));
@@ -274,14 +341,14 @@ export function createApp() {
     else res.status(404).json({ error: "Event not found" });
   }));
 
-  app.post("/api/events", asyncHandler(async (req: any, res: any) => {
+  app.post("/api/events", checkAdmin, asyncHandler(async (req: any, res: any) => {
     console.log("POST /api/events body:", req.body);
     const newEvent = { ...req.body, id: Date.now().toString(), subevents: [] };
     await db.saveEvent(newEvent);
     res.json(newEvent);
   }));
 
-  app.put("/api/events/:id", asyncHandler(async (req: any, res: any) => {
+  app.put("/api/events/:id", checkAdmin, asyncHandler(async (req: any, res: any) => {
     console.log("PUT /api/events/:id body:", req.body);
     const event = await db.getEventById(req.params.id);
     if (event) {
@@ -293,7 +360,7 @@ export function createApp() {
     }
   }));
 
-  app.delete("/api/events/:id", asyncHandler(async (req: any, res: any) => {
+  app.delete("/api/events/:id", checkAdmin, asyncHandler(async (req: any, res: any) => {
     await db.deleteEvent(req.params.id);
     res.json({ success: true });
   }));
@@ -358,7 +425,7 @@ export function createApp() {
     res.json({ success: true });
   }));
 
-  app.delete("/api/events/:eventId/absent/:memberId", asyncHandler(async (req: any, res: any) => {
+  app.delete("/api/events/:eventId/absent/:memberId", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const { eventId, memberId } = req.params;
     console.log(`[DELETE /api/events/${eventId}/absent/${memberId}] Request received`);
     const event = await db.getEventById(eventId);
@@ -977,6 +1044,48 @@ export function createApp() {
     res.json(updatedSettings);
   }));
 
+  // System Update API
+  app.get("/api/system/update-check", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    const settings = await db.getSettings();
+    if (!settings.githubRepo) {
+      return res.status(400).json({ error: "GitHub repository not configured." });
+    }
+
+    try {
+      // Fetch package.json from the main branch
+      const response = await axios.get(`https://raw.githubusercontent.com/${settings.githubRepo}/main/package.json`);
+      const latestVersion = response.data.version;
+      
+      // Get current version from local package.json
+      const localPackageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8'));
+      const currentVersion = localPackageJson.version;
+
+      res.json({
+        currentVersion,
+        latestVersion,
+        hasUpdate: currentVersion !== latestVersion
+      });
+    } catch (err: any) {
+      console.error("Failed to check for updates:", err.message);
+      res.status(500).json({ error: "Failed to check for updates. Ensure the repository is public or configured correctly." });
+    }
+  }));
+
+  app.post("/api/system/install-update", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    const settings = await db.getSettings();
+    if (!settings.vercelDeployHookUrl) {
+      return res.status(400).json({ error: "Vercel Deploy Hook URL not configured." });
+    }
+
+    try {
+      await axios.post(settings.vercelDeployHookUrl);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Failed to trigger Vercel deploy hook:", err.message);
+      res.status(500).json({ error: "Failed to trigger update." });
+    }
+  }));
+
   // Discord OAuth API
   app.get("/api/auth/discord/url", (req: any, res: any) => {
     const { origin } = req.query;
@@ -1247,7 +1356,7 @@ export function createApp() {
     res.json({ user: userWithoutPassword, token: "mock-jwt-token" });
   }));
 
-  app.post("/api/auth/change-password", asyncHandler(async (req: any, res: any) => {
+  app.post("/api/auth/change-password", checkSelf, asyncHandler(async (req: any, res: any) => {
     const { username, currentPassword, newPassword } = req.body;
     const userId = username.trim().toLowerCase();
     const user = await db.getUserById(userId);
@@ -1270,7 +1379,7 @@ export function createApp() {
     res.json({ user: null });
   }));
 
-  app.put("/api/auth/profile", asyncHandler(async (req: any, res: any) => {
+  app.put("/api/auth/profile", checkSelf, asyncHandler(async (req: any, res: any) => {
     const { username, displayName } = req.body;
     if (!username) return res.status(400).json({ error: "Username is required" });
     
@@ -1286,7 +1395,7 @@ export function createApp() {
     }
   }));
 
-  app.put("/api/auth/password", asyncHandler(async (req: any, res: any) => {
+  app.put("/api/auth/password", checkSelf, asyncHandler(async (req: any, res: any) => {
     const { username, currentPassword, newPassword } = req.body;
     if (!username) return res.status(400).json({ error: "Username is required" });
     

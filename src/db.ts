@@ -38,16 +38,7 @@ export interface Database {
 // File-based Database Implementation
 const DB_FILE = "./db.json";
 export const initialDb = {
-  users: {
-    "readyhit": {
-      "id": "readyhit",
-      "username": "readyhit",
-      "displayName": "ReadyHit",
-      "role": "superadmin",
-      "createdAt": "2026-03-28T19:51:05Z",
-      "password": "$2a$10$8KzX8KzX8KzX8KzX8KzX8Ou5ZIpBmHpdSOmA" // Placeholder, will be updated by seed
-    }
-  },
+  users: {},
   members: [],
   events: [],
   jobs: [
@@ -307,7 +298,7 @@ export class SupabaseDatabase implements Database {
     }
 
     if (url.includes("YOUR_") || key.includes("YOUR_") || url.includes("TODO") || key.includes("TODO")) {
-      console.warn("WARNING: Supabase URL or Key appears to be a placeholder. Please check your environment variables in the AI Studio Settings.");
+      console.warn("WARNING: Supabase URL or Key appears to be a placeholder. Please check your environment variables.");
     }
 
     try {
@@ -605,7 +596,9 @@ export class SupabaseDatabase implements Database {
         discordGuildId: data.discord_guild_id || '',
         discordAnnouncementsChannelId: data.discord_announcements_channel_id || '',
         discordAbsenceChannelId: data.discord_absence_channel_id || '',
-        discordWebhookUrl: data.discord_webhook_url || ''
+        discordWebhookUrl: data.discord_webhook_url || '',
+        githubRepo: data.github_repo || '',
+        vercelDeployHookUrl: data.vercel_deploy_hook_url || ''
       };
     } catch (e: any) {
       console.error("Supabase Exception in getSettings():", e.message);
@@ -630,6 +623,8 @@ export class SupabaseDatabase implements Database {
     if (settings.discordAnnouncementsChannelId !== undefined) payload.discord_announcements_channel_id = settings.discordAnnouncementsChannelId;
     if (settings.discordAbsenceChannelId !== undefined) payload.discord_absence_channel_id = settings.discordAbsenceChannelId;
     if (settings.discordWebhookUrl !== undefined) payload.discord_webhook_url = settings.discordWebhookUrl;
+    if (settings.githubRepo !== undefined) payload.github_repo = settings.githubRepo;
+    if (settings.vercelDeployHookUrl !== undefined) payload.vercel_deploy_hook_url = settings.vercelDeployHookUrl;
 
     const { error } = await this.supabase.from('settings').upsert(payload);
     if (error) {
@@ -762,27 +757,14 @@ export class SupabaseDatabase implements Database {
 
   async seed() {
     try {
-      console.log("Seeding database...");
+      console.log("Checking database initialization...");
       const users = await this.getUsers();
       console.log(`Current users count: ${Object.keys(users).length}`);
-      if (!users["readyhit"]) {
-        console.log("Seeding superadmin user...");
-        const hashedPassword = await bcrypt.hash("s5ZIpBmHpdSOmA", 10);
-        await this.saveUser({
-          id: "readyhit",
-          username: "readyhit",
-          displayName: "ReadyHit",
-          role: "superadmin",
-          isApproved: true,
-          createdAt: new Date().toISOString(),
-          password: hashedPassword
-        });
-        console.log("Superadmin user seeded successfully");
-      } else {
-        console.log("Superadmin user already exists");
+      if (Object.keys(users).length === 0) {
+        console.log("Database is empty. Waiting for setup wizard...");
       }
     } catch (e: any) {
-      console.error("Supabase Seed Error:", e.message);
+      console.error("Database Check Error:", e.message);
     }
   }
 }

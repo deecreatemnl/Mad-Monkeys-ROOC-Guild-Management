@@ -15,6 +15,7 @@ export async function fetchAPI(path: string, options: RequestInit = {}) {
     'Content-Type': 'application/json',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...(user.role ? { 'user-role': user.role } : {}),
+    ...(user.id ? { 'user-id': user.id } : {}),
     ...(options.headers || {}),
   };
 

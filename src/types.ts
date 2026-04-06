@@ -88,4 +88,6 @@ export interface GuildSettings {
   discordAnnouncementsChannelId?: string;
   discordAbsenceChannelId?: string;
   discordWebhookUrl?: string;
+  githubRepo?: string;
+  vercelDeployHookUrl?: string;
 }

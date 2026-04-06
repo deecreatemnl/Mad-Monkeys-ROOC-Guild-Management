@@ -137,7 +137,7 @@ export default function JobsPage({ isAdmin = false }: JobsPageProps) {
                 className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl hover:border-zinc-700 transition-all group flex items-center justify-between"
               >
                 <span className="font-bold text-white group-hover:text-orange-500 transition-colors">{job.name}</span>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity">
                   <button
                     onClick={() => openModal(job)}
                     className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
