@@ -21,12 +21,14 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
 
   // Initialize for the current round
   const initRound = (currentRound: number) => {
+    setRound(currentRound);
     const targetWinner = winners[currentRound - 1];
     
     // Create a long list for the "slot machine" effect
-    // We repeat the entries many times to ensure a long scroll
     const repeatedEntries = [];
-    const pool = entries.filter(e => currentRound === 1 || e.id !== winners[0].id);
+    // Only exclude winners from previous rounds
+    const previousWinners = winners.slice(0, currentRound - 1);
+    const pool = entries.filter(e => !previousWinners.some(pw => pw.memberId === e.memberId));
     
     // Shuffle the pool for variety
     const shuffledPool = [...pool].sort(() => 0.5 - Math.random());
@@ -36,7 +38,6 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
     }
     
     // Ensure the winner is at a specific position near the end
-    // Let's say we want to land on index 45
     const winnerIndex = 45;
     if (targetWinner) {
       repeatedEntries[winnerIndex] = targetWinner;
@@ -85,9 +86,8 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
         setIsSpinning(false);
         
         setTimeout(() => {
-          if (round === 1 && winners.length > 1) {
-            setRound(2);
-            initRound(2);
+          if (round < winners.length) {
+            initRound(round + 1);
           } else {
             setShowWinners(true);
             if (onComplete) onComplete();
@@ -149,33 +149,36 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
               </div>
 
               {/* Scrolling List */}
-              <motion.div
-                className="flex flex-col items-center"
-                animate={isSpinning ? {
-                  y: [0, -2000],
-                } : roundWinner ? {
-                  y: -2000, // Stay on winner
-                } : {
-                  y: 0
-                }}
-                transition={isSpinning ? {
-                  duration: 5,
-                  ease: [0.45, 0.05, 0.55, 0.95],
-                } : {
-                  duration: 0.5
-                }}
-              >
-                {displayEntries.map((entry, i) => (
-                  <div 
-                    key={`${entry.id}-${i}`}
-                    className="h-16 flex items-center justify-center w-full"
-                  >
-                    <span className={`text-xl font-bold tracking-tight ${roundWinner?.id === entry.id ? 'text-orange-500 scale-125' : 'text-zinc-600'}`}>
-                      {entry.ign}
-                    </span>
-                  </div>
-                ))}
-              </motion.div>
+              <div className="relative w-full h-full overflow-hidden">
+                <motion.div
+                  key={round}
+                  className="flex flex-col items-center w-full"
+                  animate={isSpinning ? {
+                    y: [0, -2000],
+                  } : roundWinner ? {
+                    y: -2000, // Stay on winner
+                  } : {
+                    y: 0
+                  }}
+                  transition={isSpinning ? {
+                    duration: 5,
+                    ease: [0.45, 0.05, 0.55, 0.95],
+                  } : {
+                    duration: 0.5
+                  }}
+                >
+                  {displayEntries.map((entry, i) => (
+                    <div 
+                      key={`${entry.id}-${i}`}
+                      className="h-16 flex items-center justify-center w-full shrink-0"
+                    >
+                      <span className={`text-xl font-bold tracking-tight ${roundWinner?.id === entry.id ? 'text-orange-500 scale-125' : 'text-zinc-600'}`}>
+                        {entry.ign}
+                      </span>
+                    </div>
+                  ))}
+                </motion.div>
+              </div>
             </div>
 
             {/* Countdown Overlay */}
@@ -263,22 +266,22 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
               <Sparkles className="w-5 h-5" />
             </motion.div>
             
-            <div className="flex flex-col gap-6 items-center w-full max-w-md px-8">
+            <div className="grid grid-cols-2 gap-4 w-full max-w-2xl px-8">
               {winners.map((winner, idx) => (
                 <motion.div
                   key={winner.id}
                   initial={{ opacity: 0, x: -30 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: idx * 0.3, type: "spring" }}
-                  className="w-full flex items-center justify-between bg-zinc-900 p-6 rounded-3xl border border-zinc-800 shadow-xl"
+                  className="w-full flex items-center justify-between bg-zinc-900 p-4 rounded-3xl border border-zinc-800 shadow-xl"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-orange-500/10 rounded-2xl flex items-center justify-center text-2xl border border-orange-500/20">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-orange-500/10 rounded-2xl flex items-center justify-center text-xl border border-orange-500/20">
                       👑
                     </div>
-                    <span className="text-2xl font-black italic text-white tracking-tight">{winner.ign}</span>
+                    <span className="text-xl font-black italic text-white tracking-tight">{winner.ign}</span>
                   </div>
-                  <Trophy className="w-8 h-8 text-orange-500" />
+                  <Trophy className="w-6 h-6 text-orange-500" />
                 </motion.div>
               ))}
             </div>

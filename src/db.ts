@@ -16,6 +16,8 @@ export interface Database {
   getMembers: () => Promise<any>;
   saveMember: (member: any) => Promise<void>;
   deleteMember: (id: string) => Promise<void>;
+  getMemberLogs: (memberId: string) => Promise<any[]>;
+  saveMemberLog: (log: any) => Promise<void>;
   getJobs: () => Promise<any>;
   saveJob: (job: any) => Promise<void>;
   deleteJob: (id: string) => Promise<void>;
@@ -37,9 +39,10 @@ export interface Database {
 
 // File-based Database Implementation
 const DB_FILE = "./db.json";
-export const initialDb = {
+export const initialDb: any = {
   users: {},
   members: [],
+  member_logs: {},
   events: [],
   jobs: [
     { id: "1", name: "Lord Knight" },
@@ -68,6 +71,7 @@ export const initialDb = {
       discordAnnouncementsChannelId: '',
       discordAbsenceChannelId: '',
       discordWebhookUrl: '',
+      raffleWinners: 2,
     }
   },
   raffle: {
@@ -156,6 +160,21 @@ export class FileDatabase implements Database {
   async deleteMember(id: string) {
     const data = await this.get();
     data.members = data.members.filter((m: any) => m.id !== id);
+    if (data.member_logs) delete data.member_logs[id];
+    await this.save(data);
+  }
+
+  async getMemberLogs(memberId: string) {
+    const data = await this.get();
+    if (!data.member_logs) data.member_logs = {};
+    return data.member_logs[memberId] || [];
+  }
+
+  async saveMemberLog(log: any) {
+    const data = await this.get();
+    if (!data.member_logs) data.member_logs = {};
+    if (!data.member_logs[log.memberId]) data.member_logs[log.memberId] = [];
+    data.member_logs[log.memberId].push({ ...log, id: Date.now().toString() });
     await this.save(data);
   }
 
@@ -437,7 +456,8 @@ export class SupabaseDatabase implements Database {
         role: m.role,
         dateJoined: m.date_joined,
         uid: m.uid,
-        discordId: m.discord_id
+        discordId: m.discord_id,
+        status: m.status || 'active'
       }));
     } catch (e: any) {
       console.error("Supabase Exception in getMembers():", e.message);
@@ -453,7 +473,8 @@ export class SupabaseDatabase implements Database {
       role: member.role,
       date_joined: member.dateJoined,
       uid: member.uid,
-      discord_id: member.discordId
+      discord_id: member.discordId,
+      status: member.status || 'active'
     });
     if (error) console.error("Supabase Save Member Error:", error.message);
   }
@@ -461,6 +482,41 @@ export class SupabaseDatabase implements Database {
   async deleteMember(id: string) {
     const { error } = await this.supabase.from('members').delete().eq('id', id);
     if (error) console.error("Supabase Delete Member Error:", error.message);
+  }
+
+  async getMemberLogs(memberId: string) {
+    try {
+      const { data, error } = await this.supabase.from('member_logs').select('*').eq('member_id', memberId).order('timestamp', { ascending: false });
+      if (error) {
+        console.error("Supabase Get Member Logs Error:", error.message);
+        return [];
+      }
+      return (data || []).map(l => ({
+        id: l.id,
+        memberId: l.member_id,
+        type: l.type,
+        oldValue: l.old_value,
+        newValue: l.new_value,
+        details: l.details,
+        timestamp: l.timestamp
+      }));
+    } catch (e: any) {
+      console.error("Supabase Exception in getMemberLogs():", e.message);
+      return [];
+    }
+  }
+
+  async saveMemberLog(log: any) {
+    const { error } = await this.supabase.from('member_logs').insert({
+      id: log.id || Date.now().toString(),
+      member_id: log.memberId,
+      type: log.type,
+      old_value: log.oldValue,
+      new_value: log.newValue,
+      details: log.details,
+      timestamp: log.timestamp || new Date().toISOString()
+    });
+    if (error) console.error("Supabase Save Member Log Error:", error.message);
   }
 
   async getJobs() {
@@ -598,7 +654,8 @@ export class SupabaseDatabase implements Database {
         discordAbsenceChannelId: data.discord_absence_channel_id || '',
         discordWebhookUrl: data.discord_webhook_url || '',
         githubRepo: data.github_repo || '',
-        vercelDeployHookUrl: data.vercel_deploy_hook_url || ''
+        vercelDeployHookUrl: data.vercel_deploy_hook_url || '',
+        raffleWinners: data.raffle_winners || 2
       };
     } catch (e: any) {
       console.error("Supabase Exception in getSettings():", e.message);
@@ -625,6 +682,7 @@ export class SupabaseDatabase implements Database {
     if (settings.discordWebhookUrl !== undefined) payload.discord_webhook_url = settings.discordWebhookUrl;
     if (settings.githubRepo !== undefined) payload.github_repo = settings.githubRepo;
     if (settings.vercelDeployHookUrl !== undefined) payload.vercel_deploy_hook_url = settings.vercelDeployHookUrl;
+    if (settings.raffleWinners !== undefined) payload.raffle_winners = settings.raffleWinners;
 
     const { error } = await this.supabase.from('settings').upsert(payload);
     if (error) {
@@ -693,7 +751,8 @@ export class SupabaseDatabase implements Database {
       role: data.role,
       dateJoined: data.date_joined,
       uid: data.uid,
-      discordId: data.discord_id
+      discordId: data.discord_id,
+      status: data.status || 'active'
     };
   }
 

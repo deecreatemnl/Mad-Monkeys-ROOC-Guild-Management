@@ -25,6 +25,126 @@ const PageLoader = () => (
   </div>
 );
 
+interface AuthUIProps {
+  guildSettings: GuildSettings;
+  authMode: 'login' | 'signup';
+  setAuthMode: (mode: 'login' | 'signup') => void;
+  handleLogin: (e: React.FormEvent) => void;
+  handleSignup: (e: React.FormEvent) => void;
+}
+
+const AuthUI = ({ guildSettings, authMode, setAuthMode, handleLogin, handleSignup }: AuthUIProps) => (
+  <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="max-w-md w-full bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-2xl"
+    >
+      <div className="text-center mb-8">
+        <div className="w-16 h-16 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto mb-4 overflow-hidden">
+          {guildSettings.logoUrl ? (
+            <img src={guildSettings.logoUrl} alt={guildSettings.name} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+          ) : (
+            <Users className="w-8 h-8 text-orange-500" />
+          )}
+        </div>
+        <h1 className="text-2xl font-bold text-white">{guildSettings.name}</h1>
+        <p className="text-zinc-400 text-sm">{guildSettings.subtitle}</p>
+      </div>
+
+      <form onSubmit={authMode === 'login' ? handleLogin : handleSignup} className="space-y-4">
+        <div>
+          <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Username</label>
+          <div className="relative">
+            <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <input
+              required
+              name="username"
+              type="text"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-10 pr-4 text-white text-sm focus:ring-2 focus:ring-orange-500/50 outline-none"
+              placeholder="Your Username"
+            />
+          </div>
+        </div>
+
+        {authMode === 'signup' && (
+          <>
+            <div>
+              <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">In-Game Name (IGN)</label>
+              <div className="relative">
+                <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <input
+                  required
+                  name="ign"
+                  type="text"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-10 pr-4 text-white text-sm focus:ring-2 focus:ring-orange-500/50 outline-none"
+                  placeholder="Your IGN"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">User ID (UID - Numbers Only)</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                <input
+                  required
+                  name="uid"
+                  type="text"
+                  pattern="[0-9]*"
+                  inputMode="numeric"
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-10 pr-4 text-white text-sm focus:ring-2 focus:ring-orange-500/50 outline-none"
+                  placeholder="Your UID"
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        <div>
+          <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Password</label>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <input
+              required
+              name="password"
+              type="password"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-10 pr-4 text-white text-sm focus:ring-2 focus:ring-orange-500/50 outline-none"
+              placeholder="••••••••"
+            />
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all active:scale-95 shadow-lg shadow-orange-500/20"
+        >
+          {authMode === 'login' ? 'Sign In' : 'Create Account'}
+        </button>
+      </form>
+
+      <div className="mt-6 pt-6 border-t border-zinc-900 flex flex-col gap-3">
+        <Link 
+          to="/raffle" 
+          className="w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white py-3 rounded-xl transition-all border border-zinc-800"
+        >
+          <Trophy className="w-4 h-4 text-orange-500" />
+          <span className="text-sm font-bold">Go to Weekly Raffle</span>
+        </Link>
+      </div>
+
+      <p className="text-center mt-8 text-sm text-zinc-500">
+        {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
+        <button 
+          onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+          className="text-orange-500 font-bold hover:underline"
+        >
+          {authMode === 'login' ? 'Sign Up' : 'Sign In'}
+        </button>
+      </p>
+    </motion.div>
+  </div>
+);
+
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -116,118 +236,6 @@ export default function App() {
 
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
 
-  const AuthUI = () => (
-    <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-2xl"
-      >
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-orange-500/10 rounded-full flex items-center justify-center mx-auto mb-4 overflow-hidden">
-            {guildSettings.logoUrl ? (
-              <img src={guildSettings.logoUrl} alt={guildSettings.name} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
-            ) : (
-              <Users className="w-8 h-8 text-orange-500" />
-            )}
-          </div>
-          <h1 className="text-2xl font-bold text-white">{guildSettings.name}</h1>
-          <p className="text-zinc-400 text-sm">{guildSettings.subtitle}</p>
-        </div>
-
-        <form onSubmit={authMode === 'login' ? handleLogin : handleSignup} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Username</label>
-            <div className="relative">
-              <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-              <input
-                required
-                name="username"
-                type="text"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-10 pr-4 text-white text-sm focus:ring-2 focus:ring-orange-500/50 outline-none"
-                placeholder="Your Username"
-              />
-            </div>
-          </div>
-
-          {authMode === 'signup' && (
-            <>
-              <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">In-Game Name (IGN)</label>
-                <div className="relative">
-                  <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                  <input
-                    required
-                    name="ign"
-                    type="text"
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-10 pr-4 text-white text-sm focus:ring-2 focus:ring-orange-500/50 outline-none"
-                    placeholder="Your IGN"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">User ID (UID - Numbers Only)</label>
-                <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                  <input
-                    required
-                    name="uid"
-                    type="text"
-                    pattern="[0-9]*"
-                    inputMode="numeric"
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-10 pr-4 text-white text-sm focus:ring-2 focus:ring-orange-500/50 outline-none"
-                    placeholder="Your UID"
-                  />
-                </div>
-              </div>
-            </>
-          )}
-
-          <div>
-            <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-              <input
-                required
-                name="password"
-                type="password"
-                className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 pl-10 pr-4 text-white text-sm focus:ring-2 focus:ring-orange-500/50 outline-none"
-                placeholder="••••••••"
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 rounded-xl transition-all active:scale-95 shadow-lg shadow-orange-500/20"
-          >
-            {authMode === 'login' ? 'Sign In' : 'Create Account'}
-          </button>
-        </form>
-
-        <div className="mt-6 pt-6 border-t border-zinc-900 flex flex-col gap-3">
-          <Link 
-            to="/raffle" 
-            className="w-full flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 text-zinc-400 hover:text-white py-3 rounded-xl transition-all border border-zinc-800"
-          >
-            <Trophy className="w-4 h-4 text-orange-500" />
-            <span className="text-sm font-bold">Go to Weekly Raffle</span>
-          </Link>
-        </div>
-
-        <p className="text-center mt-8 text-sm text-zinc-500">
-          {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
-          <button 
-            onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
-            className="text-orange-500 font-bold hover:underline"
-          >
-            {authMode === 'login' ? 'Sign Up' : 'Sign In'}
-          </button>
-        </p>
-      </motion.div>
-    </div>
-  );
-
   if (loading) {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center">
@@ -279,7 +287,15 @@ export default function App() {
         <Route path="/public/event/:eventId" element={<PublicEventPage />} />
         <Route path="/raffle" element={<RafflePage />} />
         <Route path="*" element={
-          !user ? <AuthUI /> : (
+          !user ? (
+            <AuthUI 
+              guildSettings={guildSettings} 
+              authMode={authMode} 
+              setAuthMode={setAuthMode} 
+              handleLogin={handleLogin} 
+              handleSignup={handleSignup} 
+            />
+          ) : (
             <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col md:flex-row">
               {/* Mobile Nav */}
               <div className="md:hidden bg-zinc-900 border-b border-zinc-800 p-4 flex items-center justify-between sticky top-0 z-50">
@@ -394,7 +410,7 @@ export default function App() {
                     <Route path="/events" element={<EventsPage isAdmin={isAdmin} />} />
                     <Route path="/jobs" element={isAdmin ? <JobsPage isAdmin={isAdmin} /> : <Navigate to="/" replace />} />
                     <Route path="/statistics" element={<StatisticsPage isAdmin={isAdmin} />} />
-                    <Route path="/raffle" element={<RafflePage user={user} />} />
+                    <Route path="/raffle" element={<RafflePage />} />
                     <Route path="/account" element={<AccountPage user={user} onUpdateUser={setUser} onLogout={handleLogout} />} />
                     {isAdmin && (
                       <>

@@ -20,7 +20,9 @@ export default function StatsPage({ isAdmin = false }: StatsPageProps) {
           fetchAPI('/api/members'),
           fetchAPI('/api/jobs')
         ]);
-        setMembers(membersData);
+        // Filter out members who have left
+        const activeMembers = membersData.filter((m: Member) => m.status !== 'left');
+        setMembers(activeMembers);
         setJobs(jobsData || []);
       } catch (err) {
         console.error('Failed to load stats data:', err);

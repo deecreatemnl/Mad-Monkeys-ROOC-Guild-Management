@@ -24,7 +24,19 @@ CREATE TABLE IF NOT EXISTS members (
     date_joined TEXT,
     uid TEXT,
     discord_id TEXT,
+    status TEXT DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2.1 Member Logs Table
+CREATE TABLE IF NOT EXISTS member_logs (
+    id TEXT PRIMARY KEY,
+    member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    details TEXT,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 3. Jobs Table
@@ -59,6 +71,7 @@ CREATE TABLE IF NOT EXISTS settings (
     discord_announcements_channel_id TEXT,
     discord_absence_channel_id TEXT,
     discord_webhook_url TEXT,
+    raffle_winners INTEGER DEFAULT 2,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

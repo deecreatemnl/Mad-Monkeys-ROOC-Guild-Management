@@ -31,6 +31,7 @@ const ROLES = [
   { name: 'DPS', color: 'text-zinc-400', bg: 'bg-zinc-400/10', border: 'border-zinc-400/20', icon: <Sword className="w-3 h-3" /> },
   { name: 'Support', color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20', icon: <Heart className="w-3 h-3" /> },
   { name: 'Tank', color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/20', icon: <Shield className="w-3 h-3" /> },
+  { name: 'Utility', color: 'text-emerald-400', bg: 'bg-emerald-400/10', border: 'border-emerald-400/20', icon: <Zap className="w-3 h-3" /> },
 ];
 
 const getMemberCategory = (member: Member) => {
@@ -49,6 +50,7 @@ const getCategoryColor = (category: string) => {
   switch (category) {
     case 'Support': return 'text-blue-400';
     case 'Tank': return 'text-orange-400';
+    case 'Utility': return 'text-emerald-400';
     default: return 'text-zinc-400';
   }
 };
@@ -84,6 +86,7 @@ interface SortableAssignmentItemProps {
   roleStyle: any;
   isAdmin: boolean;
   onUnassign: () => void;
+  jobColor?: string;
 }
 
 function SortableAssignmentItem({
@@ -92,6 +95,7 @@ function SortableAssignmentItem({
   roleStyle,
   isAdmin,
   onUnassign,
+  jobColor,
 }: SortableAssignmentItemProps) {
   const {
     attributes,
@@ -113,27 +117,42 @@ function SortableAssignmentItem({
     transform: CSS.Transform.toString(transform),
     transition,
     zIndex: isDragging ? 10 : 1,
+    backgroundColor: jobColor ? `${jobColor}20` : undefined,
+    borderColor: jobColor ? `${jobColor}40` : undefined,
   };
 
+  // Calculate contrast color for text/icons if jobColor is provided
+  const getContrastColor = (hexcolor?: string) => {
+    if (!hexcolor) return undefined;
+    const hex = hexcolor.replace('#', '');
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+    return (yiq >= 128) ? '#000000' : '#ffffff';
+  };
+
+  const textColor = jobColor ? getContrastColor(jobColor) : undefined;
+
   return (
-    <div ref={setNodeRef} style={style} className={cn("flex items-center justify-between p-2 rounded-lg bg-zinc-900/50 border border-zinc-800/50 group", isDragging && "opacity-50")}>
+    <div ref={setNodeRef} style={style} className={cn("flex items-center justify-between p-2 rounded-lg group", !jobColor && "bg-zinc-900/50 border border-zinc-800/50", isDragging && "opacity-50")}>
       <div className="flex items-center gap-3">
         {isAdmin && (
           <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-400">
             <GripVertical className="w-3.5 h-3.5" />
           </div>
         )}
-        <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center bg-zinc-800")}>
+        <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", !jobColor && "bg-zinc-800")} style={{ backgroundColor: jobColor ? `${jobColor}40` : undefined, color: jobColor || undefined }}>
           {member ? getJobIcon(member) : <Star className="w-4 h-4 text-zinc-500" />}
         </div>
         <div>
-          <p className="text-sm font-bold text-white leading-none">{member?.ign}</p>
+          <p className="text-sm font-bold leading-none" style={{ color: textColor || 'white' }}>{member?.ign}</p>
           <div className="flex items-center gap-2 mt-1">
-            <div className={cn("flex items-center gap-1 text-[9px] font-bold uppercase", roleStyle.color)}>
+            <div className={cn("flex items-center gap-1 text-[9px] font-bold uppercase", !jobColor && roleStyle.color)} style={{ color: jobColor || undefined }}>
               {roleStyle.icon}
               {assignment.role}
             </div>
-            <span className="text-[9px] text-zinc-600 font-bold uppercase tracking-wider">• {member?.job}</span>
+            <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: jobColor ? textColor : '#52525b' }}>• {member?.job}</span>
           </div>
         </div>
       </div>
@@ -156,6 +175,7 @@ interface SortablePartyItemProps {
   isAdmin: boolean;
   assignments: Record<string, Assignment[]>;
   members: Member[];
+  jobs: any[];
   openAssignModal: (eventId: string, subEventId: string, partyId: string) => void;
   openPartyModal: (eventId: string, subEventId: string, party?: Party) => void;
   deleteParty: (eventId: string, subEventId: string, partyId: string) => void;
@@ -171,6 +191,7 @@ function SortablePartyItem({
   isAdmin,
   assignments,
   members,
+  jobs,
   openAssignModal,
   openPartyModal,
   deleteParty,
@@ -283,6 +304,7 @@ function SortablePartyItem({
               {assignments[party.id!]?.map((assignment) => {
                 const member = members.find(m => m.id === assignment.memberId);
                 const roleStyle = getRoleStyle(assignment.role);
+                const jobData = jobs.find(j => j.name === member?.job);
                 return (
                   <SortableAssignmentItem
                     key={assignment.id}
@@ -290,6 +312,7 @@ function SortablePartyItem({
                     member={member}
                     roleStyle={roleStyle}
                     isAdmin={isAdmin}
+                    jobColor={jobData?.color}
                     onUnassign={() => unassignMember(event.id!, subEvent.id!, party.id!, assignment.id!)}
                   />
                 );
@@ -316,6 +339,7 @@ interface SortableSubEventItemProps {
   parties: Party[];
   assignments: Record<string, Assignment[]>;
   members: Member[];
+  jobs: any[];
   openPartyModal: (eventId: string, subEventId: string, party?: Party) => void;
   openSubEventModal: (eventId: string, subEvent?: SubEvent) => void;
   deleteSubEvent: (eventId: string, subEventId: string) => void;
@@ -336,6 +360,7 @@ function SortableSubEventItem({
   parties,
   assignments,
   members,
+  jobs,
   openPartyModal,
   openSubEventModal,
   deleteSubEvent,
@@ -438,6 +463,7 @@ function SortableSubEventItem({
                     isAdmin={isAdmin}
                     assignments={assignments}
                     members={members}
+                    jobs={jobs}
                     openAssignModal={openAssignModal}
                     openPartyModal={openPartyModal}
                     deleteParty={deleteParty}
@@ -464,6 +490,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [events, setEvents] = useState<GuildEvent[]>([]);
   const [removingAbsence, setRemovingAbsence] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [jobs, setJobs] = useState<any[]>([]);
   const [subEvents, setSubEvents] = useState<Record<string, SubEvent[]>>({});
   const [parties, setParties] = useState<Record<string, Party[]>>({});
   const [assignments, setAssignments] = useState<Record<string, Assignment[]>>({});
@@ -514,7 +541,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   }, [collapsedSubEvents]);
   
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
-  const [memberRoleFilter, setMemberRoleFilter] = useState<'All' | 'DPS' | 'Support' | 'Tank'>('All');
+  const [memberRoleFilter, setMemberRoleFilter] = useState<'All' | 'DPS' | 'Support' | 'Tank' | 'Utility'>('All');
   const [initialSubEventId, setInitialSubEventId] = useState<string | null>(null);
 
   const [isDiscordShareModalOpen, setIsDiscordShareModalOpen] = useState(false);
@@ -591,10 +618,11 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
 
   const loadData = useCallback(async () => {
     try {
-      const [eventsData, membersData, settingsData] = await Promise.all([
+      const [eventsData, membersData, settingsData, jobsData] = await Promise.all([
         fetchAPI('/api/events'),
         fetchAPI('/api/members'),
-        fetchAPI('/api/settings/guild_settings')
+        fetchAPI('/api/settings/guild_settings'),
+        fetchAPI('/api/jobs')
       ]);
       
       // Stable sort for events: newest first (by ID descending)
@@ -604,6 +632,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       setEvents(sortedEvents);
       setMembers(membersData);
       setSettings(settingsData);
+      setJobs(jobsData || []);
       
       const newSubEvents: Record<string, SubEvent[]> = {};
       const newParties: Record<string, Party[]> = {};
@@ -1474,6 +1503,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                               parties={parties[subEvent.id!] || []}
                               assignments={assignments}
                               members={members}
+                              jobs={jobs}
                               openPartyModal={openPartyModal}
                               openSubEventModal={openSubEventModal}
                               deleteSubEvent={deleteSubEvent}
@@ -1738,7 +1768,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                   </div>
                   
                   <div className="flex gap-1 mb-4">
-                    {['All', 'DPS', 'Support', 'Tank'].map((filter) => (
+                    {['All', 'DPS', 'Support', 'Tank', 'Utility'].map((filter) => (
                       <button
                         key={filter}
                         type="button"
@@ -1789,6 +1819,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                             "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border",
                             getMemberCategory(m) === 'Support' ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
                             getMemberCategory(m) === 'Tank' ? "bg-orange-500/10 text-orange-500 border-orange-500/20" :
+                            getMemberCategory(m) === 'Utility' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
                             "bg-zinc-700 text-zinc-400 border-zinc-600"
                           )}>
                             {getMemberCategory(m)}

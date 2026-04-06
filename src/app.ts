@@ -214,9 +214,24 @@ export function createApp() {
     res.json(members);
   }));
 
+  app.get("/api/members/:id/logs", asyncHandler(async (req: any, res: any) => {
+    const logs = await db.getMemberLogs(req.params.id);
+    res.json(logs);
+  }));
+
   app.post("/api/members", asyncHandler(async (req: any, res: any) => {
-    const newMember = { ...req.body, id: Date.now().toString() };
+    const newMember = { ...req.body, id: Date.now().toString(), status: req.body.status || 'active' };
     await db.saveMember(newMember);
+    
+    // Log initial join
+    await db.saveMemberLog({
+      memberId: newMember.id,
+      type: 'guild_join',
+      newValue: 'active',
+      timestamp: new Date().toISOString(),
+      details: `Member joined the guild as ${newMember.job}`
+    });
+    
     res.json(newMember);
   }));
 
@@ -225,9 +240,62 @@ export function createApp() {
     if (member) {
       const oldRole = member.role;
       const newRole = req.body.role;
+      const oldStatus = member.status || 'active';
+      const newStatus = req.body.status || oldStatus;
+      const oldIgn = member.ign;
+      const newIgn = req.body.ign || oldIgn;
+      const oldJob = member.job;
+      const newJob = req.body.job || oldJob;
+
       const updatedMember = { ...member, ...req.body };
       
+      // Log changes
+      if (oldStatus !== newStatus) {
+        let type: any = 'status_change';
+        if (newStatus === 'left') type = 'guild_leave';
+        else if (oldStatus === 'left' && newStatus === 'active') type = 'guild_return';
+        
+        await db.saveMemberLog({
+          memberId: member.id,
+          type,
+          oldValue: oldStatus,
+          newValue: newStatus,
+          timestamp: new Date().toISOString(),
+          details: `Status changed from ${oldStatus} to ${newStatus}`
+        });
+      }
+
+      if (oldIgn !== newIgn) {
+        await db.saveMemberLog({
+          memberId: member.id,
+          type: 'name_change',
+          oldValue: oldIgn,
+          newValue: newIgn,
+          timestamp: new Date().toISOString(),
+          details: `Name changed from ${oldIgn} to ${newIgn}`
+        });
+      }
+
+      if (oldJob !== newJob) {
+        await db.saveMemberLog({
+          memberId: member.id,
+          type: 'job_change',
+          oldValue: oldJob,
+          newValue: newJob,
+          timestamp: new Date().toISOString(),
+          details: `Job changed from ${oldJob} to ${newJob}`
+        });
+      }
+
       if (oldRole !== newRole && newRole) {
+        await db.saveMemberLog({
+          memberId: member.id,
+          type: 'role_change',
+          oldValue: oldRole,
+          newValue: newRole,
+          timestamp: new Date().toISOString(),
+          details: `Role changed from ${oldRole} to ${newRole}`
+        });
         await db.updateAssignmentsRole(req.params.id, newRole);
       }
       
@@ -806,13 +874,16 @@ export function createApp() {
       return match && notRestricted;
     });
 
-    if (currentWeekEntries.length < 2) {
-      return res.status(400).json({ error: "Not enough entries to draw 2 winners." });
+    const settings = await db.getSettings();
+    const numWinners = settings.raffleWinners || 2;
+
+    if (currentWeekEntries.length < numWinners) {
+      return res.status(400).json({ error: `Not enough entries to draw ${numWinners} winners.` });
     }
 
-    // Shuffle and pick 2 winners
+    // Shuffle and pick winners
     const shuffled = [...currentWeekEntries].sort(() => 0.5 - Math.random());
-    const winners = shuffled.slice(0, 2).map(e => ({
+    const winners = shuffled.slice(0, numWinners).map(e => ({
       id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5),
       memberId: e.memberId,
       ign: e.ign,
@@ -1046,14 +1117,21 @@ export function createApp() {
 
   // System Update API
   app.get("/api/system/update-check", checkAdmin, asyncHandler(async (req: any, res: any) => {
-    const settings = await db.getSettings();
-    if (!settings.githubRepo) {
-      return res.status(400).json({ error: "GitHub repository not configured." });
+    const githubRepo = process.env.GITHUB_REPO;
+    const githubToken = process.env.GITHUB_TOKEN;
+    
+    if (!githubRepo) {
+      return res.status(400).json({ error: "GitHub repository not configured in environment variables." });
     }
 
     try {
       // Fetch package.json from the main branch
-      const response = await axios.get(`https://raw.githubusercontent.com/${settings.githubRepo}/main/package.json`);
+      const headers: any = {};
+      if (githubToken) {
+        headers['Authorization'] = `token ${githubToken}`;
+      }
+      
+      const response = await axios.get(`https://raw.githubusercontent.com/${githubRepo}/main/package.json`, { headers });
       const latestVersion = response.data.version;
       
       // Get current version from local package.json
@@ -1067,7 +1145,7 @@ export function createApp() {
       });
     } catch (err: any) {
       console.error("Failed to check for updates:", err.message);
-      res.status(500).json({ error: "Failed to check for updates. Ensure the repository is public or configured correctly." });
+      res.status(500).json({ error: "Failed to check for updates. Ensure the repository is accessible and the token is valid." });
     }
   }));
 
@@ -1207,13 +1285,13 @@ export function createApp() {
               localStorage.setItem('discord_auth_result', JSON.stringify(authData));
               
               // Close if it's a popup, otherwise redirect
-              if (window.opener) {
-                setTimeout(() => window.close(), 1000);
+              if (window.opener && !window.opener.closed) {
+                window.close();
               } else {
                 window.location.href = '${origin || ''}/settings?discord_success=true';
               }
             </script>
-            <p>Discord authentication successful. This window should close automatically.</p>
+            <p>Discord authentication successful. You can close this window.</p>
           </body>
         </html>
       `);

@@ -15,7 +15,16 @@ export default function JobsPage({ isAdmin = false }: JobsPageProps) {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
-  const [formData, setFormData] = useState({ name: '' });
+  const [formData, setFormData] = useState({ 
+    name: '', 
+    color: '#f97316',
+    nameColor: '',
+    jobColor: '',
+    roleColor: '',
+    containerColor: '',
+    iconColor: '',
+    iconBgColor: ''
+  });
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -86,10 +95,28 @@ export default function JobsPage({ isAdmin = false }: JobsPageProps) {
   const openModal = (job?: Job) => {
     if (job) {
       setEditingJob(job);
-      setFormData({ name: job.name || '' });
+      setFormData({ 
+        name: job.name || '', 
+        color: job.color || '#f97316',
+        nameColor: job.nameColor || '',
+        jobColor: job.jobColor || '',
+        roleColor: job.roleColor || '',
+        containerColor: job.containerColor || '',
+        iconColor: job.iconColor || '',
+        iconBgColor: job.iconBgColor || ''
+      });
     } else {
       setEditingJob(null);
-      setFormData({ name: '' });
+      setFormData({ 
+        name: '', 
+        color: '#f97316',
+        nameColor: '',
+        jobColor: '',
+        roleColor: '',
+        containerColor: '',
+        iconColor: '',
+        iconBgColor: ''
+      });
     }
     setIsModalOpen(true);
   };
@@ -136,7 +163,13 @@ export default function JobsPage({ isAdmin = false }: JobsPageProps) {
                 exit={{ opacity: 0, scale: 0.9 }}
                 className="bg-zinc-900 border border-zinc-800 p-4 rounded-xl hover:border-zinc-700 transition-all group flex items-center justify-between"
               >
-                <span className="font-bold text-white group-hover:text-orange-500 transition-colors">{job.name}</span>
+                <div className="flex items-center gap-3">
+                  <div 
+                    className="w-4 h-4 rounded-full shadow-sm" 
+                    style={{ backgroundColor: job.color || '#f97316' }}
+                  />
+                  <span className="font-bold text-white group-hover:text-orange-500 transition-colors">{job.name}</span>
+                </div>
                 <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity">
                   <button
                     onClick={() => openModal(job)}
@@ -188,7 +221,7 @@ export default function JobsPage({ isAdmin = false }: JobsPageProps) {
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
                 <div>
                   <label className="block text-sm font-medium text-zinc-400 mb-1.5">Job / Class Name</label>
                   <input
@@ -200,7 +233,147 @@ export default function JobsPage({ isAdmin = false }: JobsPageProps) {
                     placeholder="e.g. Lord Knight"
                   />
                 </div>
-                <div className="pt-4 flex gap-3">
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Default Job Color</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={formData.color}
+                        onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                        className="w-10 h-10 rounded-xl cursor-pointer bg-zinc-800 border border-zinc-700 p-1"
+                      />
+                      <input
+                        type="text"
+                        value={formData.color}
+                        onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                        className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 uppercase font-mono text-xs"
+                        placeholder="#F97316"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Container Background</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={formData.containerColor || '#18181b'}
+                        onChange={(e) => setFormData({ ...formData, containerColor: e.target.value })}
+                        className="w-10 h-10 rounded-xl cursor-pointer bg-zinc-800 border border-zinc-700 p-1"
+                      />
+                      <input
+                        type="text"
+                        value={formData.containerColor}
+                        onChange={(e) => setFormData({ ...formData, containerColor: e.target.value })}
+                        className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 uppercase font-mono text-xs"
+                        placeholder="Default"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Member Name Color</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={formData.nameColor || '#ffffff'}
+                        onChange={(e) => setFormData({ ...formData, nameColor: e.target.value })}
+                        className="w-10 h-10 rounded-xl cursor-pointer bg-zinc-800 border border-zinc-700 p-1"
+                      />
+                      <input
+                        type="text"
+                        value={formData.nameColor}
+                        onChange={(e) => setFormData({ ...formData, nameColor: e.target.value })}
+                        className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 uppercase font-mono text-xs"
+                        placeholder="Default"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Job Text Color</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={formData.jobColor || '#ffffff'}
+                        onChange={(e) => setFormData({ ...formData, jobColor: e.target.value })}
+                        className="w-10 h-10 rounded-xl cursor-pointer bg-zinc-800 border border-zinc-700 p-1"
+                      />
+                      <input
+                        type="text"
+                        value={formData.jobColor}
+                        onChange={(e) => setFormData({ ...formData, jobColor: e.target.value })}
+                        className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 uppercase font-mono text-xs"
+                        placeholder="Default"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Role Text Color</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={formData.roleColor || '#ffffff'}
+                        onChange={(e) => setFormData({ ...formData, roleColor: e.target.value })}
+                        className="w-10 h-10 rounded-xl cursor-pointer bg-zinc-800 border border-zinc-700 p-1"
+                      />
+                      <input
+                        type="text"
+                        value={formData.roleColor}
+                        onChange={(e) => setFormData({ ...formData, roleColor: e.target.value })}
+                        className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 uppercase font-mono text-xs"
+                        placeholder="Default"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Icon Color</label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="color"
+                        value={formData.iconColor || '#000000'}
+                        onChange={(e) => setFormData({ ...formData, iconColor: e.target.value })}
+                        className="w-10 h-10 rounded-xl cursor-pointer bg-zinc-800 border border-zinc-700 p-1"
+                      />
+                      <input
+                        type="text"
+                        value={formData.iconColor}
+                        onChange={(e) => setFormData({ ...formData, iconColor: e.target.value })}
+                        className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl py-2 px-3 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 uppercase font-mono text-xs"
+                        placeholder="Default"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Icon Container Background</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={formData.iconBgColor || '#27272a'}
+                      onChange={(e) => setFormData({ ...formData, iconBgColor: e.target.value })}
+                      className="w-10 h-10 rounded-xl cursor-pointer bg-zinc-800 border border-zinc-700 p-1"
+                    />
+                    <input
+                      type="text"
+                      value={formData.iconBgColor}
+                      onChange={(e) => setFormData({ ...formData, iconBgColor: e.target.value })}
+                      className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 uppercase font-mono"
+                      placeholder="Default"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-4 flex gap-3 sticky bottom-0 bg-zinc-900 pb-2">
                   <button
                     type="button"
                     onClick={closeModal}

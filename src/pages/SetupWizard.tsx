@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Shield, Database, CheckCircle2, Loader2, Server } from 'lucide-react';
+import { Shield, Database, CheckCircle2, Loader2, Server, AlertTriangle } from 'lucide-react';
 import { fetchAPI } from '../lib/api';
+import { cn } from '../lib/utils';
 
 interface SetupWizardProps {
   onComplete: () => void;
@@ -11,15 +12,28 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [envStatus, setEnvStatus] = useState<any>(null);
   const [formData, setFormData] = useState({
     username: '',
     displayName: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    guildName: '',
+    guildSubtitle: '',
   });
 
+  // Fetch env status on mount
+  useEffect(() => {
+    fetchAPI('/api/health').then(data => setEnvStatus(data.env)).catch(console.error);
+  }, []);
+
   const handleNext = () => {
-    setStep(2);
+    if (step === 2 && !formData.guildName) {
+      setError('Guild Name is required');
+      return;
+    }
+    setError('');
+    setStep(step + 1);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -43,10 +57,12 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
         body: JSON.stringify({
           username: formData.username,
           displayName: formData.displayName,
-          password: formData.password
+          password: formData.password,
+          guildName: formData.guildName,
+          guildSubtitle: formData.guildSubtitle
         })
       });
-      setStep(3);
+      setStep(4);
       setTimeout(() => {
         onComplete();
       }, 2000);
@@ -79,6 +95,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
           <div className={`h-1.5 w-12 rounded-full ${step >= 1 ? 'bg-red-500' : 'bg-zinc-800'}`} />
           <div className={`h-1.5 w-12 rounded-full ${step >= 2 ? 'bg-red-500' : 'bg-zinc-800'}`} />
           <div className={`h-1.5 w-12 rounded-full ${step >= 3 ? 'bg-red-500' : 'bg-zinc-800'}`} />
+          <div className={`h-1.5 w-12 rounded-full ${step >= 4 ? 'bg-red-500' : 'bg-zinc-800'}`} />
         </div>
 
         {step === 1 && (
@@ -97,16 +114,30 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
             <div className="bg-zinc-950/50 p-4 rounded-xl border border-zinc-800/50 space-y-3">
               <div className="flex items-start gap-3">
                 <Database className="w-5 h-5 text-blue-400 mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-white">Database Connection</p>
-                  <p className="text-xs text-zinc-500">Ensure you have run the schema.sql script in your database if using Supabase.</p>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-white">Database Connection</p>
+                    {envStatus && (
+                      <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-bold", envStatus.hasSupabase ? "bg-green-500/10 text-green-500" : "bg-yellow-500/10 text-yellow-500")}>
+                        {envStatus.hasSupabase ? 'Supabase' : 'Local File'}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-1">Ensure you have run the schema.sql script in your database if using Supabase.</p>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Server className="w-5 h-5 text-green-400 mt-0.5" />
-                <div>
-                  <p className="text-sm font-medium text-white">Environment Variables</p>
-                  <p className="text-xs text-zinc-500">Verify your .env file is properly configured with your database credentials.</p>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-white">Environment Variables</p>
+                    {envStatus && (
+                      <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-bold", envStatus.nodeEnv === 'production' ? "bg-blue-500/10 text-blue-500" : "bg-zinc-500/10 text-zinc-400")}>
+                        {envStatus.nodeEnv || 'development'}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-zinc-500 mt-1">Verify your .env file is properly configured with your database credentials.</p>
                 </div>
               </div>
             </div>
@@ -189,6 +220,58 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
             </div>
 
             <button
+              onClick={handleNext}
+              className="w-full bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 mt-6"
+            >
+              Continue
+            </button>
+          </motion.form>
+        )}
+
+        {step === 3 && (
+          <motion.form
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            onSubmit={handleSubmit}
+            className="space-y-4"
+          >
+            <div className="text-center space-y-2 mb-6">
+              <h2 className="text-lg font-medium text-white">Guild Settings</h2>
+              <p className="text-sm text-zinc-400">
+                Configure your guild's identity.
+              </p>
+            </div>
+
+            {error && (
+              <div className="bg-red-500/10 text-red-500 p-3 rounded-lg text-sm text-center border border-red-500/20">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Guild Name</label>
+              <input
+                type="text"
+                required
+                value={formData.guildName}
+                onChange={e => setFormData({ ...formData, guildName: e.target.value })}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-red-500 transition-colors"
+                placeholder="My Awesome Guild"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Guild Subtitle</label>
+              <input
+                type="text"
+                value={formData.guildSubtitle}
+                onChange={e => setFormData({ ...formData, guildSubtitle: e.target.value })}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-red-500 transition-colors"
+                placeholder="The best guild in the world"
+              />
+            </div>
+
+            <button
               type="submit"
               disabled={loading}
               className="w-full bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mt-6"
@@ -205,7 +288,7 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
           </motion.form>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}

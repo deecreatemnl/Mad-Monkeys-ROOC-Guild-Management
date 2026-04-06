@@ -6,6 +6,17 @@ export interface Member {
   dateJoined: string;
   uid?: string;
   discordId?: string;
+  status?: 'active' | 'inactive' | 'busy' | 'left';
+}
+
+export interface MemberLog {
+  id?: string;
+  memberId: string;
+  type: 'status_change' | 'name_change' | 'job_change' | 'role_change' | 'guild_join' | 'guild_leave' | 'guild_return';
+  oldValue?: string;
+  newValue?: string;
+  timestamp: string;
+  details?: string;
 }
 
 export interface Absence {
@@ -74,6 +85,7 @@ export interface UserProfile {
 export interface Job {
   id?: string;
   name: string;
+  color?: string;
 }
 
 export interface GuildSettings {
@@ -90,4 +102,5 @@ export interface GuildSettings {
   discordWebhookUrl?: string;
   githubRepo?: string;
   vercelDeployHookUrl?: string;
+  raffleWinners?: number;
 }

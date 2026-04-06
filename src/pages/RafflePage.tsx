@@ -53,12 +53,18 @@ export default function RafflePage() {
 
   const loadData = async () => {
     try {
-      const [raffleData, membersData] = await Promise.all([
+      const [raffleData, membersData, settingsData] = await Promise.all([
         fetchAPI('/api/raffle'),
-        fetchAPI('/api/members')
+        fetchAPI('/api/members'),
+        fetchAPI('/api/settings')
       ]);
       setRaffle(raffleData);
       setMembers(membersData);
+      // Store settings in a way that RafflePage can use them
+      // We can add a new state for settings or just store it in raffleData if we want
+      // For now, let's just use it in handleTestAnimation
+      (window as any).raffleSettings = settingsData;
+      
       setRestrictedMemberIds(raffleData.settings.restrictedMemberIds || []);
       
       if (raffleData.settings.header) {
@@ -211,9 +217,10 @@ export default function RafflePage() {
       { id: 't10', ign: 'Webby' },
     ];
     
-    // Select 2 random winners
+    // Select random winners based on setting
+    const raffleWinners = (window as any).raffleSettings?.raffleWinners || 2;
     const shuffled = [...fakeEntries].sort(() => 0.5 - Math.random());
-    const winners = shuffled.slice(0, 2);
+    const winners = shuffled.slice(0, raffleWinners);
     
     setTestEntries(fakeEntries);
     setTestWinners(winners);

@@ -3,10 +3,25 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import dotenv from "dotenv";
 import { createApp } from "./src/app.js";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 
 dotenv.config();
 
 async function startServer() {
+  // Run migrations
+  if (process.env.DATABASE_URL) {
+    try {
+      console.log("Running migrations...");
+      await execAsync("npm run build:migrations");
+      console.log("Migrations completed successfully.");
+    } catch (err) {
+      console.error("Migration error:", err);
+    }
+  }
+
   const app = createApp();
   const PORT = 3000;
 

@@ -49,13 +49,14 @@ const getJobIcon = (member: Member) => {
   if (j.includes('gypsy') || j.includes('minstrel')) icon = <Music className="w-4 h-4" />;
   if (j.includes('champion')) icon = <Hand className="w-4 h-4" />;
   
-  return <div className={color}>{icon}</div>;
+  return icon;
 };
 
 export default function PublicEventPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const [event, setEvent] = useState<GuildEvent | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [jobs, setJobs] = useState<any[]>([]);
   const [subEvents, setSubEvents] = useState<SubEvent[]>([]);
   const [parties, setParties] = useState<Record<string, Party[]>>({});
   const [assignments, setAssignments] = useState<Record<string, Assignment[]>>({});
@@ -87,13 +88,15 @@ export default function PublicEventPage() {
 
     const loadData = async () => {
       try {
-        const [eventData, membersData] = await Promise.all([
+        const [eventData, membersData, jobsData] = await Promise.all([
           fetchAPI(`/api/events/${eventId}`),
-          fetchAPI('/api/members')
+          fetchAPI('/api/members'),
+          fetchAPI('/api/jobs')
         ]);
         
         setMembers(membersData);
         setEvent(eventData);
+        setJobs(jobsData);
         
         // Process nested data from eventData
         const subEventsData = [...(eventData.subevents || [])];
@@ -135,6 +138,24 @@ export default function PublicEventPage() {
   const getMemberName = (id: string) => members.find(m => m.id === id)?.ign || 'Unknown Member';
   const getMemberJob = (id: string) => members.find(m => m.id === id)?.job || 'Unknown Job';
   const getRoleConfig = (roleName: string) => ROLES.find(r => r.name === roleName) || ROLES[0];
+
+  const getContrastColor = (hexcolor?: string) => {
+    if (!hexcolor) return undefined;
+    const hex = hexcolor.replace('#', '');
+    const r = parseInt(hex.substr(0, 2), 16);
+    const g = parseInt(hex.substr(2, 2), 16);
+    const b = parseInt(hex.substr(4, 2), 16);
+    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
+    return (yiq >= 128) ? '#000000' : '#ffffff';
+  };
+
+  const getJobConfig = (jobName: string) => {
+    return jobs.find(j => j.name === jobName);
+  };
+
+  const getJobColor = (jobName: string) => {
+    return getJobConfig(jobName)?.color;
+  };
 
   const [reportingAbsence, setReportingAbsence] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState('');
@@ -423,23 +444,38 @@ export default function PublicEventPage() {
                               {assignments[party.id!]?.map((assignment) => {
                                 const role = getRoleConfig(assignment.role);
                                 const member = members.find(m => m.id === assignment.memberId);
+                                const jobConfig = member ? getJobConfig(member.job) : undefined;
+                                const jobColor = jobConfig?.color;
+                                
+                                const containerStyle = jobConfig?.containerColor ? { backgroundColor: jobConfig.containerColor } : {};
+                                const nameStyle = jobConfig?.nameColor ? { color: jobConfig.nameColor } : {};
+                                const roleStyle = jobConfig?.roleColor ? { color: jobConfig.roleColor } : (jobColor ? { color: jobColor } : { color: '#000000' });
+                                const jobStyle = jobConfig?.jobColor ? { color: jobConfig.jobColor } : (jobColor ? { color: jobColor } : { color: '#000000' });
+                                const iconContainerStyle = {
+                                  backgroundColor: jobConfig?.iconBgColor || undefined,
+                                  color: jobConfig?.iconColor || jobColor || '#000000'
+                                };
                                 return (
                                   <div
                                     key={assignment.id}
                                     className="flex items-center justify-between p-3 rounded-xl bg-zinc-900 border border-zinc-800 group"
+                                    style={containerStyle}
                                   >
                                     <div className="flex items-center gap-3">
-                                      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-800 border border-zinc-700")}>
+                                      <div 
+                                        className={cn("w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-800 border border-zinc-700")} 
+                                        style={iconContainerStyle}
+                                      >
                                         {member ? getJobIcon(member) : <Star className="w-5 h-5 text-zinc-500" />}
                                       </div>
                                       <div>
-                                        <div className="font-bold text-zinc-100 text-sm">{member?.ign || 'Unknown'}</div>
+                                        <div className="font-bold text-zinc-100 text-[1em]" style={nameStyle}>{member?.ign || 'Unknown'}</div>
                                         <div className="flex items-center gap-2 mt-1">
-                                          <div className={cn("flex items-center gap-1 text-[9px] font-bold uppercase", role.color)}>
+                                          <div className={cn("flex items-center gap-1 text-[9px] font-bold uppercase")} style={roleStyle}>
                                             {role.icon}
                                             {assignment.role}
                                           </div>
-                                          <span className="text-[9px] text-zinc-600 font-bold uppercase tracking-wider">• {member?.job || 'Unknown'}</span>
+                                          <span className="text-[9px] font-bold uppercase tracking-wider" style={jobStyle}>• {member?.job || 'Unknown'}</span>
                                         </div>
                                       </div>
                                     </div>
@@ -508,22 +544,33 @@ export default function PublicEventPage() {
                     </div>
                     
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
-                      {unassignedMembers.map(m => (
-                        <motion.div 
-                          key={m.id}
-                          initial={{ opacity: 0, y: 10 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-900/30 border border-zinc-800/50"
-                        >
-                          <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-900 shrink-0 border border-zinc-800">
-                            {getJobIcon(m)}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-bold text-zinc-300 truncate">{m.ign}</p>
-                            <p className="text-[10px] text-zinc-600 truncate uppercase font-bold tracking-wider">{m.job}</p>
-                          </div>
-                        </motion.div>
-                      ))}
+                        {unassignedMembers.map(m => {
+                          const jobConfig = getJobConfig(m.job);
+                          const iconContainerStyle = {
+                            backgroundColor: jobConfig?.iconBgColor || undefined,
+                            color: jobConfig?.iconColor || jobConfig?.color || '#000000'
+                          };
+                          return (
+                            <motion.div 
+                              key={m.id}
+                              initial={{ opacity: 0, y: 10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              className="flex items-center gap-3 p-3 rounded-2xl bg-zinc-900/30 border border-zinc-800/50"
+                              style={jobConfig?.containerColor ? { backgroundColor: jobConfig.containerColor } : {}}
+                            >
+                              <div 
+                                className="w-10 h-10 rounded-xl flex items-center justify-center bg-zinc-900 shrink-0 border border-zinc-800"
+                                style={iconContainerStyle}
+                              >
+                                {getJobIcon(m)}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold text-zinc-300 truncate" style={jobConfig?.nameColor ? { color: jobConfig.nameColor } : {}}>{m.ign}</p>
+                                <p className="text-[10px] text-zinc-600 truncate uppercase font-bold tracking-wider" style={jobConfig?.jobColor ? { color: jobConfig.jobColor } : {}}>{m.job}</p>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
                     </div>
                   </div>
                 )}

@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { fetchAPI } from '../lib/api';
-import { Member, Job } from '../types';
 import { 
   Plus, 
   Edit2, 
@@ -11,11 +10,21 @@ import {
   UserPlus, 
   LayoutGrid, 
   List,
-  Filter
+  Filter,
+  Download,
+  Upload,
+  History,
+  Clock,
+  UserCheck,
+  UserMinus,
+  UserX,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import ConfirmModal from '../components/ConfirmModal';
+import { Member, Job, MemberLog } from '../types';
+import { format } from 'date-fns';
 
 interface MembersPageProps {
   isAdmin?: boolean;
@@ -28,9 +37,24 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
-  const [formData, setFormData] = useState({ ign: '', job: '', role: 'DPS', discordId: '', dateJoined: new Date().toISOString().split('T')[0] });
+  const [formData, setFormData] = useState({ 
+    ign: '', 
+    job: '', 
+    role: 'DPS', 
+    discordId: '', 
+    dateJoined: new Date().toISOString().split('T')[0],
+    status: 'active' as any
+  });
   const [viewMode, setViewMode] = useState<'tile' | 'list'>('list');
   const [selectedJob, setSelectedJob] = useState('All');
+  const [selectedStatus, setSelectedStatus] = useState('All');
+  const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
+  const [selectedMemberLogs, setSelectedMemberLogs] = useState<MemberLog[]>([]);
+  const [selectedMemberForLogs, setSelectedMemberForLogs] = useState<Member | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importData, setImportData] = useState<any[]>([]);
+  const [importIndex, setImportIndex] = useState(0);
+  const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -58,6 +82,125 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadLogs = async (member: Member) => {
+    try {
+      const logs = await fetchAPI(`/api/members/${member.id}/logs`);
+      setSelectedMemberLogs(logs);
+      setSelectedMemberForLogs(member);
+      setIsLogsModalOpen(true);
+    } catch (err) {
+      console.error('Failed to load logs:', err);
+    }
+  };
+
+  const handleExportCSV = () => {
+    const headers = ['IGN', 'Job', 'Role', 'Discord ID', 'Date Joined'];
+    const rows = members.map(m => [
+      `"${m.ign}"`,
+      `"${m.job}"`,
+      `"${m.role || 'DPS'}"`,
+      `"${m.discordId || ''}"`,
+      `"${m.dateJoined}"`
+    ]);
+    
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.join(','))
+    ].join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `guild_members_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split('\n');
+      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      
+      const parsedData = lines.slice(1).filter(line => line.trim()).map(line => {
+        const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+        const obj: any = {};
+        headers.forEach((header, i) => {
+          if (header === 'IGN') obj.ign = values[i];
+          if (header === 'Job') obj.job = values[i];
+          if (header === 'Role') obj.role = values[i];
+          if (header === 'Discord ID') obj.discordId = values[i];
+          if (header === 'Date Joined') obj.dateJoined = values[i];
+        });
+        return obj;
+      });
+
+      if (parsedData.length > 0) {
+        setImportData(parsedData);
+        setImportIndex(0);
+        processNextImport(parsedData, 0);
+      }
+    };
+    reader.readAsText(file);
+    // Reset input
+    e.target.value = '';
+  };
+
+  const processNextImport = async (data: any[], index: number) => {
+    if (index >= data.length) {
+      loadData();
+      return;
+    }
+
+    const item = data[index];
+    const existingMember = members.find(m => m.ign.toLowerCase() === item.ign.toLowerCase());
+
+    if (existingMember) {
+      setImportIndex(index);
+      setIsOverrideModalOpen(true);
+    } else {
+      await saveImportedMember(item);
+      processNextImport(data, index + 1);
+    }
+  };
+
+  const saveImportedMember = async (item: any, existingId?: string) => {
+    try {
+      if (existingId) {
+        await fetchAPI(`/api/members/${existingId}`, {
+          method: 'PUT',
+          body: JSON.stringify(item),
+        });
+      } else {
+        await fetchAPI('/api/members', {
+          method: 'POST',
+          body: JSON.stringify(item),
+        });
+      }
+    } catch (err) {
+      console.error('Import save failed:', err);
+    }
+  };
+
+  const handleConfirmOverride = async (confirm: boolean) => {
+    setIsOverrideModalOpen(false);
+    const item = importData[importIndex];
+    
+    if (confirm) {
+      const existingMember = members.find(m => m.ign.toLowerCase() === item.ign.toLowerCase());
+      await saveImportedMember(item, existingMember?.id);
+    }
+    
+    processNextImport(importData, importIndex + 1);
   };
 
   useEffect(() => {
@@ -130,7 +273,8 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
         job: member.job, 
         role: member.role || 'DPS', 
         discordId: member.discordId || '',
-        dateJoined: member.dateJoined 
+        dateJoined: member.dateJoined,
+        status: member.status || 'active'
       });
     } else {
       setEditingMember(null);
@@ -139,7 +283,8 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
         job: jobs[0]?.name || '', 
         role: 'DPS', 
         discordId: '',
-        dateJoined: new Date().toISOString().split('T')[0] 
+        dateJoined: new Date().toISOString().split('T')[0],
+        status: 'active'
       });
     }
     setIsModalOpen(true);
@@ -156,7 +301,8 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     const matchesSearch = ign.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          job.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesJob = selectedJob === 'All' || m.job === selectedJob;
-    return matchesSearch && matchesJob;
+    const matchesStatus = selectedStatus === 'All' || (m.status || 'active') === selectedStatus;
+    return matchesSearch && matchesJob && matchesStatus;
   });
 
   return (
@@ -167,13 +313,28 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
           <p className="text-zinc-500">Manage your guild roster and classes</p>
         </div>
         {isAdmin && (
-          <button
-            onClick={() => openModal()}
-            className="flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 px-5 rounded-xl transition-all active:scale-95 shadow-lg shadow-orange-500/20"
-          >
-            <UserPlus className="w-5 h-5" />
-            Add Member
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold py-2.5 px-4 rounded-xl transition-all active:scale-95 border border-zinc-700"
+              title="Export CSV Template"
+            >
+              <Download className="w-5 h-5" />
+              <span className="hidden sm:inline">Export</span>
+            </button>
+            <label className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold py-2.5 px-4 rounded-xl transition-all active:scale-95 border border-zinc-700 cursor-pointer">
+              <Upload className="w-5 h-5" />
+              <span className="hidden sm:inline">Import</span>
+              <input type="file" accept=".csv" onChange={handleImportCSV} className="hidden" />
+            </label>
+            <button
+              onClick={() => openModal()}
+              className="flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 px-5 rounded-xl transition-all active:scale-95 shadow-lg shadow-orange-500/20"
+            >
+              <UserPlus className="w-5 h-5" />
+              Add Member
+            </button>
+          </div>
         )}
       </div>
 
@@ -200,6 +361,20 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
               {jobs.map(job => (
                 <option key={job.id} value={job.name}>{job.name}</option>
               ))}
+            </select>
+          </div>
+          <div className="relative min-w-[160px]">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl py-3 pl-10 pr-4 text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500/50 transition-all appearance-none cursor-pointer"
+            >
+              <option value="All">All Status</option>
+              <option value="active">Active</option>
+              <option value="busy">Busy</option>
+              <option value="inactive">Inactive</option>
+              <option value="left">Left Guild</option>
             </select>
           </div>
         </div>
@@ -247,7 +422,15 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
               >
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h3 className="text-xl font-bold text-white group-hover:text-orange-500 transition-colors">{member.ign}</h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-xl font-bold text-white group-hover:text-orange-500 transition-colors">{member.ign}</h3>
+                      <span className={cn(
+                        "w-2 h-2 rounded-full",
+                        member.status === 'active' ? 'bg-green-500' :
+                        member.status === 'busy' ? 'bg-orange-500' :
+                        member.status === 'inactive' ? 'bg-zinc-500' : 'bg-red-500'
+                      )} />
+                    </div>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="inline-block px-2 py-1 rounded-md bg-zinc-800 text-xs font-medium text-zinc-400">
                         {member.job}
@@ -255,28 +438,38 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                       <span className={cn(
                         "text-[10px] font-bold uppercase",
                         member.role === 'Tank' ? 'text-orange-400' : 
-                        member.role === 'Support' ? 'text-blue-400' : 'text-zinc-500'
+                        member.role === 'Support' ? 'text-blue-400' : 
+                        member.role === 'Utility' ? 'text-purple-400' : 'text-zinc-500'
                       )}>
                         {member.role || 'DPS'}
                       </span>
                     </div>
                   </div>
-                  {isAdmin && (
-                    <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity">
-                      <button
-                        onClick={() => openModal(member)}
-                        className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(member.id!)}
-                        className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity">
+                    <button
+                      onClick={() => loadLogs(member)}
+                      className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                      title="View Logs"
+                    >
+                      <History className="w-4 h-4" />
+                    </button>
+                    {isAdmin && (
+                      <>
+                        <button
+                          onClick={() => openModal(member)}
+                          className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(member.id!)}
+                          className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center justify-between text-sm text-zinc-500">
                   <span>Joined</span>
@@ -292,6 +485,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
             <thead>
               <tr className="bg-zinc-950 border-b border-zinc-800">
                 <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">IGN</th>
+                <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Status</th>
                 <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Job / Class</th>
                 <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Date Joined</th>
                 <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right">Actions</th>
@@ -312,6 +506,17 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                       <span className="font-bold text-white group-hover:text-orange-500 transition-colors">{member.ign}</span>
                     </td>
                     <td className="p-4">
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "w-2 h-2 rounded-full",
+                          member.status === 'active' ? 'bg-green-500' :
+                          member.status === 'busy' ? 'bg-orange-500' :
+                          member.status === 'inactive' ? 'bg-zinc-500' : 'bg-red-500'
+                        )} />
+                        <span className="text-xs text-zinc-400 capitalize">{member.status || 'active'}</span>
+                      </div>
+                    </td>
+                    <td className="p-4">
                       <div className="flex flex-col">
                         <span className="px-2 py-1 rounded-md bg-zinc-800 text-xs font-medium text-zinc-400 w-fit">
                           {member.job}
@@ -319,7 +524,8 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                         <span className={cn(
                           "text-[10px] font-bold uppercase mt-1 px-1",
                           member.role === 'Tank' ? 'text-orange-400' : 
-                          member.role === 'Support' ? 'text-blue-400' : 'text-zinc-500'
+                          member.role === 'Support' ? 'text-blue-400' : 
+                          member.role === 'Utility' ? 'text-purple-400' : 'text-zinc-500'
                         )}>
                           {member.role || 'DPS'}
                         </span>
@@ -328,24 +534,33 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                     <td className="p-4 text-sm text-zinc-500 font-mono">
                       {member.dateJoined}
                     </td>
-                    {isAdmin && (
-                      <td className="p-4 text-right">
-                        <div className="flex justify-end gap-1 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity">
-                          <button
-                            onClick={() => openModal(member)}
-                            className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-                          >
-                            <Edit2 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(member.id!)}
-                            className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    )}
+                    <td className="p-4 text-right">
+                      <div className="flex justify-end gap-1 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity">
+                        <button
+                          onClick={() => loadLogs(member)}
+                          className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                          title="View Logs"
+                        >
+                          <History className="w-4 h-4" />
+                        </button>
+                        {isAdmin && (
+                          <>
+                            <button
+                              onClick={() => openModal(member)}
+                              className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(member.id!)}
+                              className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
                   </motion.tr>
                 ))}
               </AnimatePresence>
@@ -409,17 +624,33 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Default Role</label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-                  >
-                    <option value="DPS">DPS</option>
-                    <option value="Tank">Tank</option>
-                    <option value="Support">Support</option>
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Default Role</label>
+                    <select
+                      value={formData.role}
+                      onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                    >
+                      <option value="DPS">DPS</option>
+                      <option value="Tank">Tank</option>
+                      <option value="Support">Support</option>
+                      <option value="Utility">Utility</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-1.5">Status</label>
+                    <select
+                      value={formData.status}
+                      onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                    >
+                      <option value="active">Active</option>
+                      <option value="busy">Busy</option>
+                      <option value="inactive">Inactive</option>
+                      <option value="left">Left Guild</option>
+                    </select>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-zinc-400 mb-1.5">Date Joined</label>
@@ -447,6 +678,128 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Logs Modal */}
+      <AnimatePresence>
+        {isLogsModalOpen && selectedMemberForLogs && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsLogsModalOpen(false)}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-2xl bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Member Activity Logs</h2>
+                  <p className="text-zinc-500">History for {selectedMemberForLogs.ign}</p>
+                </div>
+                <button onClick={() => setIsLogsModalOpen(false)} className="p-2 text-zinc-400 hover:text-white transition-colors">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
+                {selectedMemberLogs.length === 0 ? (
+                  <div className="text-center py-12 text-zinc-600 italic">
+                    No activity logs found for this member.
+                  </div>
+                ) : (
+                  [...selectedMemberLogs].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).map((log) => (
+                    <div key={log.id} className="bg-zinc-800/50 border border-zinc-800 rounded-xl p-4 flex gap-4">
+                      <div className={cn(
+                        "w-10 h-10 rounded-full flex items-center justify-center shrink-0",
+                        log.type === 'guild_join' ? 'bg-green-500/10 text-green-500' :
+                        log.type === 'guild_leave' ? 'bg-red-500/10 text-red-500' :
+                        log.type === 'guild_return' ? 'bg-blue-500/10 text-blue-500' :
+                        log.type === 'name_change' ? 'bg-orange-500/10 text-orange-500' :
+                        'bg-zinc-700/50 text-zinc-400'
+                      )}>
+                        {log.type === 'guild_join' ? <UserCheck className="w-5 h-5" /> :
+                         log.type === 'guild_leave' ? <UserMinus className="w-5 h-5" /> :
+                         log.type === 'guild_return' ? <UserCheck className="w-5 h-5" /> :
+                         log.type === 'name_change' ? <Edit2 className="w-5 h-5" /> :
+                         <Clock className="w-5 h-5" />}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex justify-between items-start">
+                          <h4 className="font-bold text-white capitalize">{log.type.replace('_', ' ')}</h4>
+                          <span className="text-[10px] text-zinc-500 font-mono">
+                            {format(new Date(log.timestamp), 'MMM d, yyyy HH:mm')}
+                          </span>
+                        </div>
+                        <p className="text-sm text-zinc-400 mt-1">{log.details}</p>
+                        {(log.oldValue || log.newValue) && (
+                          <div className="mt-2 flex items-center gap-2 text-xs">
+                            {log.oldValue && (
+                              <span className="text-zinc-500 line-through">{log.oldValue}</span>
+                            )}
+                            {log.oldValue && log.newValue && (
+                              <span className="text-zinc-600">→</span>
+                            )}
+                            {log.newValue && (
+                              <span className="text-orange-400 font-medium">{log.newValue}</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Override Confirmation Modal */}
+      <AnimatePresence>
+        {isOverrideModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-8 text-center"
+            >
+              <div className="w-16 h-16 bg-orange-500/10 text-orange-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                <AlertCircle className="w-8 h-8" />
+              </div>
+              <h2 className="text-2xl font-bold text-white mb-2">Member Already Exists</h2>
+              <p className="text-zinc-400 mb-8">
+                A member with the name <span className="text-white font-bold">"{importData[importIndex]?.ign}"</span> already exists in the guild. Do you want to override their data?
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => handleConfirmOverride(false)}
+                  className="flex-1 px-4 py-3 rounded-xl border border-zinc-800 text-zinc-400 font-bold hover:bg-zinc-800 transition-colors"
+                >
+                  Skip
+                </button>
+                <button
+                  onClick={() => handleConfirmOverride(true)}
+                  className="flex-1 px-4 py-3 rounded-xl bg-orange-500 text-white font-bold hover:bg-orange-600 transition-colors shadow-lg shadow-orange-500/20"
+                >
+                  Override
+                </button>
+              </div>
             </motion.div>
           </div>
         )}
