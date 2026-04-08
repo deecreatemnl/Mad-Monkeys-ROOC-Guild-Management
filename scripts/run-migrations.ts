@@ -23,8 +23,13 @@ async function runMigrations() {
 
   const client = new Client({
     connectionString: dbUrl,
-    ssl: { rejectUnauthorized: false } // Required for Supabase and most managed Postgres
+    ssl: {
+      rejectUnauthorized: false
+    }
   });
+
+  // Also set environment variable as a fallback for some environments
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
   try {
     await client.connect();
