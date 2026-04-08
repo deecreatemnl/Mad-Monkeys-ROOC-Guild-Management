@@ -15,6 +15,7 @@ export default function RafflePage() {
   const [drawing, setDrawing] = useState(false);
   const [showAnimation, setShowAnimation] = useState(false);
   const [isAnimationRunning, setIsAnimationRunning] = useState(false);
+  const [isAdvancing, setIsAdvancing] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [lastWinners, setLastWinners] = useState<any[]>([]);
@@ -51,6 +52,8 @@ export default function RafflePage() {
   const [overrideWinnerId, setOverrideWinnerId] = useState<string | null>(null);
   const [overrideMemberId, setOverrideMemberId] = useState('');
 
+  const [raffleWinnersCount, setRaffleWinnersCount] = useState(2);
+
   const loadData = async () => {
     try {
       const [raffleData, membersData, settingsData] = await Promise.all([
@@ -61,9 +64,10 @@ export default function RafflePage() {
       setRaffle(raffleData);
       setMembers(membersData);
       // Store settings in a way that RafflePage can use them
-      // We can add a new state for settings or just store it in raffleData if we want
-      // For now, let's just use it in handleTestAnimation
       (window as any).raffleSettings = settingsData;
+      if (settingsData && settingsData.raffleWinners) {
+        setRaffleWinnersCount(settingsData.raffleWinners);
+      }
       
       setRestrictedMemberIds(raffleData.settings.restrictedMemberIds || []);
       
@@ -218,9 +222,10 @@ export default function RafflePage() {
     ];
     
     // Select random winners based on setting
-    const raffleWinners = (window as any).raffleSettings?.raffleWinners || 2;
+    const winnersToDraw = raffleWinnersCount || 2;
+    console.log(`[RafflePage] Drawing ${winnersToDraw} test winners (settings: ${raffleWinnersCount})`);
     const shuffled = [...fakeEntries].sort(() => 0.5 - Math.random());
-    const winners = shuffled.slice(0, raffleWinners);
+    const winners = shuffled.slice(0, winnersToDraw);
     
     setTestEntries(fakeEntries);
     setTestWinners(winners);
@@ -317,7 +322,34 @@ export default function RafflePage() {
     e.year === raffle.settings.currentYear
   );
 
+  const currentWeekWinners = (raffle.winners || []).filter((w: any) => 
+    Number(w.week) === Number(raffle.settings.currentWeek) &&
+    Number(w.month) === Number(raffle.settings.currentMonth) &&
+    Number(w.year) === Number(raffle.settings.currentYear)
+  );
+
+  const handleAdvance = async () => {
+    if (isAdvancing) return;
+    if (!confirm('Advance to the next week and reopen for entries? This will clear current entries.')) return;
+    
+    setIsAdvancing(true);
+    try {
+      console.log('[RafflePage] Advancing raffle...');
+      const result = await fetchAPI('/api/raffle/advance', { method: 'POST' });
+      console.log('[RafflePage] Advance result:', result);
+      await loadData();
+      alert('Raffle advanced to the next week and reopened!');
+    } catch (err: any) {
+      console.error('[RafflePage] Advance error:', err);
+      alert('Failed to advance raffle: ' + err.message);
+    } finally {
+      setIsAdvancing(false);
+    }
+  };
+
   const availableMembers = members.filter(m => {
+    // Only active members
+    if ((m.status || 'active') !== 'active') return false;
     // Not a winner this month
     const isWinnerThisMonth = currentMonthWinners.some(w => w.memberId === m.id);
     // Not already entered this week
@@ -551,7 +583,10 @@ export default function RafflePage() {
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                     <div>
                       <h2 className="text-2xl font-black italic tracking-tighter">JOIN THE <span className="text-orange-500">RAFFLE</span></h2>
-                      <p className="text-zinc-500 text-sm">Week {raffle.settings.currentWeek} • {monthName} {raffle.settings.currentYear}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="bg-orange-500/10 text-orange-500 text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider border border-orange-500/20">Upcoming</span>
+                        <p className="text-zinc-500 text-sm">Week {raffle.settings.currentWeek} • {monthName} {raffle.settings.currentYear}</p>
+                      </div>
                     </div>
                     {locked ? (
                       <div className="flex items-center gap-2 text-orange-500 text-sm font-bold bg-orange-500/10 px-4 py-1.5 rounded-full border border-orange-500/20">
@@ -618,7 +653,27 @@ export default function RafflePage() {
                     <div className="text-center py-12 bg-zinc-800/30 rounded-2xl border border-dashed border-zinc-700">
                       <Trophy className="w-12 h-12 text-zinc-700 mx-auto mb-4" />
                       <h3 className="text-lg font-bold text-zinc-400">Raffle has ended for this week</h3>
-                      <p className="text-zinc-500 text-sm mt-1">Wait for the next week's raffle to open!</p>
+                      <p className="text-zinc-500 text-sm mt-1 mb-6">Wait for the next week's raffle to open!</p>
+                      
+                      {isAdmin && currentWeekWinners.length > 0 && (
+                        <button
+                          onClick={handleAdvance}
+                          disabled={isAdvancing}
+                          className={cn(
+                            "bg-orange-500 hover:bg-orange-600 text-white font-black italic tracking-tighter py-3 px-8 rounded-xl text-sm transition-all active:scale-95 shadow-xl shadow-orange-500/20 flex items-center gap-2 mx-auto",
+                            isAdvancing && "opacity-50 cursor-not-allowed"
+                          )}
+                        >
+                          {isAdvancing ? (
+                            <>
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                              OPENING...
+                            </>
+                          ) : (
+                            `OPEN WEEK ${raffle.settings.currentWeek >= 5 ? 1 : raffle.settings.currentWeek + 1}`
+                          )}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

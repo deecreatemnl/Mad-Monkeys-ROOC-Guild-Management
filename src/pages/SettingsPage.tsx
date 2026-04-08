@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchAPI } from '../lib/api';
 import { GuildSettings } from '../types';
-import { Save, Globe, Type, Image as ImageIcon, Loader2, CheckCircle2, Upload, Calendar, MessageSquare, Check, ChevronDown, Users, RotateCcw, AlertTriangle, CloudDownload, Trophy, RefreshCw } from 'lucide-react';
+import { Save, Globe, Type, Image as ImageIcon, Loader2, CheckCircle2, Upload, Calendar, MessageSquare, Check, ChevronDown, Users, RotateCcw, AlertTriangle, CloudDownload, Trophy, RefreshCw, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 
@@ -22,11 +22,9 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
     timezone: 'Asia/Singapore',
     logoUrl: '',
     maxPartySize: 12,
-    discordChannelId: '',
     discordGuildId: '',
     discordAnnouncementsChannelId: '',
     discordAbsenceChannelId: '',
-    discordWebhookUrl: '',
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,6 +41,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
   const [updateInfo, setUpdateInfo] = useState<{ currentVersion: string, latestVersion: string, hasUpdate: boolean } | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [installingUpdate, setInstallingUpdate] = useState(false);
+  const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -196,15 +195,18 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
   };
 
   const handleDisconnect = async () => {
-    if (!confirm('Are you sure you want to disconnect Discord? This will clear your server and channel settings.')) return;
+    if (!showDisconnectConfirm) {
+      setShowDisconnectConfirm(true);
+      return;
+    }
     
+    setSaving(true);
     try {
       const newSettings = { 
         ...settings, 
         discordGuildId: '', 
         discordAnnouncementsChannelId: '', 
         discordAbsenceChannelId: '',
-        discordWebhookUrl: ''
       };
       
       await fetchAPI('/api/settings/guild_settings', {
@@ -217,17 +219,18 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
         discordGuildId: '', 
         discordAnnouncementsChannelId: '', 
         discordAbsenceChannelId: '',
-        discordWebhookUrl: ''
       }));
       setIsDiscordConnected(false);
       setGuilds([]);
       setChannels([]);
       setSelectedGuildId('');
       setSaveSuccess(true);
+      setShowDisconnectConfirm(false);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err) {
       console.error('Disconnect error:', err);
-      alert('Failed to disconnect Discord.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -250,11 +253,10 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
             timezone: data.timezone || 'Asia/Singapore',
             logoUrl: data.logoUrl || '',
             maxPartySize: data.maxPartySize || 12,
-            discordChannelId: data.discordChannelId || '',
+            raffleWinners: data.raffleWinners || 2,
             discordGuildId: data.discordGuildId || '',
             discordAnnouncementsChannelId: data.discordAnnouncementsChannelId || '',
             discordAbsenceChannelId: data.discordAbsenceChannelId || '',
-            discordWebhookUrl: data.discordWebhookUrl || '',
           };
           setSettings(newSettings);
           
@@ -383,7 +385,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
     { id: 'raffle', label: 'Raffle Settings', icon: Trophy },
     { id: 'events', label: 'Event Settings', icon: Calendar },
     { id: 'discord', label: 'Discord Integration', icon: MessageSquare },
-    { id: 'system', label: 'System Updates', icon: RefreshCw },
+    { id: 'system', label: 'Deployment Management', icon: RefreshCw },
   ];
 
   return (
@@ -637,15 +639,26 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                       </div>
                     )}
                     {!isDiscordConnected ? (
-                      <button
-                        type="button"
-                        onClick={handleDiscordConnect}
-                        disabled={!isDiscordConfigured}
-                        className="w-full flex items-center justify-center gap-2 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 disabled:grayscale text-white font-bold py-3 px-6 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-[#5865F2]/20"
-                      >
-                        <MessageSquare className="w-5 h-5" />
-                        Connect Discord Server
-                      </button>
+                      <div className="space-y-4">
+                        <a
+                          href="https://discord.com/oauth2/authorize?client_id=1489652826069139648"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-3 px-6 rounded-xl text-sm transition-all active:scale-95 border border-zinc-700"
+                        >
+                          <Plus className="w-5 h-5" />
+                          1. Install Discord App
+                        </a>
+                        <button
+                          type="button"
+                          onClick={handleDiscordConnect}
+                          disabled={!isDiscordConfigured}
+                          className="w-full flex items-center justify-center gap-2 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 disabled:grayscale text-white font-bold py-3 px-6 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-[#5865F2]/20"
+                        >
+                          <MessageSquare className="w-5 h-5" />
+                          2. Connect Discord Server
+                        </button>
+                      </div>
                     ) : (
                       <div className="space-y-4 p-4 bg-zinc-800/50 border border-zinc-700 rounded-2xl">
                         <div className="flex items-center justify-between">
@@ -673,10 +686,24 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                             <button 
                               type="button"
                               onClick={handleDisconnect}
-                              className="text-[10px] text-zinc-500 hover:text-zinc-300 underline"
+                              className={cn(
+                                "text-[10px] font-bold px-2 py-1 rounded transition-all",
+                                showDisconnectConfirm 
+                                  ? "bg-red-500 text-white hover:bg-red-600" 
+                                  : "text-zinc-500 hover:text-zinc-300 underline"
+                              )}
                             >
-                              Disconnect
+                              {showDisconnectConfirm ? 'Confirm Disconnect?' : 'Disconnect'}
                             </button>
+                            {showDisconnectConfirm && (
+                              <button
+                                type="button"
+                                onClick={() => setShowDisconnectConfirm(false)}
+                                className="text-[10px] text-zinc-500 hover:text-zinc-300 underline font-bold"
+                              >
+                                Cancel
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -771,50 +798,6 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                         )}
                       </div>
                     )}
-
-                    <div className="pt-2 space-y-4">
-                      <div className="relative">
-                        <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                          <div className="w-full border-t border-zinc-800"></div>
-                        </div>
-                        <div className="relative flex justify-center text-[10px] uppercase tracking-widest font-bold">
-                          <span className="bg-zinc-900 px-2 text-zinc-600">Or Manual Setup</span>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Announcements Channel ID</label>
-                        <input
-                          type="text"
-                          value={settings.discordAnnouncementsChannelId}
-                          onChange={(e) => setSettings({ ...settings, discordAnnouncementsChannelId: e.target.value })}
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
-                          placeholder="e.g. 123456789012345678"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Absence Channel ID</label>
-                        <input
-                          type="text"
-                          value={settings.discordAbsenceChannelId}
-                          onChange={(e) => setSettings({ ...settings, discordAbsenceChannelId: e.target.value })}
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
-                          placeholder="e.g. 123456789012345678"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Discord Webhook URL (Optional)</label>
-                        <input
-                          type="text"
-                          value={settings.discordWebhookUrl}
-                          onChange={(e) => setSettings({ ...settings, discordWebhookUrl: e.target.value })}
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
-                          placeholder="https://discord.com/api/webhooks/..."
-                        />
-                      </div>
-                    </div>
                   </div>
                 </div>
               )}
@@ -823,7 +806,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                 <div className="space-y-6">
                   <h2 className="text-lg font-bold text-white flex items-center gap-2">
                     <RefreshCw className="w-5 h-5 text-orange-500" />
-                    System Updates
+                    Deployment Management
                   </h2>
 
                   <div className="space-y-6">
@@ -837,25 +820,25 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                           className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
                           placeholder="https://api.vercel.com/v1/integrations/deploy/..."
                         />
-                        <p className="mt-2 text-[10px] text-zinc-500 italic">Used to trigger the update installation.</p>
+                        <p className="mt-2 text-[10px] text-zinc-500 italic">Used to trigger a manual redeploy to sync with the latest code.</p>
                       </div>
                     </div>
 
                     <div className="pt-6 border-t border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-6">
                       <div>
-                        <h3 className="text-sm font-bold text-white mb-1">Check for Updates</h3>
+                        <h3 className="text-sm font-bold text-white mb-1">Deployment Sync</h3>
                         {updateInfo ? (
                           <div className="text-xs text-zinc-400 space-y-1">
                             <p>Current Version: <span className="text-white font-mono">{updateInfo.currentVersion}</span></p>
                             <p>Latest Version: <span className="text-white font-mono">{updateInfo.latestVersion}</span></p>
                             {updateInfo.hasUpdate ? (
-                              <p className="text-green-500 font-bold mt-2">✨ A new update is available!</p>
+                              <p className="text-green-500 font-bold mt-2">✨ A newer version is available on GitHub!</p>
                             ) : (
-                              <p className="text-zinc-500 mt-2">You are on the latest version.</p>
+                              <p className="text-zinc-500 mt-2">Your deployment is up to date with GitHub.</p>
                             )}
                           </div>
                         ) : (
-                          <p className="text-xs text-zinc-500">Check if a new version is available on GitHub.</p>
+                          <p className="text-xs text-zinc-500">Check if your deployment is in sync with the latest GitHub version.</p>
                         )}
                       </div>
                       
@@ -867,7 +850,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                           className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white font-bold py-2.5 px-5 rounded-xl transition-all active:scale-95 border border-zinc-700"
                         >
                           {checkingUpdate ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                          Check Now
+                          Check Sync Status
                         </button>
                         
                         {updateInfo?.hasUpdate && (
@@ -878,7 +861,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                             className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-2.5 px-5 rounded-xl transition-all active:scale-95 shadow-lg shadow-green-600/20"
                           >
                             {installingUpdate ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" />}
-                            Install Update
+                            Trigger Redeploy
                           </button>
                         )}
                       </div>

@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { fetchAPI } from '../lib/api';
 import { GuildEvent, Member, Assignment, Party, SubEvent } from '../types';
-import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Clock, Shield, Sword, Heart, Star, Share2, Check, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search, Zap, Target, Music, Hammer, FlaskConical, Hand, Cross, Skull, MessageSquare, Loader2 } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Clock, Shield, Sword, Heart, Star, Share2, Check, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search, Zap, Target, Music, Hammer, FlaskConical, Hand, Cross, Skull, MessageSquare, Loader2, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import ConfirmModal from '../components/ConfirmModal';
+import { io } from 'socket.io-client';
 import {
   DndContext,
   closestCenter,
@@ -27,13 +28,6 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const ROLES = [
-  { name: 'DPS', color: 'text-zinc-400', bg: 'bg-zinc-400/10', border: 'border-zinc-400/20', icon: <Sword className="w-3 h-3" /> },
-  { name: 'Support', color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20', icon: <Heart className="w-3 h-3" /> },
-  { name: 'Tank', color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/20', icon: <Shield className="w-3 h-3" /> },
-  { name: 'Utility', color: 'text-emerald-400', bg: 'bg-emerald-400/10', border: 'border-emerald-400/20', icon: <Zap className="w-3 h-3" /> },
-];
-
 const getMemberCategory = (member: Member) => {
   if (member.role) return member.role;
   
@@ -46,20 +40,12 @@ const getMemberCategory = (member: Member) => {
   return 'DPS';
 };
 
-const getCategoryColor = (category: string) => {
-  switch (category) {
-    case 'Support': return 'text-blue-400';
-    case 'Tank': return 'text-orange-400';
-    case 'Utility': return 'text-emerald-400';
-    default: return 'text-zinc-400';
-  }
-};
-
-const getJobIcon = (member: Member) => {
+const getJobIcon = (member: Member, roles: any[]) => {
   const job = member.job || '';
   const j = job.toLowerCase();
   const category = getMemberCategory(member);
-  const color = getCategoryColor(category);
+  const role = roles.find(r => r.name === category);
+  const colorHex = role ? role.color : '#a1a1aa';
   
   let icon = <Star className="w-4 h-4" />;
   if (j.includes('knight')) icon = <Sword className="w-4 h-4" />;
@@ -73,7 +59,7 @@ const getJobIcon = (member: Member) => {
   if (j.includes('gypsy') || j.includes('minstrel')) icon = <Music className="w-4 h-4" />;
   if (j.includes('champion')) icon = <Hand className="w-4 h-4" />;
   
-  return <div className={color}>{icon}</div>;
+  return <div style={{ color: colorHex }}>{icon}</div>;
 };
 
 interface EventsPageProps {
@@ -85,8 +71,8 @@ interface SortableAssignmentItemProps {
   member: Member | undefined;
   roleStyle: any;
   isAdmin: boolean;
+  roles: any[];
   onUnassign: () => void;
-  jobColor?: string;
 }
 
 function SortableAssignmentItem({
@@ -94,8 +80,8 @@ function SortableAssignmentItem({
   member,
   roleStyle,
   isAdmin,
+  roles,
   onUnassign,
-  jobColor,
 }: SortableAssignmentItemProps) {
   const {
     attributes,
@@ -117,42 +103,30 @@ function SortableAssignmentItem({
     transform: CSS.Transform.toString(transform),
     transition,
     zIndex: isDragging ? 10 : 1,
-    backgroundColor: jobColor ? `${jobColor}20` : undefined,
-    borderColor: jobColor ? `${jobColor}40` : undefined,
   };
-
-  // Calculate contrast color for text/icons if jobColor is provided
-  const getContrastColor = (hexcolor?: string) => {
-    if (!hexcolor) return undefined;
-    const hex = hexcolor.replace('#', '');
-    const r = parseInt(hex.substr(0, 2), 16);
-    const g = parseInt(hex.substr(2, 2), 16);
-    const b = parseInt(hex.substr(4, 2), 16);
-    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000;
-    return (yiq >= 128) ? '#000000' : '#ffffff';
-  };
-
-  const textColor = jobColor ? getContrastColor(jobColor) : undefined;
 
   return (
-    <div ref={setNodeRef} style={style} className={cn("flex items-center justify-between p-2 rounded-lg group", !jobColor && "bg-zinc-900/50 border border-zinc-800/50", isDragging && "opacity-50")}>
+    <div ref={setNodeRef} style={style} className={cn("flex items-center justify-between p-2 rounded-lg group bg-zinc-900/50 border border-zinc-800/50", isDragging && "opacity-50")}>
       <div className="flex items-center gap-3">
         {isAdmin && (
           <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-400">
             <GripVertical className="w-3.5 h-3.5" />
           </div>
         )}
-        <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", !jobColor && "bg-zinc-800")} style={{ backgroundColor: jobColor ? `${jobColor}40` : undefined, color: jobColor || undefined }}>
-          {member ? getJobIcon(member) : <Star className="w-4 h-4 text-zinc-500" />}
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-zinc-800">
+          {member ? getJobIcon(member, roles) : <Star className="w-4 h-4 text-zinc-500" />}
         </div>
         <div>
-          <p className="text-sm font-bold leading-none" style={{ color: textColor || 'white' }}>{member?.ign}</p>
+          <p className="text-sm font-bold leading-none text-white">{member?.ign}</p>
           <div className="flex items-center gap-2 mt-1">
-            <div className={cn("flex items-center gap-1 text-[9px] font-bold uppercase", !jobColor && roleStyle.color)} style={{ color: jobColor || undefined }}>
+            <div 
+              className="flex items-center gap-1 text-[9px] font-bold uppercase"
+              style={{ color: roleStyle.color }}
+            >
               {roleStyle.icon}
               {assignment.role}
             </div>
-            <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: jobColor ? textColor : '#52525b' }}>• {member?.job}</span>
+            <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-500">• {member?.job}</span>
           </div>
         </div>
       </div>
@@ -181,6 +155,7 @@ interface SortablePartyItemProps {
   deleteParty: (eventId: string, subEventId: string, partyId: string) => void;
   unassignMember: (eventId: string, subEventId: string, partyId: string, assignmentId: string) => void;
   getRoleStyle: (roleName: string) => any;
+  roles: any[];
   onReorderAssignments: (eventId: string, subEventId: string, partyId: string, reorderedAssignments: Assignment[]) => void;
 }
 
@@ -197,6 +172,7 @@ function SortablePartyItem({
   deleteParty,
   unassignMember,
   getRoleStyle,
+  roles,
   onReorderAssignments,
 }: SortablePartyItemProps) {
   const {
@@ -304,7 +280,6 @@ function SortablePartyItem({
               {assignments[party.id!]?.map((assignment) => {
                 const member = members.find(m => m.id === assignment.memberId);
                 const roleStyle = getRoleStyle(assignment.role);
-                const jobData = jobs.find(j => j.name === member?.job);
                 return (
                   <SortableAssignmentItem
                     key={assignment.id}
@@ -312,7 +287,7 @@ function SortablePartyItem({
                     member={member}
                     roleStyle={roleStyle}
                     isAdmin={isAdmin}
-                    jobColor={jobData?.color}
+                    roles={roles}
                     onUnassign={() => unassignMember(event.id!, subEvent.id!, party.id!, assignment.id!)}
                   />
                 );
@@ -347,6 +322,7 @@ interface SortableSubEventItemProps {
   unassignMember: (eventId: string, subEventId: string, partyId: string, assignmentId: string) => void;
   deleteParty: (eventId: string, subEventId: string, partyId: string) => void;
   getRoleStyle: (roleName: string) => any;
+  roles: any[];
   onReorderParties: (eventId: string, subEventId: string, reorderedParties: Party[]) => void;
   onReorderAssignments: (eventId: string, subEventId: string, partyId: string, reorderedAssignments: Assignment[]) => void;
 }
@@ -368,6 +344,7 @@ function SortableSubEventItem({
   unassignMember,
   deleteParty,
   getRoleStyle,
+  roles,
   onReorderParties,
   onReorderAssignments,
 }: SortableSubEventItemProps) {
@@ -469,6 +446,7 @@ function SortableSubEventItem({
                     deleteParty={deleteParty}
                     unassignMember={unassignMember}
                     getRoleStyle={getRoleStyle}
+                    roles={roles}
                     onReorderAssignments={onReorderAssignments}
                   />
                 ))}
@@ -482,6 +460,282 @@ function SortableSubEventItem({
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+interface SortableEventItemProps {
+  event: GuildEvent;
+  isAdmin: boolean;
+  collapsedEvents: Set<string>;
+  toggleEventCollapse: (id: string) => void;
+  expandedInstructions: Set<string>;
+  toggleInstructions: (id: string) => void;
+  handleShare: (id: string) => void;
+  copiedId: string | null;
+  openDiscordShareModal: (event: GuildEvent) => void;
+  openSubEventModal: (eventId: string, subEvent?: SubEvent) => void;
+  openEventModal: (event?: GuildEvent) => void;
+  deleteEvent: (id: string) => void;
+  subEvents: Record<string, SubEvent[]>;
+  collapsedSubEvents: Set<string>;
+  toggleSubEventCollapse: (id: string) => void;
+  parties: Record<string, Party[]>;
+  assignments: Record<string, Assignment[]>;
+  members: Member[];
+  jobs: any[];
+  openPartyModal: (eventId: string, subEventId: string, party?: Party) => void;
+  deleteSubEvent: (eventId: string, subEventId: string) => void;
+  openAssignModal: (eventId: string, subEventId: string, partyId: string) => void;
+  unassignMember: (eventId: string, subEventId: string, partyId: string, assignmentId: string) => void;
+  deleteParty: (eventId: string, subEventId: string, partyId: string) => void;
+  getRoleStyle: (roleName: string) => any;
+  roles: any[];
+  handlePartyReorder: (eventId: string, subEventId: string, reorderedParties: Party[]) => void;
+  handleAssignmentReorder: (eventId: string, subEventId: string, partyId: string, reorderedAssignments: Assignment[]) => void;
+  handleDragEnd: (event: DragEndEvent, eventId: string) => void;
+}
+
+function SortableEventItem({
+  event,
+  isAdmin,
+  collapsedEvents,
+  toggleEventCollapse,
+  expandedInstructions,
+  toggleInstructions,
+  handleShare,
+  copiedId,
+  openDiscordShareModal,
+  openSubEventModal,
+  openEventModal,
+  deleteEvent,
+  subEvents,
+  collapsedSubEvents,
+  toggleSubEventCollapse,
+  parties,
+  assignments,
+  members,
+  jobs,
+  openPartyModal,
+  deleteSubEvent,
+  openAssignModal,
+  unassignMember,
+  deleteParty,
+  getRoleStyle,
+  roles,
+  handlePartyReorder,
+  handleAssignmentReorder,
+  handleDragEnd,
+}: SortableEventItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ 
+    id: event.id!,
+    data: {
+      type: 'event',
+      event
+    }
+  });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 20 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <motion.div
+        layout
+        className={cn("bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden", isDragging && "opacity-50 ring-2 ring-orange-500/50")}
+      >
+        <div className="p-6 border-b border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900/50">
+          <div className="flex items-start gap-4 flex-1">
+            <div className="flex flex-col gap-2">
+              {isAdmin && (
+                <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-400 p-1">
+                  <GripVertical className="w-5 h-5" />
+                </div>
+              )}
+              <button 
+                onClick={() => toggleEventCollapse(event.id!)}
+                className="text-zinc-500 hover:text-white transition-colors p-1"
+              >
+                {collapsedEvents.has(event.id!) ? <ChevronRight className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+              </button>
+            </div>
+            <div className="w-12 h-12 bg-orange-500/10 rounded-xl flex items-center justify-center text-orange-500 shrink-0">
+              <LayoutGrid className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white">{event.name}</h3>
+              <p className="text-sm text-zinc-500 flex items-center gap-1.5 mt-1">
+                <Info className="w-3.5 h-3.5" />
+                {event.description || 'Regular weekly event'}
+              </p>
+              {event.schedule && event.schedule.length > 0 && (
+                <p className="text-xs text-orange-500/80 flex items-center gap-1.5 mt-1.5 font-medium">
+                  <Clock className="w-3.5 h-3.5" />
+                  Recurring: {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                    .filter((_, i) => event.schedule?.includes(i))
+                    .join(', ')}
+                </p>
+              )}
+              {event.instructions && (
+                <div className="mt-3 bg-orange-500/5 border border-orange-500/10 rounded-xl overflow-hidden">
+                  <button 
+                    onClick={() => toggleInstructions(event.id!)}
+                    className="w-full p-3 flex items-center justify-between hover:bg-orange-500/10 transition-colors"
+                  >
+                    <p className="text-xs font-bold text-orange-500 uppercase tracking-wider flex items-center gap-1.5">
+                      <Zap className="w-3 h-3" />
+                      Instructions / Notes
+                    </p>
+                    {expandedInstructions.has(event.id!) ? <ChevronUp className="w-3 h-3 text-orange-500" /> : <ChevronDown className="w-3 h-3 text-orange-500" />}
+                  </button>
+                  <AnimatePresence>
+                    {expandedInstructions.has(event.id!) && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="px-3 pb-3"
+                      >
+                        <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap pt-1 border-t border-orange-500/10">
+                          {event.instructions}
+                        </p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleShare(event.id!)}
+              className={cn(
+                "flex items-center gap-2 py-2 px-4 rounded-lg text-sm font-medium transition-all",
+                copiedId === event.id
+                  ? "bg-green-500/10 text-green-500 border border-green-500/20"
+                  : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
+              )}
+            >
+              {copiedId === event.id ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+              {copiedId === event.id ? 'Copied!' : 'Share Lineup'}
+            </button>
+            {isAdmin && (
+              <>
+                <button
+                  onClick={() => openDiscordShareModal(event)}
+                  className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-2 px-4 rounded-lg text-sm font-medium transition-colors"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  Send to Discord
+                </button>
+                <button
+                  onClick={() => openSubEventModal(event.id!)}
+                  className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-2 px-4 rounded-lg text-sm font-medium transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Sub Event
+                </button>
+                <button
+                  onClick={() => openEventModal(event)}
+                  className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
+                >
+                  <Edit2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => deleteEvent(event.id!)}
+                  className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <AnimatePresence initial={false}>
+          {!collapsedEvents.has(event.id!) && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              className="overflow-hidden"
+            >
+              <div className="p-6 space-y-6">
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={(e) => handleDragEnd(e, event.id!)}
+                >
+                  <SortableContext
+                    items={subEvents[event.id!]?.map(s => s.id!) || []}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {subEvents[event.id!]?.map((subEvent) => (
+                      <SortableSubEventItem
+                        key={subEvent.id}
+                        subEvent={subEvent}
+                        event={event}
+                        isAdmin={isAdmin}
+                        isCollapsed={collapsedSubEvents.has(subEvent.id!)}
+                        onToggleCollapse={() => toggleSubEventCollapse(subEvent.id!)}
+                        parties={parties[subEvent.id!] || []}
+                        assignments={assignments}
+                        members={members}
+                        jobs={jobs}
+                        openPartyModal={openPartyModal}
+                        openSubEventModal={openSubEventModal}
+                        deleteSubEvent={deleteSubEvent}
+                        openAssignModal={openAssignModal}
+                        unassignMember={unassignMember}
+                        deleteParty={deleteParty}
+                        getRoleStyle={getRoleStyle}
+                        roles={roles}
+                        onReorderParties={handlePartyReorder}
+                        onReorderAssignments={handleAssignmentReorder}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
+                {(!subEvents[event.id!] || subEvents[event.id!].length === 0) && (
+                  <div className="py-12 text-center border-2 border-dashed border-zinc-800 rounded-2xl">
+                    <div className="w-12 h-12 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-600">
+                      <Layers className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-zinc-400 font-medium">No sub events yet</h4>
+                    <p className="text-zinc-600 text-sm mt-1">Create sub events to start organizing parties</p>
+                    {isAdmin && (
+                      <button
+                        onClick={() => openSubEventModal(event.id!)}
+                        className="mt-4 text-orange-500 hover:text-orange-400 text-sm font-bold uppercase tracking-wider"
+                      >
+                        + Add Sub Event
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
     </div>
   );
 }
@@ -583,10 +837,11 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     });
   };
   
+  const [roles, setRoles] = useState<any[]>([]);
   const [eventFormData, setEventFormData] = useState({ name: '', description: '', instructions: '', schedule: [] as number[] });
   const [subEventFormData, setSubEventFormData] = useState({ name: '' });
   const [partyFormData, setPartyFormData] = useState({ name: '' });
-  const [assignFormData, setAssignFormData] = useState({ memberId: '', role: ROLES[0].name });
+  const [assignFormData, setAssignFormData] = useState({ memberId: '', role: roles[0]?.name || '' });
 
   const [settings, setSettings] = useState<any>(null);
 
@@ -618,21 +873,27 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
 
   const loadData = useCallback(async () => {
     try {
-      const [eventsData, membersData, settingsData, jobsData] = await Promise.all([
+      const [eventsData, membersData, settingsData, jobsData, rolesData] = await Promise.all([
         fetchAPI('/api/events'),
         fetchAPI('/api/members'),
         fetchAPI('/api/settings/guild_settings'),
-        fetchAPI('/api/jobs')
+        fetchAPI('/api/jobs'),
+        fetchAPI('/api/roles')
       ]);
       
-      // Stable sort for events: newest first (by ID descending)
-      const sortedEvents = [...eventsData].sort((a: any, b: any) => 
-        (b.id || '').localeCompare(a.id || '')
-      );
+      // Sort by order if available, otherwise newest first (by ID descending)
+      const sortedEvents = [...eventsData].sort((a: any, b: any) => {
+        if (a.order !== undefined && b.order !== undefined && a.order !== null && b.order !== null) {
+          return a.order - b.order;
+        }
+        return (b.id || '').localeCompare(a.id || '');
+      });
+      console.log('[loadData] Sorted events:', sortedEvents.map(e => ({ id: e.id, name: e.name, order: e.order })));
       setEvents(sortedEvents);
       setMembers(membersData);
       setSettings(settingsData);
       setJobs(jobsData || []);
+      setRoles(rolesData || []);
       
       const newSubEvents: Record<string, SubEvent[]> = {};
       const newParties: Record<string, Party[]> = {};
@@ -665,6 +926,21 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    const socket = io();
+    
+    socket.on('update', (data) => {
+      console.log('Real-time update received:', data);
+      if (['events', 'members', 'roles', 'jobs', 'settings'].includes(data.type)) {
+        loadData();
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [loadData]);
 
   useEffect(() => {
     loadData();
@@ -826,7 +1102,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       [activePartyId]: [...(prev[activePartyId] || []), newAssignment]
     }));
     setIsAssignModalOpen(false);
-    setAssignFormData({ memberId: '', role: ROLES[0].name });
+    setAssignFormData({ memberId: '', role: roles[0]?.name || '' });
 
     try {
       const result = await fetchAPI(`/api/events/${activeEventId}/subevents/${activeSubEventId}/parties/${activePartyId}/assignments`, {
@@ -1249,6 +1525,27 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     }
   };
 
+  const handleEventReorder = async (eventDnd: DragEndEvent) => {
+    const { active, over } = eventDnd;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = events.findIndex((e) => e.id === active.id);
+    const newIndex = events.findIndex((e) => e.id === over.id);
+
+    const reordered = arrayMove(events, oldIndex, newIndex);
+    setEvents(reordered);
+
+    try {
+      await fetchAPI('/api/events-reorder', {
+        method: 'PUT',
+        body: JSON.stringify({ orderedIds: reordered.map(e => e.id) })
+      });
+    } catch (error) {
+      console.error('Failed to reorder events:', error);
+      loadData();
+    }
+  };
+
   const openEventModal = (event?: GuildEvent) => {
     if (event) {
       setEditingEvent(event);
@@ -1304,7 +1601,17 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   };
 
   const getRoleStyle = (roleName: string) => {
-    return ROLES.find(r => r.name === roleName) || ROLES[0];
+    const role = roles.find(r => r.name === roleName);
+    if (role) {
+      return { 
+        name: role.name, 
+        color: role.color, 
+        bg: `${role.color}10`, // 10% opacity hex
+        border: `${role.color}20`, // 20% opacity hex
+        icon: <Shield className="w-3 h-3" /> // Default icon for dynamic roles
+      };
+    }
+    return { name: roleName, color: '#a1a1aa', bg: '#a1a1aa10', border: '#a1a1aa20', icon: <Shield className="w-3 h-3" /> };
   };
 
   const getAutoRole = (member: Member) => {
@@ -1325,6 +1632,11 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
 
     return members
       .filter(m => !assignedMemberIds.has(m.id!))
+      .filter(m => {
+        // Filter out inactive/busy/left members
+        const status = m.status || 'active';
+        return status === 'active';
+      })
       .filter(m => {
         // Search term filter
         if (!memberSearchTerm) return true;
@@ -1363,287 +1675,53 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           <div className="w-8 h-8 border-3 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
       ) : (
-        <div className="space-y-8">
-          {events.map((event) => (
-            <motion.div
-              key={event.id}
-              layout
-              className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden"
-            >
-              <div className="p-6 border-b border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-zinc-900/50">
-                <div className="flex items-start gap-4 flex-1">
-                  <button 
-                    onClick={() => toggleEventCollapse(event.id!)}
-                    className="mt-1 text-zinc-500 hover:text-white transition-colors"
-                  >
-                    {collapsedEvents.has(event.id!) ? <ChevronRight className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-                  </button>
-                  <div className="w-12 h-12 bg-orange-500/10 rounded-xl flex items-center justify-center text-orange-500 shrink-0">
-                    <LayoutGrid className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-xl font-bold text-white">{event.name}</h3>
-                    <p className="text-sm text-zinc-500 flex items-center gap-1.5 mt-1">
-                      <Info className="w-3.5 h-3.5" />
-                      {event.description || 'Regular weekly event'}
-                    </p>
-                    {event.schedule && event.schedule.length > 0 && (
-                      <p className="text-xs text-orange-500/80 flex items-center gap-1.5 mt-1.5 font-medium">
-                        <Clock className="w-3.5 h-3.5" />
-                        Recurring: {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-                          .filter((_, i) => event.schedule?.includes(i))
-                          .join(', ')}
-                      </p>
-                    )}
-                    {event.instructions && (
-                      <div className="mt-3 bg-orange-500/5 border border-orange-500/10 rounded-xl overflow-hidden">
-                        <button 
-                          onClick={() => toggleInstructions(event.id!)}
-                          className="w-full p-3 flex items-center justify-between hover:bg-orange-500/10 transition-colors"
-                        >
-                          <p className="text-xs font-bold text-orange-500 uppercase tracking-wider flex items-center gap-1.5">
-                            <Zap className="w-3 h-3" />
-                            Instructions / Notes
-                          </p>
-                          {expandedInstructions.has(event.id!) ? <ChevronUp className="w-3 h-3 text-orange-500" /> : <ChevronDown className="w-3 h-3 text-orange-500" />}
-                        </button>
-                        <AnimatePresence>
-                          {expandedInstructions.has(event.id!) && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: 'auto', opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              className="px-3 pb-3"
-                            >
-                              <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap pt-1 border-t border-orange-500/10">
-                                {event.instructions}
-                              </p>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => handleShare(event.id!)}
-                    className={cn(
-                      "flex items-center gap-2 py-2 px-4 rounded-lg text-sm font-medium transition-all",
-                      copiedId === event.id
-                        ? "bg-green-500/10 text-green-500 border border-green-500/20"
-                        : "bg-zinc-800 hover:bg-zinc-700 text-zinc-200"
-                    )}
-                  >
-                    {copiedId === event.id ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
-                    {copiedId === event.id ? 'Copied!' : 'Share Lineup'}
-                  </button>
-                  {isAdmin && (
-                    <>
-                      <button
-                        onClick={() => openDiscordShareModal(event)}
-                        className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-2 px-4 rounded-lg text-sm font-medium transition-colors"
-                      >
-                        <MessageSquare className="w-4 h-4" />
-                        Send to Discord
-                      </button>
-                      <button
-                        onClick={() => openSubEventModal(event.id!)}
-                        className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-2 px-4 rounded-lg text-sm font-medium transition-colors"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add Sub Event
-                      </button>
-                      <button
-                        onClick={() => openEventModal(event)}
-                        className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => deleteEvent(event.id!)}
-                        className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <AnimatePresence initial={false}>
-                {!collapsedEvents.has(event.id!) && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.3, ease: 'easeInOut' }}
-                    className="overflow-hidden"
-                  >
-                    <div className="p-6 space-y-8">
-                      <DndContext
-                        sensors={sensors}
-                        collisionDetection={closestCorners}
-                        onDragStart={handleDragStart}
-                        onDragOver={handleDragOver}
-                        onDragEnd={(e) => handleDragEnd(e, event.id!)}
-                      >
-                        <SortableContext
-                          items={subEvents[event.id!]?.map(s => s.id!) || []}
-                          strategy={verticalListSortingStrategy}
-                        >
-                          {subEvents[event.id!]?.map((subEvent) => (
-                            <SortableSubEventItem
-                              key={subEvent.id}
-                              subEvent={subEvent}
-                              event={event}
-                              isAdmin={isAdmin}
-                              isCollapsed={collapsedSubEvents.has(subEvent.id!)}
-                              onToggleCollapse={() => toggleSubEventCollapse(subEvent.id!)}
-                              parties={parties[subEvent.id!] || []}
-                              assignments={assignments}
-                              members={members}
-                              jobs={jobs}
-                              openPartyModal={openPartyModal}
-                              openSubEventModal={openSubEventModal}
-                              deleteSubEvent={deleteSubEvent}
-                              openAssignModal={openAssignModal}
-                              unassignMember={unassignMember}
-                              deleteParty={deleteParty}
-                              getRoleStyle={getRoleStyle}
-                              onReorderParties={handlePartyReorder}
-                              onReorderAssignments={handleAssignmentReorder}
-                            />
-                          ))}
-                        </SortableContext>
-                      </DndContext>
-                      {(!subEvents[event.id!] || subEvents[event.id!].length === 0) && (
-                        <div className="py-12 text-center border-2 border-dashed border-zinc-800 rounded-2xl text-zinc-600">
-                          <Layers className="w-8 h-8 mx-auto mb-3 opacity-20" />
-                          <p>No sub events created for this event</p>
-                        </div>
-                      )}
-
-                      {/* Absent Members Section */}
-                      {(() => {
-                        const eventSubEvents = subEvents[event.id!] || [];
-                        const assignedMemberIds = new Set<string>();
-                        eventSubEvents.forEach(se => {
-                          const subEventParties = parties[se.id!] || [];
-                          subEventParties.forEach(p => {
-                            const partyAssignments = assignments[p.id!] || [];
-                            partyAssignments.forEach(a => {
-                              assignedMemberIds.add(a.memberId);
-                            });
-                          });
-                        });
-                        const absentMembers = members.filter(m => !assignedMemberIds.has(m.id!) && !(event.absences || []).some(a => a.memberId === m.id));
-                        const unavailableMembers = event.absences || [];
-
-                        if (absentMembers.length === 0 && unavailableMembers.length === 0) return null;
-
-                        return (
-                          <div className="mt-8 pt-8 border-t border-zinc-800/50 space-y-8">
-                            {absentMembers.length > 0 && (
-                              <div>
-                                <div className="flex items-center justify-between mb-4">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center text-red-500">
-                                      <UserMinus className="w-4 h-4" />
-                                    </div>
-                                    <div>
-                                      <h4 className="font-bold text-white text-sm uppercase tracking-wider">Absent / Unassigned Members</h4>
-                                      <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mt-0.5">
-                                        {absentMembers.length} {absentMembers.length === 1 ? 'Member' : 'Members'} not in any party
-                                      </p>
-                                    </div>
-                                  </div>
-                                </div>
-                                
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                                  {absentMembers.map(m => (
-                                    <div key={m.id} className="flex items-center gap-2 p-2 rounded-lg bg-zinc-900/30 border border-zinc-800/50">
-                                      <div className="w-6 h-6 rounded flex items-center justify-center bg-zinc-800 shrink-0">
-                                        {getJobIcon(m)}
-                                      </div>
-                                      <div className="min-w-0">
-                                        <p className="text-xs font-bold text-zinc-300 truncate">{m.ign}</p>
-                                        <p className="text-[9px] text-zinc-600 truncate uppercase font-bold">{m.job}</p>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-
-                            {unavailableMembers.length > 0 && (
-                              <div>
-                                <div className="flex items-center justify-between mb-4">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-8 h-8 bg-red-500/10 rounded-lg flex items-center justify-center text-red-500">
-                                      <Skull className="w-4 h-4" />
-                                    </div>
-                                    <div>
-                                      <h4 className="font-bold text-white text-sm uppercase tracking-wider">Not Available to Play</h4>
-                                      <p className="text-[10px] text-zinc-500 uppercase font-bold tracking-widest mt-0.5">
-                                        {unavailableMembers.length} {unavailableMembers.length === 1 ? 'Member' : 'Members'} reported absence
-                                      </p>
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                  {unavailableMembers.map(absence => (
-                                    <div key={absence.memberId} className="bg-red-500/5 border border-red-500/10 p-4 rounded-2xl relative group">
-                                      {isAdmin && (
-                                        <button
-                                          onClick={() => handleRemoveAbsence(event.id!, absence.memberId)}
-                                          disabled={removingAbsence === absence.memberId}
-                                          className="absolute top-4 right-4 p-2 rounded-xl bg-red-500/10 text-red-500 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-all hover:bg-red-500 hover:text-white disabled:opacity-50 z-10 border border-red-500/20 shadow-lg"
-                                          title="Make player available"
-                                        >
-                                          <Trash2 className="w-4 h-4" />
-                                        </button>
-                                      )}
-                                      <div className="flex items-start justify-between mb-2">
-                                        <div className="flex items-center gap-3">
-                                          <div className="w-10 h-10 rounded-xl bg-red-500/10 flex items-center justify-center text-red-500 font-bold">
-                                            {absence.ign.charAt(0)}
-                                          </div>
-                                          <div>
-                                            <p className="font-bold text-zinc-200">{absence.ign}</p>
-                                            <p className="text-[10px] text-zinc-500">{new Date(absence.timestamp).toLocaleDateString()}</p>
-                                          </div>
-                                        </div>
-                                      </div>
-                                      <div className="space-y-2">
-                                        <p className="text-xs text-zinc-400 bg-zinc-950/50 p-2 rounded-lg italic">
-                                          "{absence.reason}"
-                                        </p>
-                                        {absence.dates && absence.dates.length > 0 && (
-                                          <div className="flex flex-wrap gap-1">
-                                            {absence.dates.map(date => (
-                                              <span key={date} className="text-[9px] bg-red-500/10 text-red-400 px-1.5 py-0.5 rounded-full border border-red-500/20">
-                                                {date}
-                                              </span>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
-          ))}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleEventReorder}
+        >
+          <SortableContext
+            items={events.map(e => e.id!)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-8">
+              {events.map((event) => (
+                <SortableEventItem
+                  key={event.id}
+                  event={event}
+                  isAdmin={isAdmin}
+                  collapsedEvents={collapsedEvents}
+                  toggleEventCollapse={toggleEventCollapse}
+                  expandedInstructions={expandedInstructions}
+                  toggleInstructions={toggleInstructions}
+                  handleShare={handleShare}
+                  copiedId={copiedId}
+                  openDiscordShareModal={openDiscordShareModal}
+                  openSubEventModal={openSubEventModal}
+                  openEventModal={openEventModal}
+                  deleteEvent={deleteEvent}
+                  subEvents={subEvents}
+                  collapsedSubEvents={collapsedSubEvents}
+                  toggleSubEventCollapse={toggleSubEventCollapse}
+                  parties={parties}
+                  assignments={assignments}
+                  members={members}
+                  jobs={jobs}
+                  openPartyModal={openPartyModal}
+                  deleteSubEvent={deleteSubEvent}
+                  openAssignModal={openAssignModal}
+                  unassignMember={unassignMember}
+                  deleteParty={deleteParty}
+                  getRoleStyle={getRoleStyle}
+                  roles={roles}
+                  handlePartyReorder={handlePartyReorder}
+                  handleAssignmentReorder={handleAssignmentReorder}
+                  handleDragEnd={handleDragEnd}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
 
       {/* Event Modal */}

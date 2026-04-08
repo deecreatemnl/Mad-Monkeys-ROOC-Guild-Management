@@ -1,5 +1,5 @@
 {
   "name": "Mad Monkeys Guild Manager",
-  "description": "A comprehensive guild management application for Mad Monkeys in Ragnarok Origin Classic, featuring member tracking, event assignments, job class statistics, and an AI assistant.",
+  "description": "A comprehensive guild management application for Mad Monkeys in Ragnarok Origin Classic, featuring real-time event management, member tracking, job class statistics, and an AI assistant.",
   "requestFramePermissions": []
 }

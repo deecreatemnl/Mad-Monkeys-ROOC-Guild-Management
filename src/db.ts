@@ -21,6 +21,9 @@ export interface Database {
   getJobs: () => Promise<any>;
   saveJob: (job: any) => Promise<void>;
   deleteJob: (id: string) => Promise<void>;
+  getRoles: () => Promise<any>;
+  saveRole: (role: any) => Promise<void>;
+  deleteRole: (id: string) => Promise<void>;
   getEvents: () => Promise<any>;
   saveEvent: (event: any) => Promise<void>;
   deleteEvent: (id: string) => Promise<void>;
@@ -32,7 +35,9 @@ export interface Database {
   getJobById: (id: string) => Promise<any>;
   getEventById: (id: string) => Promise<any>;
   getUserById: (id: string) => Promise<any>;
+  reorderEvents: (orderedIds: string[]) => Promise<void>;
   updateMembersJob: (oldJobName: string, newJobName: string) => Promise<void>;
+  updateRoleName: (oldRoleName: string, newRoleName: string) => Promise<void>;
   updateAssignmentsRole: (memberId: string, newRole: string) => Promise<void>;
   seed: () => Promise<void>;
 }
@@ -58,6 +63,12 @@ export const initialDb: any = {
     { id: "11", name: "Professor" },
     { id: "12", name: "Minstrel" },
     { id: "13", name: "Gypsy" }
+  ],
+  roles: [
+    { id: "1", name: "DPS", color: "#a1a1aa" },
+    { id: "2", name: "Support", color: "#60a5fa" },
+    { id: "3", name: "Tank", color: "#fb923c" },
+    { id: "4", name: "Utility", color: "#34d399" }
   ],
   settings: {
     guild_settings: {
@@ -197,6 +208,27 @@ export class FileDatabase implements Database {
     await this.save(data);
   }
 
+  async getRoles() {
+    const data = await this.get();
+    return data.roles || initialDb.roles;
+  }
+
+  async saveRole(role: any) {
+    const data = await this.get();
+    if (!data.roles) data.roles = [];
+    const index = data.roles.findIndex((r: any) => r.id === role.id);
+    if (index !== -1) data.roles[index] = role;
+    else data.roles.push(role);
+    await this.save(data);
+  }
+
+  async deleteRole(id: string) {
+    const data = await this.get();
+    if (!data.roles) return;
+    data.roles = data.roles.filter((r: any) => r.id !== id);
+    await this.save(data);
+  }
+
   async getEvents() {
     const data = await this.get();
     return data.events || [];
@@ -259,11 +291,44 @@ export class FileDatabase implements Database {
     return data.users[id];
   }
 
+  async reorderEvents(orderedIds: string[]) {
+    const data = await this.get();
+    data.events = orderedIds.map((id, index) => {
+      const event = data.events.find((e: any) => e.id === id);
+      return { ...event, order: index };
+    });
+    await this.save(data);
+  }
+
   async updateMembersJob(oldJobName: string, newJobName: string) {
     const data = await this.get();
     data.members = data.members.map((m: any) => 
       m.job === oldJobName ? { ...m, job: newJobName } : m
     );
+    await this.save(data);
+  }
+
+  async updateRoleName(oldRoleName: string, newRoleName: string) {
+    const data = await this.get();
+    
+    // Update members
+    data.members = (data.members || []).map((m: any) => 
+      m.role === oldRoleName ? { ...m, role: newRoleName } : m
+    );
+
+    // Update assignments
+    data.events = (data.events || []).map((event: any) => ({
+      ...event,
+      subevents: (event.subevents || []).map((subevent: any) => ({
+        ...subevent,
+        parties: (subevent.parties || []).map((party: any) => ({
+          ...party,
+          assignments: (party.assignments || []).map((assignment: any) => 
+            assignment.role === oldRoleName ? { ...assignment, role: newRoleName } : assignment
+          )
+        }))
+      }))
+    }));
     await this.save(data);
   }
 
@@ -406,7 +471,6 @@ export class SupabaseDatabase implements Database {
           displayName: u.display_name,
           ign: u.ign,
           uid: u.uid,
-          discordId: u.discord_id,
           isApproved: u.is_approved,
           role: u.role,
           createdAt: u.created_at,
@@ -427,7 +491,6 @@ export class SupabaseDatabase implements Database {
       display_name: user.displayName,
       ign: user.ign,
       uid: user.uid,
-      discord_id: user.discordId,
       is_approved: user.isApproved,
       role: user.role,
       password_hash: user.password
@@ -456,7 +519,6 @@ export class SupabaseDatabase implements Database {
         role: m.role,
         dateJoined: m.date_joined,
         uid: m.uid,
-        discordId: m.discord_id,
         status: m.status || 'active'
       }));
     } catch (e: any) {
@@ -473,7 +535,6 @@ export class SupabaseDatabase implements Database {
       role: member.role,
       date_joined: member.dateJoined,
       uid: member.uid,
-      discord_id: member.discordId,
       status: member.status || 'active'
     });
     if (error) console.error("Supabase Save Member Error:", error.message);
@@ -545,9 +606,46 @@ export class SupabaseDatabase implements Database {
     if (error) console.error("Supabase Delete Job Error:", error.message);
   }
 
+  async getRoles() {
+    try {
+      const { data, error } = await this.supabase.from('roles').select('*');
+      if (error) {
+        if (!error.message.includes("Could not find the table")) {
+          console.error("Supabase Get Roles Error:", error.message, error.code);
+        }
+        return initialDb.roles;
+      }
+      return data || [];
+    } catch (e: any) {
+      console.error("Supabase Exception in getRoles():", e.message);
+      return initialDb.roles;
+    }
+  }
+
+  async saveRole(role: any) {
+    const { error } = await this.supabase.from('roles').upsert(role);
+    if (error) console.error("Supabase Save Role Error:", error.message);
+  }
+
+  async deleteRole(id: string) {
+    const { error } = await this.supabase.from('roles').delete().eq('id', id);
+    if (error) console.error("Supabase Delete Role Error:", error.message);
+  }
+
   async getEvents() {
     try {
-      const { data, error } = await this.supabase.from('events').select('*');
+      let { data, error } = await this.supabase.from('events').select('*').order('order', { ascending: true });
+      
+      if (error) {
+        // Fallback if 'order' column doesn't exist yet
+        if (error.code === '42703' || error.message.includes('column "order" does not exist')) {
+          console.warn("Supabase: 'order' column missing in events table, falling back to unordered query.");
+          const fallback = await this.supabase.from('events').select('*');
+          data = fallback.data;
+          error = fallback.error;
+        }
+      }
+
       if (error) {
         if (!error.message.includes("Could not find the table")) {
           console.error("Supabase Get Events Error:", error.message, error.code);
@@ -567,11 +665,67 @@ export class SupabaseDatabase implements Database {
 
   /**
    * Saves an event to Supabase.
-   * NOTE: If you are using Supabase, you MUST add 'schedule' and 'absences' columns to your 'events' table.
-   * Run this SQL in your Supabase SQL Editor:
+   * NOTE: If you are using Supabase, you MUST run these SQL commands in your Supabase SQL Editor:
    * 
-   * ALTER TABLE events ADD COLUMN IF NOT EXISTS schedule JSONB DEFAULT '[]'::jsonb;
-   * ALTER TABLE events ADD COLUMN IF NOT EXISTS absences JSONB DEFAULT '[]'::jsonb;
+   * -- 1. Roles Table
+   * CREATE TABLE IF NOT EXISTS roles (
+   *   id TEXT PRIMARY KEY,
+   *   name TEXT NOT NULL,
+   *   color TEXT NOT NULL
+   * );
+   * 
+   * -- 2. Jobs Table
+   * CREATE TABLE IF NOT EXISTS jobs (
+   *   id TEXT PRIMARY KEY,
+   *   name TEXT NOT NULL
+   * );
+   * 
+   * -- 3. Members Table
+   * CREATE TABLE IF NOT EXISTS members (
+   *   id TEXT PRIMARY KEY,
+   *   ign TEXT NOT NULL,
+   *   job TEXT,
+   *   role TEXT,
+   *   date_joined TEXT,
+   *   uid TEXT,
+   *   status TEXT DEFAULT 'active'
+   * );
+   * 
+   * -- 4. Member Logs Table
+   * CREATE TABLE IF NOT EXISTS member_logs (
+   *   id TEXT PRIMARY KEY,
+   *   member_id TEXT NOT NULL,
+   *   type TEXT NOT NULL,
+   *   old_value TEXT,
+   *   new_value TEXT,
+   *   details TEXT,
+   *   timestamp TIMESTAMPTZ DEFAULT NOW()
+   * );
+   * 
+   * -- 5. Events Table
+   * CREATE TABLE IF NOT EXISTS events (
+   *   id TEXT PRIMARY KEY,
+   *   name TEXT NOT NULL,
+   *   description TEXT,
+   *   instructions TEXT,
+   *   schedule JSONB DEFAULT '[]'::jsonb,
+   *   absences JSONB DEFAULT '[]'::jsonb,
+   *   "order" INTEGER DEFAULT 0,
+   *   created_at TIMESTAMPTZ DEFAULT NOW()
+   * );
+   * 
+   * -- 6. Users Table
+   * CREATE TABLE IF NOT EXISTS users (
+   *   id TEXT PRIMARY KEY,
+   *   username TEXT UNIQUE NOT NULL,
+   *   display_name TEXT,
+   *   ign TEXT,
+   *   uid TEXT,
+   *   is_approved BOOLEAN DEFAULT FALSE,
+   *   role TEXT DEFAULT 'user',
+   *   created_at TIMESTAMPTZ DEFAULT NOW(),
+   *   password_hash TEXT NOT NULL
+   * );
    */
   async saveEvent(event: any) {
     try {
@@ -630,6 +784,13 @@ export class SupabaseDatabase implements Database {
   async deleteEvent(id: string) {
     const { error } = await this.supabase.from('events').delete().eq('id', id);
     if (error) console.error("Supabase Delete Event Error:", error.message);
+  }
+
+  async reorderEvents(orderedIds: string[]) {
+    const updates = orderedIds.map((id, index) => 
+      this.supabase.from('events').update({ order: index }).eq('id', id)
+    );
+    await Promise.all(updates);
   }
 
   async getSettings() {
@@ -751,7 +912,6 @@ export class SupabaseDatabase implements Database {
       role: data.role,
       dateJoined: data.date_joined,
       uid: data.uid,
-      discordId: data.discord_id,
       status: data.status || 'active'
     };
   }
@@ -781,7 +941,6 @@ export class SupabaseDatabase implements Database {
       displayName: data.display_name,
       ign: data.ign,
       uid: data.uid,
-      discordId: data.discord_id,
       isApproved: data.is_approved,
       role: data.role,
       createdAt: data.created_at,
@@ -792,6 +951,31 @@ export class SupabaseDatabase implements Database {
   async updateMembersJob(oldJobName: string, newJobName: string) {
     const { error } = await this.supabase.from('members').update({ job: newJobName }).eq('job', oldJobName);
     if (error) console.error("Supabase Update Members Job Error:", error.message);
+  }
+
+  async updateRoleName(oldRoleName: string, newRoleName: string) {
+    // Update members
+    const { error: membersError } = await this.supabase.from('members').update({ role: newRoleName }).eq('role', oldRoleName);
+    if (membersError) console.error("Supabase Update Members Role Error:", membersError.message);
+
+    // Update assignments
+    const events = await this.getEvents();
+    const updatedEvents = events.map((event: any) => ({
+      ...event,
+      subevents: (event.subevents || []).map((subevent: any) => ({
+        ...subevent,
+        parties: (subevent.parties || []).map((party: any) => ({
+          ...party,
+          assignments: (party.assignments || []).map((assignment: any) => 
+            assignment.role === oldRoleName ? { ...assignment, role: newRoleName } : assignment
+          )
+        }))
+      }))
+    }));
+    
+    for (const event of updatedEvents) {
+      await this.saveEvent(event);
+    }
   }
 
   async updateAssignmentsRole(memberId: string, newRole: string) {

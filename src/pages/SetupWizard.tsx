@@ -118,12 +118,16 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-white">Database Connection</p>
                     {envStatus && (
-                      <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-bold", envStatus.hasSupabase ? "bg-green-500/10 text-green-500" : "bg-yellow-500/10 text-yellow-500")}>
-                        {envStatus.hasSupabase ? 'Supabase' : 'Local File'}
+                      <span className={cn("text-[10px] px-2 py-0.5 rounded-full font-bold", envStatus.hasSupabase ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500")}>
+                        {envStatus.hasSupabase ? 'Supabase Connected' : 'Supabase Missing'}
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-zinc-500 mt-1">Ensure you have run the schema.sql script in your database if using Supabase.</p>
+                  {!envStatus?.hasSupabase ? (
+                    <p className="text-xs text-red-500 mt-1 font-medium">Supabase is required for this installation. Please configure your environment variables.</p>
+                  ) : (
+                    <p className="text-xs text-zinc-500 mt-1">Supabase connection verified. Ensure you have run the schema.sql script.</p>
+                  )}
                 </div>
               </div>
               <div className="flex items-start gap-3">
@@ -137,16 +141,17 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-zinc-500 mt-1">Verify your .env file is properly configured with your database credentials.</p>
+                  <p className="text-xs text-zinc-500 mt-1">Verify your .env file is properly configured with your deployment credentials.</p>
                 </div>
               </div>
             </div>
 
             <button
               onClick={handleNext}
-              className="w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-zinc-200 transition-colors"
+              disabled={!envStatus?.hasSupabase}
+              className="w-full bg-white text-black py-3 rounded-xl font-bold hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Continue to Setup
+              {!envStatus?.hasSupabase ? 'Configure Supabase to Continue' : 'Continue to Setup'}
             </button>
           </motion.div>
         )}

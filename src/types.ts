@@ -5,7 +5,6 @@ export interface Member {
   role?: string;
   dateJoined: string;
   uid?: string;
-  discordId?: string;
   status?: 'active' | 'inactive' | 'busy' | 'left';
 }
 
@@ -34,6 +33,7 @@ export interface GuildEvent {
   instructions?: string;
   absences?: Absence[];
   schedule?: number[]; // 0-6 for Sunday-Saturday
+  order?: number;
 }
 
 export interface SubEvent {
@@ -79,13 +79,17 @@ export interface UserProfile {
   createdAt: string;
   isPreAuthorized?: boolean;
   authUid?: string | null;
-  discordId?: string;
 }
 
 export interface Job {
   id?: string;
   name: string;
-  color?: string;
+}
+
+export interface Role {
+  id?: string;
+  name: string;
+  color: string;
 }
 
 export interface GuildSettings {
@@ -95,11 +99,9 @@ export interface GuildSettings {
   timezone: string;
   logoUrl?: string;
   maxPartySize?: number;
-  discordChannelId?: string; // Legacy field
   discordGuildId?: string;
   discordAnnouncementsChannelId?: string;
   discordAbsenceChannelId?: string;
-  discordWebhookUrl?: string;
   githubRepo?: string;
   vercelDeployHookUrl?: string;
   raffleWinners?: number;

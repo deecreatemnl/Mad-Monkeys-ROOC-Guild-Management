@@ -23,7 +23,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import ConfirmModal from '../components/ConfirmModal';
-import { Member, Job, MemberLog } from '../types';
+import { Member, Job, MemberLog, Role } from '../types';
 import { format } from 'date-fns';
 
 interface MembersPageProps {
@@ -33,6 +33,7 @@ interface MembersPageProps {
 export default function MembersPage({ isAdmin = false }: MembersPageProps) {
   const [members, setMembers] = useState<Member[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -40,8 +41,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
   const [formData, setFormData] = useState({ 
     ign: '', 
     job: '', 
-    role: 'DPS', 
-    discordId: '', 
+    role: '', 
     dateJoined: new Date().toISOString().split('T')[0],
     status: 'active' as any
   });
@@ -71,12 +71,18 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [membersData, jobsData] = await Promise.all([
+      const [membersData, jobsData, rolesData] = await Promise.all([
         fetchAPI('/api/members'),
-        fetchAPI('/api/jobs')
+        fetchAPI('/api/jobs'),
+        fetchAPI('/api/roles')
       ]);
       setMembers(membersData);
       setJobs(jobsData);
+      setRoles(rolesData);
+      
+      if (rolesData.length > 0 && !formData.role) {
+        setFormData(prev => ({ ...prev, role: rolesData[0].name }));
+      }
     } catch (err) {
       console.error('Failed to load members:', err);
     } finally {
@@ -96,12 +102,11 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
   };
 
   const handleExportCSV = () => {
-    const headers = ['IGN', 'Job', 'Role', 'Discord ID', 'Date Joined'];
+    const headers = ['IGN', 'Job', 'Role', 'Date Joined'];
     const rows = members.map(m => [
       `"${m.ign}"`,
       `"${m.job}"`,
       `"${m.role || 'DPS'}"`,
-      `"${m.discordId || ''}"`,
       `"${m.dateJoined}"`
     ]);
     
@@ -138,7 +143,6 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
           if (header === 'IGN') obj.ign = values[i];
           if (header === 'Job') obj.job = values[i];
           if (header === 'Role') obj.role = values[i];
-          if (header === 'Discord ID') obj.discordId = values[i];
           if (header === 'Date Joined') obj.dateJoined = values[i];
         });
         return obj;
@@ -272,7 +276,6 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
         ign: member.ign, 
         job: member.job, 
         role: member.role || 'DPS', 
-        discordId: member.discordId || '',
         dateJoined: member.dateJoined,
         status: member.status || 'active'
       });
@@ -282,7 +285,6 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
         ign: '', 
         job: jobs[0]?.name || '', 
         role: 'DPS', 
-        discordId: '',
         dateJoined: new Date().toISOString().split('T')[0],
         status: 'active'
       });
@@ -632,10 +634,9 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                       onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
                     >
-                      <option value="DPS">DPS</option>
-                      <option value="Tank">Tank</option>
-                      <option value="Support">Support</option>
-                      <option value="Utility">Utility</option>
+                      {roles.map(role => (
+                        <option key={role.id} value={role.name}>{role.name}</option>
+                      ))}
                     </select>
                   </div>
                   <div>

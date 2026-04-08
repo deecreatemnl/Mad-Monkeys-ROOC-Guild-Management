@@ -10,7 +10,7 @@ export const asyncHandler = (fn: any) => (req: any, res: any, next: any) => {
   Promise.resolve(fn(req, res, next)).catch(next);
 };
 
-export function createApp() {
+export function createApp(emitUpdate?: (type: string, data?: any) => void) {
   const app = express();
 
   // Initialize Database
@@ -300,6 +300,7 @@ export function createApp() {
       }
       
       await db.saveMember(updatedMember);
+      if (emitUpdate) emitUpdate('members');
       res.json(updatedMember);
     } else {
       res.status(404).json({ error: "Member not found" });
@@ -308,6 +309,7 @@ export function createApp() {
 
   app.delete("/api/members/:id", checkAdmin, asyncHandler(async (req: any, res: any) => {
     await db.deleteMember(req.params.id);
+    if (emitUpdate) emitUpdate('members');
     res.json({ success: true });
   }));
 
@@ -324,6 +326,7 @@ export function createApp() {
     }
     const newJob = { ...req.body, id: Date.now().toString() };
     await db.saveJob(newJob);
+    if (emitUpdate) emitUpdate('jobs');
     res.json(newJob);
   }));
 
@@ -343,6 +346,7 @@ export function createApp() {
       }
       
       await db.saveJob(updatedJob);
+      if (emitUpdate) emitUpdate('jobs');
       res.json(updatedJob);
     } else {
       res.status(404).json({ error: "Job not found" });
@@ -355,6 +359,58 @@ export function createApp() {
       return res.status(403).json({ error: "Only admins can manage jobs" });
     }
     await db.deleteJob(req.params.id);
+    if (emitUpdate) emitUpdate('jobs');
+    res.json({ success: true });
+  }));
+
+  // Roles API
+  app.get("/api/roles", asyncHandler(async (req: any, res: any) => {
+    const roles = await db.getRoles();
+    res.json(roles);
+  }));
+
+  app.post("/api/roles", asyncHandler(async (req: any, res: any) => {
+    const user = req.headers['user-role'];
+    if (user !== 'admin' && user !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can manage roles" });
+    }
+    const newRole = { ...req.body, id: Date.now().toString() };
+    await db.saveRole(newRole);
+    if (emitUpdate) emitUpdate('roles');
+    res.json(newRole);
+  }));
+
+  app.put("/api/roles/:id", asyncHandler(async (req: any, res: any) => {
+    const user = req.headers['user-role'];
+    if (user !== 'admin' && user !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can manage roles" });
+    }
+    const roles = await db.getRoles();
+    const role = roles.find((r: any) => r.id === req.params.id);
+    if (role) {
+      const oldName = role.name;
+      const newName = req.body.name;
+      const updatedRole = { ...role, ...req.body };
+      
+      if (oldName !== newName) {
+        await db.updateAssignmentsRole(oldName, newName);
+      }
+      
+      await db.saveRole(updatedRole);
+      if (emitUpdate) emitUpdate('roles');
+      res.json(updatedRole);
+    } else {
+      res.status(404).json({ error: "Role not found" });
+    }
+  }));
+
+  app.delete("/api/roles/:id", asyncHandler(async (req: any, res: any) => {
+    const user = req.headers['user-role'];
+    if (user !== 'admin' && user !== 'superadmin') {
+      return res.status(403).json({ error: "Only admins can manage roles" });
+    }
+    await db.deleteRole(req.params.id);
+    if (emitUpdate) emitUpdate('roles');
     res.json({ success: true });
   }));
 
@@ -365,12 +421,10 @@ export function createApp() {
     
     const channels = [];
     if (target === 'announcements' || target === 'both') {
-      const id = settings.discordAnnouncementsChannelId || settings.discordChannelId;
-      if (id) channels.push(id);
+      if (settings.discordAnnouncementsChannelId) channels.push(settings.discordAnnouncementsChannelId);
     }
     if (target === 'absence' || target === 'both') {
-      const id = settings.discordAbsenceChannelId || settings.discordChannelId;
-      if (id) channels.push(id);
+      if (settings.discordAbsenceChannelId) channels.push(settings.discordAbsenceChannelId);
     }
 
     if (botToken && channels.length > 0) {
@@ -386,14 +440,6 @@ export function createApp() {
         } catch (err: any) {
           console.error(`Failed to send Discord message to channel ${channelId} via Bot:`, err.response?.data || err.message);
         }
-      }
-    } else if (settings.discordWebhookUrl) {
-      try {
-        await axios.post(settings.discordWebhookUrl, {
-          content: message
-        });
-      } catch (err: any) {
-        console.error("Failed to send Discord message via Webhook:", err.message);
       }
     }
   }
@@ -413,7 +459,15 @@ export function createApp() {
     console.log("POST /api/events body:", req.body);
     const newEvent = { ...req.body, id: Date.now().toString(), subevents: [] };
     await db.saveEvent(newEvent);
+    if (emitUpdate) emitUpdate('events');
     res.json(newEvent);
+  }));
+
+  app.put("/api/events-reorder", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    const { orderedIds } = req.body;
+    await db.reorderEvents(orderedIds);
+    if (emitUpdate) emitUpdate('events');
+    res.json({ success: true });
   }));
 
   app.put("/api/events/:id", checkAdmin, asyncHandler(async (req: any, res: any) => {
@@ -422,6 +476,7 @@ export function createApp() {
     if (event) {
       const updatedEvent = { ...event, ...req.body };
       await db.saveEvent(updatedEvent);
+      if (emitUpdate) emitUpdate('events');
       res.json(updatedEvent);
     } else {
       res.status(404).json({ error: "Event not found" });
@@ -430,6 +485,7 @@ export function createApp() {
 
   app.delete("/api/events/:id", checkAdmin, asyncHandler(async (req: any, res: any) => {
     await db.deleteEvent(req.params.id);
+    if (emitUpdate) emitUpdate('events');
     res.json({ success: true });
   }));
 
@@ -669,6 +725,7 @@ export function createApp() {
     event.subevents[toSubIndex].parties.forEach((p: any, i: number) => p.order = i);
 
     await db.saveEvent(event);
+    if (emitUpdate) emitUpdate('events');
     res.json({ success: true });
   }));
 
@@ -807,6 +864,51 @@ export function createApp() {
   // Raffle API
   app.get("/api/raffle", asyncHandler(async (req: any, res: any) => {
     const raffle = await db.getRaffle();
+    
+    // Auto-advance logic for Monday morning (PHT)
+    // Sunday 22:00 UTC = Monday 06:00 PHT
+    const now = new Date();
+    const day = now.getUTCDay();
+    const hour = now.getUTCHours();
+    
+    // If it's Sunday after 22:00 UTC (Monday 6am PHT) or any day after Sunday (Monday-Saturday)
+    // AND the raffle is currently closed (meaning last week's draw is done)
+    // AND we haven't advanced yet (this part is tricky, maybe check if winners exist for current week)
+    const hasWinnersForCurrentWeek = (raffle.winners || []).some((w: any) => 
+      Number(w.week) === Number(raffle.settings.currentWeek) &&
+      Number(w.month) === Number(raffle.settings.currentMonth) &&
+      Number(w.year) === Number(raffle.settings.currentYear)
+    );
+
+    const isMondayOrLater = (day === 0 && hour >= 22) || (day > 0);
+
+    if (isMondayOrLater && !raffle.settings.isOpen && hasWinnersForCurrentWeek) {
+      console.log('[Raffle Auto-Advance] Monday morning detected, advancing week...');
+      
+      // Clear entries
+      raffle.entries = [];
+      
+      const currentWeek = Number(raffle.settings.currentWeek);
+      const currentMonth = Number(raffle.settings.currentMonth);
+      const currentYear = Number(raffle.settings.currentYear);
+
+      if (currentWeek >= 5) {
+        raffle.settings.currentWeek = 1;
+        if (currentMonth >= 12) {
+          raffle.settings.currentMonth = 1;
+          raffle.settings.currentYear = currentYear + 1;
+        } else {
+          raffle.settings.currentMonth = currentMonth + 1;
+        }
+      } else {
+        raffle.settings.currentWeek = currentWeek + 1;
+      }
+      
+      raffle.settings.isOpen = true;
+      await db.saveRaffle(raffle);
+      console.log('[Raffle Auto-Advance] Advanced to:', raffle.settings);
+    }
+
     res.json(raffle);
   }));
 
@@ -866,23 +968,38 @@ export function createApp() {
     const raffle = await db.getRaffle();
     const restrictedIds = raffle.settings.restrictedMemberIds || [];
     
+    // Get all winners for the current month to exclude them
+    const monthWinnerIds = new Set((raffle.winners || [])
+      .filter((w: any) => Number(w.month) === Number(raffle.settings.currentMonth) && Number(w.year) === Number(raffle.settings.currentYear))
+      .map((w: any) => w.memberId));
+
     const currentWeekEntries = (raffle.entries || []).filter((e: any) => {
       const match = Number(e.week) === Number(raffle.settings.currentWeek) &&
                   Number(e.month) === Number(raffle.settings.currentMonth) &&
                   Number(e.year) === Number(raffle.settings.currentYear);
       const notRestricted = !restrictedIds.includes(e.memberId);
-      return match && notRestricted;
+      const notAlreadyWinner = !monthWinnerIds.has(e.memberId);
+      return match && notRestricted && notAlreadyWinner;
     });
+
+    // Ensure unique members if there are multiple entries (though join prevents this, safety first)
+    const uniqueEntriesMap = new Map();
+    currentWeekEntries.forEach(e => {
+      if (!uniqueEntriesMap.has(e.memberId)) {
+        uniqueEntriesMap.set(e.memberId, e);
+      }
+    });
+    const uniqueEntries = Array.from(uniqueEntriesMap.values());
 
     const settings = await db.getSettings();
     const numWinners = settings.raffleWinners || 2;
 
-    if (currentWeekEntries.length < numWinners) {
-      return res.status(400).json({ error: `Not enough entries to draw ${numWinners} winners.` });
+    if (uniqueEntries.length < numWinners) {
+      return res.status(400).json({ error: `Not enough unique entries to draw ${numWinners} winners. Available: ${uniqueEntries.length}` });
     }
 
     // Shuffle and pick winners
-    const shuffled = [...currentWeekEntries].sort(() => 0.5 - Math.random());
+    const shuffled = [...uniqueEntries].sort(() => 0.5 - Math.random());
     const winners = shuffled.slice(0, numWinners).map(e => ({
       id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5),
       memberId: e.memberId,
@@ -895,10 +1012,50 @@ export function createApp() {
 
     if (!raffle.winners) raffle.winners = [];
     raffle.winners.push(...winners);
-    raffle.settings.isOpen = false; // Close raffle after draw
+    
+    // Close raffle after draw, but DON'T advance week yet
+    // This allows for rerolls if needed
+    raffle.settings.isOpen = false;
     
     await db.saveRaffle(raffle);
     res.json({ success: true, winners });
+  }));
+
+  app.post("/api/raffle/advance", asyncHandler(async (req: any, res: any) => {
+    const userRole = req.headers['user-role'];
+    console.log(`[Raffle Advance] Request received. Role: ${userRole}`);
+    if (userRole !== 'admin' && userRole !== 'superadmin') {
+      console.warn(`[Raffle Advance] Forbidden: Role ${userRole} is not admin`);
+      return res.status(403).json({ error: "Only admins can advance the raffle" });
+    }
+
+    const raffle = await db.getRaffle();
+    console.log(`[Raffle Advance] Current Settings:`, raffle.settings);
+    
+    // Clear current entries when advancing to next week
+    raffle.entries = [];
+    
+    const currentWeek = Number(raffle.settings.currentWeek);
+    const currentMonth = Number(raffle.settings.currentMonth);
+    const currentYear = Number(raffle.settings.currentYear);
+
+    if (currentWeek >= 5) {
+      raffle.settings.currentWeek = 1;
+      if (currentMonth >= 12) {
+        raffle.settings.currentMonth = 1;
+        raffle.settings.currentYear = currentYear + 1;
+      } else {
+        raffle.settings.currentMonth = currentMonth + 1;
+      }
+    } else {
+      raffle.settings.currentWeek = currentWeek + 1;
+    }
+    
+    raffle.settings.isOpen = true;
+    console.log(`[Raffle Advance] New Settings:`, raffle.settings);
+    await db.saveRaffle(raffle);
+    console.log(`[Raffle Advance] Raffle advanced and entries cleared`);
+    res.json({ success: true, settings: raffle.settings });
   }));
 
   app.post("/api/raffle/reroll", asyncHandler(async (req: any, res: any) => {
@@ -1085,6 +1242,7 @@ export function createApp() {
     const settings = await db.getSettings();
     const updatedSettings = { ...settings, ...req.body };
     await db.saveSettings(updatedSettings);
+    if (emitUpdate) emitUpdate('settings');
 
     // If Discord channel was just connected/updated, send an automatic message
     if (req.body.discordAnnouncementsChannelId && req.body.discordAnnouncementsChannelId !== settings.discordAnnouncementsChannelId) {

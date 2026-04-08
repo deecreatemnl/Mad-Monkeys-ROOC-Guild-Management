@@ -19,6 +19,11 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
   const [displayEntries, setDisplayEntries] = useState<any[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const ITEM_HEIGHT = 64; // h-16
+  const CONTAINER_HEIGHT = 192; // h-48
+  const WINNER_INDEX = 45;
+  const TARGET_Y = -(WINNER_INDEX * ITEM_HEIGHT) + (CONTAINER_HEIGHT / 2) - (ITEM_HEIGHT / 2);
+
   // Initialize for the current round
   const initRound = (currentRound: number) => {
     setRound(currentRound);
@@ -28,19 +33,29 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
     const repeatedEntries = [];
     // Only exclude winners from previous rounds
     const previousWinners = winners.slice(0, currentRound - 1);
-    const pool = entries.filter(e => !previousWinners.some(pw => pw.memberId === e.memberId));
+    const pool = entries.filter(e => !previousWinners.some(pw => {
+      if (pw.memberId && e.memberId) return pw.memberId === e.memberId;
+      return pw.id === e.id;
+    }));
     
-    // Shuffle the pool for variety
-    const shuffledPool = [...pool].sort(() => 0.5 - Math.random());
+    // Shuffle the pool for variety, excluding the current target winner to avoid duplicates in the roulette
+    const shuffledPool = pool
+      .filter(e => {
+        if (targetWinner?.memberId && e.memberId) return e.memberId !== targetWinner.memberId;
+        return e.id !== targetWinner?.id;
+      })
+      .sort(() => 0.5 - Math.random());
     
-    for (let i = 0; i < 10; i++) {
+    // Ensure we have enough items to reach the winner index
+    while (repeatedEntries.length < WINNER_INDEX + 10) {
+      // If pool is empty (shouldn't happen in normal flow, but just in case), break to avoid infinite loop
+      if (shuffledPool.length === 0) break;
       repeatedEntries.push(...shuffledPool);
     }
     
     // Ensure the winner is at a specific position near the end
-    const winnerIndex = 45;
     if (targetWinner) {
-      repeatedEntries[winnerIndex] = targetWinner;
+      repeatedEntries[WINNER_INDEX] = targetWinner;
     }
     
     setDisplayEntries(repeatedEntries);
@@ -154,9 +169,9 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
                   key={round}
                   className="flex flex-col items-center w-full"
                   animate={isSpinning ? {
-                    y: [0, -2000],
+                    y: [0, TARGET_Y],
                   } : roundWinner ? {
-                    y: -2000, // Stay on winner
+                    y: TARGET_Y, // Stay on winner
                   } : {
                     y: 0
                   }}
@@ -169,11 +184,11 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
                 >
                   {displayEntries.map((entry, i) => (
                     <div 
-                      key={`${entry.id}-${i}`}
+                      key={`${entry?.id || 'empty'}-${i}`}
                       className="h-16 flex items-center justify-center w-full shrink-0"
                     >
-                      <span className={`text-xl font-bold tracking-tight ${roundWinner?.id === entry.id ? 'text-orange-500 scale-125' : 'text-zinc-600'}`}>
-                        {entry.ign}
+                      <span className={`text-xl font-bold tracking-tight ${roundWinner?.id === entry?.id ? 'text-orange-500 scale-125' : 'text-zinc-600'}`}>
+                        {entry?.ign || ''}
                       </span>
                     </div>
                   ))}
@@ -221,30 +236,12 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
                         <h3 className="text-4xl font-black italic tracking-tighter text-white">{roundWinner.ign}</h3>
                       </div>
                       <div className="flex gap-1">
-                        {[...Array(5)].map((_, i) => (
-                          <Star key={i} className="w-4 h-4 text-orange-500 fill-orange-500" />
-                        ))}
+                        {/* Stars removed as per user request */}
                       </div>
                     </div>
                   </motion.div>
                   
-                  {/* Confetti-like particles */}
-                  {[...Array(30)].map((_, i) => (
-                    <motion.div
-                      key={i}
-                      initial={{ x: 0, y: 0, scale: 0 }}
-                      animate={{ 
-                        x: (Math.random() - 0.5) * 600,
-                        y: (Math.random() - 0.5) * 400,
-                        scale: [0, 1, 0],
-                        rotate: Math.random() * 360
-                      }}
-                      transition={{ duration: 1.5, repeat: Infinity, delay: Math.random() * 0.5 }}
-                      className="absolute"
-                    >
-                      <Sparkles className={`w-6 h-6 ${i % 2 === 0 ? 'text-orange-500' : 'text-white'}`} />
-                    </motion.div>
-                  ))}
+                  {/* Confetti-like particles removed as per user request */}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -261,9 +258,7 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
               animate={{ y: 0, opacity: 1 }}
               className="flex items-center gap-2 text-orange-500 font-bold uppercase tracking-[0.4em] text-sm mb-12"
             >
-              <Sparkles className="w-5 h-5" />
               Final Winners
-              <Sparkles className="w-5 h-5" />
             </motion.div>
             
             <div className="grid grid-cols-2 gap-4 w-full max-w-2xl px-8">

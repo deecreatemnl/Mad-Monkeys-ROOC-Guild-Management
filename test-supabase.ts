@@ -44,7 +44,16 @@ async function testConnection() {
     console.log("Users table found. Count:", users?.length);
   }
 
-  if (!jobsError && !settingsError && !usersError) {
+  console.log("Checking 'events' table...");
+  const { data: events, error: eventsError } = await supabase.from('events').select('*');
+  
+  if (eventsError) {
+    console.error("Events table error:", eventsError.message);
+  } else {
+    console.log("Events table found. Count:", events?.length);
+  }
+
+  if (!jobsError && !settingsError && !usersError && !eventsError) {
     console.log("\nConnection test PASSED! All tables are accessible.");
   } else {
     console.log("\nConnection test completed with some errors.");
