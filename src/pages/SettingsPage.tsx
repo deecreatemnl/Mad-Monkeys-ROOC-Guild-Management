@@ -45,9 +45,9 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
 
   useEffect(() => {
     const handleAuthSuccess = async (data: any) => {
-      const { accessToken, guildId } = data;
+      const { guildId } = data;
       setIsDiscordConnected(true);
-      fetchGuilds(accessToken);
+      fetchGuilds();
       if (guildId) {
         setSelectedGuildId(guildId);
         const newSettings = { ...settings, discordGuildId: guildId };
@@ -103,15 +103,17 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
     };
   }, [settings]);
 
-  const fetchGuilds = async (accessToken: string) => {
+  const fetchGuilds = async (force = false) => {
+    if (!force && guilds.length > 0) return;
     setFetchingGuilds(true);
     try {
-      const data = await fetchAPI('/api/discord/guilds', {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      const data = await fetchAPI('/api/discord/bot-guilds');
       setGuilds(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to fetch guilds:', err);
+      if (err.message?.includes('429')) {
+        alert('Discord rate limit reached. Please wait a minute before refreshing the server list.');
+      }
     } finally {
       setFetchingGuilds(false);
     }
@@ -262,6 +264,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
           
           if (newSettings.discordGuildId || newSettings.discordAnnouncementsChannelId || newSettings.discordAbsenceChannelId) {
             setIsDiscordConnected(true);
+            fetchGuilds(); // Fetch bot guilds to populate the list
             if (newSettings.discordGuildId) {
               setSelectedGuildId(newSettings.discordGuildId);
               fetchGuildInfo(newSettings.discordGuildId);
@@ -714,48 +717,41 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                     )}
                     {!isDiscordConnected ? (
                       <div className="space-y-4">
-                        <a
-                          href="https://discord.com/oauth2/authorize?client_id=1489652826069139648"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="w-full flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-3 px-6 rounded-xl text-sm transition-all active:scale-95 border border-zinc-700"
-                        >
-                          <Plus className="w-5 h-5" />
-                          1. Install Discord App
-                        </a>
                         <button
                           type="button"
-                          onClick={handleDiscordConnect}
+                          onClick={async () => {
+                            await handleInviteBot();
+                            setIsDiscordConnected(true);
+                            fetchGuilds();
+                          }}
                           disabled={!isDiscordConfigured}
-                          className="w-full flex items-center justify-center gap-2 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 disabled:grayscale text-white font-bold py-3 px-6 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-[#5865F2]/20"
+                          className="w-full flex items-center justify-center gap-2 bg-[#5865F2] hover:bg-[#4752C4] disabled:opacity-50 disabled:grayscale text-white font-bold py-4 px-6 rounded-xl text-sm transition-all active:scale-95 shadow-lg shadow-[#5865F2]/20"
                         >
-                          <MessageSquare className="w-5 h-5" />
-                          2. Connect Discord Server
+                          <Plus className="w-5 h-5" />
+                          Connect the {settings.name} Guild Manager to Discord
                         </button>
+                        <p className="text-[10px] text-zinc-500 text-center">
+                          This will open Discord to invite the bot to your server. 
+                          No redirect configuration is required.
+                        </p>
                       </div>
                     ) : (
                       <div className="space-y-4 p-4 bg-zinc-800/50 border border-zinc-700 rounded-2xl">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 text-green-500 text-sm font-bold">
                             <Check className="w-4 h-4" />
-                            Discord Connected
+                            Discord Integration Active
                           </div>
                           <div className="flex items-center gap-3">
                             <button 
                               type="button"
                               onClick={() => {
+                                fetchGuilds(true);
                                 if (selectedGuildId) fetchChannels(selectedGuildId);
-                                const stored = localStorage.getItem('discord_auth_result');
-                                if (stored) {
-                                  try {
-                                    const data = JSON.parse(stored);
-                                    if (data.accessToken) fetchGuilds(data.accessToken);
-                                  } catch (e) {}
-                                }
                               }}
                               className="text-[10px] text-orange-500 hover:text-orange-400 underline font-bold"
                             >
-                              Refresh
+                              Refresh Servers
                             </button>
                             <button 
                               type="button"

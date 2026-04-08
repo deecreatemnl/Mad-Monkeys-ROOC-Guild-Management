@@ -49,6 +49,11 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
   }));
   app.use(express.json({ limit: '50mb' }));
 
+  // Cache for Discord bot guilds to avoid 429 errors
+  let botGuildsCache: any = null;
+  let botGuildsCacheTime: number = 0;
+  const CACHE_DURATION = 60 * 1000; // 1 minute
+
   // Debug middleware for raffle API
   app.use((req, res, next) => {
     if (req.path.startsWith('/api/raffle')) {
@@ -122,8 +127,14 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
 
     // Save initial guild settings if provided
     if (guildName) {
-      const settings = await db.getSettings();
-      await db.saveSettings({ ...settings, name: guildName });
+      try {
+        const settings = await db.getSettings();
+        await db.saveSettings({ ...settings, name: guildName });
+      } catch (err) {
+        console.error("Setup Settings Init Error:", err);
+        // Fallback: save with just the name if getSettings fails
+        await db.saveSettings({ name: guildName });
+      }
     }
 
     res.json({ success: true, message: "Superadmin created successfully" });
@@ -1625,6 +1636,43 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     } catch (err: any) {
       console.error("Discord OAuth Error:", err.response?.data || err.message);
       res.status(500).send("Authentication failed");
+    }
+  }));
+
+  app.get("/api/discord/bot-guilds", asyncHandler(async (req: any, res: any) => {
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) return res.status(500).json({ error: "Bot token not configured" });
+
+    // Return cached data if valid
+    if (botGuildsCache && (Date.now() - botGuildsCacheTime < CACHE_DURATION)) {
+      return res.json(botGuildsCache);
+    }
+
+    try {
+      const response = await axios.get('https://discord.com/api/users/@me/guilds', {
+        headers: { Authorization: `Bot ${botToken}` }
+      });
+      
+      // Update cache
+      botGuildsCache = response.data;
+      botGuildsCacheTime = Date.now();
+      
+      res.json(response.data);
+    } catch (err: any) {
+      if (err.response?.status === 429) {
+        console.warn("Discord API Rate Limit (429) hit for bot-guilds. Returning stale cache if available.");
+        if (botGuildsCache) {
+          return res.json(botGuildsCache);
+        }
+        const retryAfter = err.response.headers['retry-after'] || 'unknown';
+        return res.status(429).json({ 
+          error: "Discord rate limit exceeded", 
+          retryAfter,
+          message: "Please wait a moment before refreshing again."
+        });
+      }
+      console.error("Failed to fetch bot guilds:", err.response?.data || err.message);
+      res.status(500).json({ error: err.message });
     }
   }));
 

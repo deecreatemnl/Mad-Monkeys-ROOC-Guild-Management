@@ -210,6 +210,7 @@ export default function App() {
       setUser(data.user);
       localStorage.setItem('user', JSON.stringify(data.user));
       localStorage.setItem('token', data.token);
+      await loadSettings();
     } catch (err: any) {
       alert(err.message);
     }
@@ -231,6 +232,7 @@ export default function App() {
       setUser(data.user);
       localStorage.setItem('user', JSON.stringify(data.user));
       localStorage.setItem('token', data.token);
+      await loadSettings();
     } catch (err: any) {
       alert(err.message);
     }
@@ -252,10 +254,15 @@ export default function App() {
     );
   }
 
+  const handleSetupComplete = async () => {
+    setNeedsSetup(false);
+    await loadSettings();
+  };
+
   if (needsSetup) {
     return (
       <Suspense fallback={<PageLoader />}>
-        <SetupWizard onComplete={() => setNeedsSetup(false)} />
+        <SetupWizard onComplete={handleSetupComplete} />
       </Suspense>
     );
   }
