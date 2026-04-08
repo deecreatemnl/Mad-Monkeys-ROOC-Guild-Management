@@ -134,8 +134,8 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                         </span>
                         <p className="text-[10px] text-zinc-500">
                           {envStatus.hasDatabaseUrl 
-                            ? 'DATABASE_URL detected. Tables will sync automatically.' 
-                            : 'DATABASE_URL missing. You must run schema.sql manually.'}
+                            ? 'Database connection URL detected. Tables will sync automatically.' 
+                            : 'Connection URL missing (DATABASE_URL or POSTGRES_URL). You must run schema.sql manually.'}
                         </p>
                       </div>
                     </div>

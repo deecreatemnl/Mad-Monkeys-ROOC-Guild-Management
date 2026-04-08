@@ -139,7 +139,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       env: {
         isVercel,
         hasSupabase: !!hasSupabase,
-        hasDatabaseUrl: !!process.env.DATABASE_URL,
+        hasDatabaseUrl: !!(process.env.DATABASE_URL || process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL),
         nodeEnv: process.env.NODE_ENV,
         hasDiscord: !!(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET && process.env.DISCORD_BOT_TOKEN)
       }

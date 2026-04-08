@@ -13,11 +13,11 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const { Client } = pg;
 
 async function runMigrations() {
-  const dbUrl = process.env.DATABASE_URL;
+  const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
   
   if (!dbUrl) {
-    console.warn('⚠️ DATABASE_URL is not set. Skipping migrations.');
-    console.warn('To enable auto-migrations, add your Supabase connection string to DATABASE_URL in your environment variables.');
+    console.warn('⚠️ Database connection URL is not set. Skipping migrations.');
+    console.warn('To enable auto-migrations, add DATABASE_URL, POSTGRES_URL_NON_POOLING, or POSTGRES_URL to your environment variables.');
     return;
   }
 
