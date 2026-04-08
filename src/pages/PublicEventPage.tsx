@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { fetchAPI } from '../lib/api';
 import { GuildEvent, Member, Assignment, Party, SubEvent, GuildSettings } from '../types';
-import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, ChevronDown, ChevronRight, Cross, Zap, Target, Skull, Hammer, FlaskConical, Music, Hand, UserMinus, Check, MessageSquare, Trophy, Trash2 } from 'lucide-react';
+import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, ChevronDown, ChevronRight, Cross, Zap, Target, Skull, Hammer, FlaskConical, Music, Hand, UserMinus, Check, MessageSquare, Trophy, Trash2, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Link } from 'react-router-dom';
@@ -200,15 +200,15 @@ export default function PublicEventPage() {
 
   useEffect(() => {
     setSelectedDates([]);
-  }, [eventId]);
+  }, [eventId, token]);
 
   const handleReportAbsence = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedMemberId) return;
+    if (!selectedMemberId || !event?.id) return;
     
     setReportingAbsence(true);
     try {
-      await fetchAPI(`/api/events/${eventId}/absent`, {
+      await fetchAPI(`/api/events/${event.id}/absent`, {
         method: 'POST',
         body: JSON.stringify({ 
           memberId: selectedMemberId,
@@ -223,7 +223,7 @@ export default function PublicEventPage() {
       
       // Reload data to show updated list
       const [eventData, membersData] = await Promise.all([
-        fetchAPI(`/api/events/${eventId}`),
+        token ? fetchAPI(`/api/public/events/by-token/${token}`) : fetchAPI(`/api/events/${event.id}`),
         fetchAPI('/api/members')
       ]);
       setMembers(membersData);
@@ -507,9 +507,26 @@ export default function PublicEventPage() {
               });
             });
             
-            const unavailableMembers = event.absences || [];
+            const unavailableMembers = [
+              ...(event.absences || []),
+              ...members
+                .filter(m => m.status === 'on-leave')
+                .filter(m => !(event.absences || []).some(a => a.memberId === m.id))
+                .map(m => ({
+                  memberId: m.id,
+                  ign: m.ign,
+                  job: m.job,
+                  role: m.role,
+                  reason: m.leaveReason || 'On Leave (Admin Set)',
+                  dates: m.leaveDates || [],
+                  timestamp: m.leaveStartedAt || new Date().toISOString()
+                }))
+            ];
             const unassignedMembers = members
-              .filter(m => (m.status || 'active') === 'active')
+              .filter(m => {
+                const status = m.status || 'active';
+                return status === 'active' || status === 'busy';
+              })
               .filter(m => 
                 !assignedMemberIds.has(m.id!) && 
                 !unavailableMembers.some(a => a.memberId === m.id)
@@ -561,11 +578,11 @@ export default function PublicEventPage() {
                 {unavailableMembers.length > 0 && (
                   <div>
                     <div className="flex items-center gap-3 mb-8">
-                      <div className="w-12 h-12 bg-red-500/10 rounded-2xl flex items-center justify-center text-red-500">
-                        <Skull className="w-6 h-6" />
+                      <div className="w-12 h-12 bg-orange-500/10 rounded-2xl flex items-center justify-center text-orange-500">
+                        <Clock className="w-6 h-6" />
                       </div>
                       <div>
-                        <h2 className="text-2xl font-bold uppercase tracking-tight text-red-500/80">Not Available to Play</h2>
+                        <h2 className="text-2xl font-bold uppercase tracking-tight text-orange-500/80">Away / On Leave</h2>
                         <p className="text-xs text-zinc-500 font-bold uppercase tracking-[0.2em] mt-1">
                           {unavailableMembers.length} {unavailableMembers.length === 1 ? 'Member' : 'Members'} reported absence
                         </p>
@@ -578,27 +595,47 @@ export default function PublicEventPage() {
                           key={absence.memberId}
                           initial={{ opacity: 0, scale: 0.95 }}
                           animate={{ opacity: 1, scale: 1 }}
-                          className="bg-red-500/5 border border-red-500/10 p-6 rounded-3xl relative group"
+                          className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl relative group hover:border-orange-500/30 transition-all shadow-xl"
                         >
                           <div className="flex items-start gap-4 mb-4">
-                            <div className="w-12 h-12 rounded-2xl bg-red-500/10 flex items-center justify-center text-red-500 font-bold text-xl">
+                            <div className="w-12 h-12 rounded-2xl bg-orange-500/10 flex items-center justify-center text-orange-500 font-bold text-xl border border-orange-500/20">
                               {absence.ign.charAt(0)}
                             </div>
-                            <div>
-                              <p className="font-bold text-zinc-100 text-lg">{absence.ign}</p>
-                              <p className="text-xs text-zinc-500 font-bold uppercase tracking-wider">{new Date(absence.timestamp).toLocaleDateString()}</p>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-bold text-zinc-100 text-lg truncate">{absence.ign}</h3>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
+                                  {(absence as any).job || getMemberJob(absence.memberId)}
+                                </span>
+                                <span className="w-1 h-1 rounded-full bg-zinc-700" />
+                                <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
+                                  {(absence as any).role || getMemberCategory(members.find(m => m.id === absence.memberId) || { job: '' } as any)}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="px-2 py-1 rounded-md bg-orange-500/10 border border-orange-500/20 text-[10px] font-bold text-orange-500 uppercase tracking-wider">
+                              On Leave
                             </div>
                           </div>
+
                           <div className="space-y-4">
-                            <div className="bg-zinc-950/50 p-4 rounded-2xl border border-zinc-800/50">
-                              <p className="text-sm text-zinc-400 italic leading-relaxed">
-                                "{absence.reason}"
-                              </p>
+                            <div className="bg-zinc-950/50 p-4 rounded-2xl border border-zinc-800/50 relative">
+                              <MessageSquare className="absolute -top-2 -left-2 w-4 h-4 text-zinc-700" />
+                              <div className="flex justify-between items-start mb-2">
+                                <p className="text-sm text-zinc-400 italic leading-relaxed">
+                                  "{absence.reason}"
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 font-bold uppercase mt-2">
+                                <Calendar className="w-3 h-3 text-orange-500/50" />
+                                Reported on {new Date(absence.timestamp).toLocaleDateString()}
+                              </div>
                             </div>
+                            
                             {absence.dates && absence.dates.length > 0 && (
                               <div className="flex flex-wrap gap-2">
                                 {absence.dates.map(date => (
-                                  <span key={date} className="text-[10px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 px-3 py-1 rounded-full border border-red-500/20">
+                                  <span key={date} className="text-[9px] font-bold uppercase tracking-wider bg-zinc-800 text-zinc-400 px-3 py-1.5 rounded-lg border border-zinc-700/50">
                                     {date}
                                   </span>
                                 ))}

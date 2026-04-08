@@ -26,18 +26,38 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     fetchAPI('/api/health').then(data => setEnvStatus(data.env)).catch(console.error);
   }, []);
 
-  const handleNext = () => {
-    if (step === 2 && !formData.guildName) {
-      setError('Guild Name is required');
-      return;
-    }
+  const handleNext = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setError('');
+    
+    if (step === 2) {
+      if (!formData.guildName.trim()) {
+        setError('Guild Name is required');
+        return;
+      }
+    }
+
     setStep(step + 1);
+  };
+
+  const handleBack = () => {
+    setError('');
+    setStep(step - 1);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!formData.guildName.trim()) {
+      setError('Guild Name is missing. Please go back and provide it.');
+      return;
+    }
+
+    if (!formData.username || !formData.password || !formData.confirmPassword) {
+      setError('All superadmin fields are required');
+      return;
+    }
 
     if (formData.password !== formData.confirmPassword) {
       setError('Passwords do not match');
@@ -170,6 +190,56 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
           <motion.form
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
+            onSubmit={handleNext}
+            className="space-y-4"
+          >
+            <div className="text-center space-y-2 mb-6">
+              <h2 className="text-lg font-medium text-white">Guild Settings</h2>
+              <p className="text-sm text-zinc-400">
+                Configure your guild's identity.
+              </p>
+            </div>
+
+            {error && (
+              <div className="bg-red-500/10 text-red-500 p-3 rounded-lg text-sm text-center border border-red-500/20">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Guild Name</label>
+              <input
+                type="text"
+                required
+                value={formData.guildName}
+                onChange={e => setFormData({ ...formData, guildName: e.target.value })}
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-red-500 transition-colors"
+                placeholder="My Awesome Guild"
+              />
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={handleBack}
+                className="flex-1 bg-zinc-800 text-white py-3 rounded-xl font-bold hover:bg-zinc-700 transition-colors"
+              >
+                Back
+              </button>
+              <button
+                type="submit"
+                className="flex-[2] bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors flex items-center justify-center gap-2"
+              >
+                Continue
+              </button>
+            </div>
+          </motion.form>
+        )}
+
+        {step === 3 && (
+          <motion.form
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
             onSubmit={handleSubmit}
             className="space-y-4"
           >
@@ -234,61 +304,30 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
               />
             </div>
 
-            <button
-              onClick={handleNext}
-              className="w-full bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors flex items-center justify-center gap-2 mt-6"
-            >
-              Continue
-            </button>
-          </motion.form>
-        )}
-
-        {step === 3 && (
-          <motion.form
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            onSubmit={handleSubmit}
-            className="space-y-4"
-          >
-            <div className="text-center space-y-2 mb-6">
-              <h2 className="text-lg font-medium text-white">Guild Settings</h2>
-              <p className="text-sm text-zinc-400">
-                Configure your guild's identity.
-              </p>
+            <div className="flex gap-3 mt-6">
+              <button
+                type="button"
+                onClick={handleBack}
+                disabled={loading}
+                className="flex-1 bg-zinc-800 text-white py-3 rounded-xl font-bold hover:bg-zinc-700 transition-colors disabled:opacity-50"
+              >
+                Back
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-[2] bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Initializing...
+                  </>
+                ) : (
+                  'Complete Setup'
+                )}
+              </button>
             </div>
-
-            {error && (
-              <div className="bg-red-500/10 text-red-500 p-3 rounded-lg text-sm text-center border border-red-500/20">
-                {error}
-              </div>
-            )}
-
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Guild Name</label>
-              <input
-                type="text"
-                required
-                value={formData.guildName}
-                onChange={e => setFormData({ ...formData, guildName: e.target.value })}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-red-500 transition-colors"
-                placeholder="My Awesome Guild"
-              />
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-red-600 text-white py-3 rounded-xl font-bold hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2 mt-6"
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Initializing...
-                </>
-              ) : (
-                'Complete Setup'
-              )}
-            </button>
           </motion.form>
         )}
 

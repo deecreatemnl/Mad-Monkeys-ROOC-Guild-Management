@@ -68,7 +68,10 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     job: '', 
     role: '', 
     dateJoined: formatDateForDisplay(new Date().toISOString()),
-    status: 'active' as any
+    status: 'active' as any,
+    leaveReason: '',
+    leaveDates: [] as string[],
+    leaveStartedAt: ''
   });
   const [viewMode, setViewMode] = useState<'tile' | 'list'>('list');
   const [selectedJob, setSelectedJob] = useState('All');
@@ -279,7 +282,10 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     e.preventDefault();
     const payload = {
       ...formData,
-      ign: formData.ign
+      ign: formData.ign,
+      leaveStartedAt: formData.status === 'on-leave' && (!editingMember || editingMember.status !== 'on-leave') 
+        ? new Date().toISOString() 
+        : (editingMember?.leaveStartedAt || formData.leaveStartedAt)
     };
 
     // Optimistic update
@@ -341,7 +347,10 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
         job: member.job, 
         role: member.role || 'DPS', 
         dateJoined: member.dateJoined,
-        status: member.status || 'active'
+        status: member.status || 'active',
+        leaveReason: member.leaveReason || '',
+        leaveDates: member.leaveDates || [],
+        leaveStartedAt: member.leaveStartedAt || ''
       });
     } else {
       setEditingMember(null);
@@ -350,7 +359,10 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
         job: jobs[0]?.name || '', 
         role: 'DPS', 
         dateJoined: formatDateForDisplay(new Date().toISOString()),
-        status: 'active'
+        status: 'active',
+        leaveReason: '',
+        leaveDates: [],
+        leaveStartedAt: ''
       });
     }
     setIsModalOpen(true);
@@ -359,6 +371,16 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
   const closeModal = () => {
     setIsModalOpen(false);
     setEditingMember(null);
+    setFormData({
+      ign: '',
+      job: jobs[0]?.name || '',
+      role: 'DPS',
+      dateJoined: formatDateForDisplay(new Date().toISOString()),
+      status: 'active',
+      leaveReason: '',
+      leaveDates: [],
+      leaveStartedAt: ''
+    });
   };
 
   const filteredMembers = useMemo(() => {
@@ -538,17 +560,32 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                       )} />
                     </div>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className="inline-block px-2 py-1 rounded-md bg-zinc-800 text-xs font-medium text-zinc-400">
-                        {member.job}
-                      </span>
-                      <span className={cn(
-                        "text-[10px] font-bold uppercase",
-                        member.role === 'Tank' ? 'text-orange-400' : 
-                        member.role === 'Support' ? 'text-blue-400' : 
-                        member.role === 'Utility' ? 'text-purple-400' : 'text-zinc-500'
-                      )}>
-                        {member.role || 'DPS'}
-                      </span>
+                      {(() => {
+                        const jobObj = jobs.find(j => j.name === member.job);
+                        return (
+                          <span 
+                            className="inline-block px-2 py-1 rounded-md text-xs font-medium"
+                            style={{ 
+                              backgroundColor: jobObj?.color ? `${jobObj.color}15` : '#27272a',
+                              color: jobObj?.color || '#a1a1aa',
+                              border: jobObj?.color ? `1px solid ${jobObj.color}30` : '1px solid #3f3f46'
+                            }}
+                          >
+                            {member.job}
+                          </span>
+                        );
+                      })()}
+                      {(() => {
+                        const roleObj = roles.find(r => r.name === (member.role || 'DPS'));
+                        return (
+                          <span 
+                            className="text-[10px] font-bold uppercase"
+                            style={{ color: roleObj?.color || '#71717a' }}
+                          >
+                            {member.role || 'DPS'}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
                   <div className="flex gap-1 md:opacity-0 md:group-hover:opacity-100 opacity-100 transition-opacity">
@@ -631,18 +668,33 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                       </div>
                     </td>
                     <td className="p-4">
-                      <div className="flex flex-col">
-                        <span className="px-2 py-1 rounded-md bg-zinc-800 text-xs font-medium text-zinc-400 w-fit">
-                          {member.job}
-                        </span>
-                        <span className={cn(
-                          "text-[10px] font-bold uppercase mt-1 px-1",
-                          member.role === 'Tank' ? 'text-orange-400' : 
-                          member.role === 'Support' ? 'text-blue-400' : 
-                          member.role === 'Utility' ? 'text-purple-400' : 'text-zinc-500'
-                        )}>
-                          {member.role || 'DPS'}
-                        </span>
+                      <div className="flex flex-col gap-1">
+                        {(() => {
+                          const jobObj = jobs.find(j => j.name === member.job);
+                          return (
+                            <span 
+                              className="px-2 py-1 rounded-md text-xs font-medium w-fit"
+                              style={{ 
+                                backgroundColor: jobObj?.color ? `${jobObj.color}15` : '#27272a',
+                                color: jobObj?.color || '#a1a1aa',
+                                border: jobObj?.color ? `1px solid ${jobObj.color}30` : '1px solid #3f3f46'
+                              }}
+                            >
+                              {member.job}
+                            </span>
+                          );
+                        })()}
+                        {(() => {
+                          const roleObj = roles.find(r => r.name === (member.role || 'DPS'));
+                          return (
+                            <span 
+                              className="text-[10px] font-bold uppercase px-1"
+                              style={{ color: roleObj?.color || '#71717a' }}
+                            >
+                              {member.role || 'DPS'}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </td>
                     <td className="p-4 text-sm text-zinc-500 font-mono">
@@ -766,6 +818,34 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                     </select>
                   </div>
                 </div>
+
+                {formData.status === 'on-leave' && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="space-y-4"
+                  >
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-400 mb-1.5">Leave Reason</label>
+                      <textarea
+                        value={formData.leaveReason}
+                        onChange={(e) => setFormData({ ...formData, leaveReason: e.target.value })}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 h-20 resize-none"
+                        placeholder="Reason for leave..."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-400 mb-1.5">Leave Dates (comma separated)</label>
+                      <input
+                        type="text"
+                        value={formData.leaveDates?.join(', ') || ''}
+                        onChange={(e) => setFormData({ ...formData, leaveDates: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                        placeholder="e.g. Thu, Apr 9, Fri, Apr 10"
+                      />
+                    </div>
+                  </motion.div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-zinc-400 mb-1.5">Date Joined</label>
                   <input

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Clock, Search, UserCheck, History, Calendar, AlertCircle } from 'lucide-react';
+import { Clock, Search, UserCheck, History, Calendar, AlertCircle, MessageSquare } from 'lucide-react';
 import { fetchAPI } from '../lib/api';
 import { Member, MemberLog } from '../types';
 import { cn } from '../lib/utils';
@@ -89,52 +89,70 @@ export default function OnLeavePage() {
 
       {loading ? (
         <div className="flex justify-center py-20">
-          <div className="w-8 h-8 border-3 border-yellow-500 border-t-transparent rounded-full animate-spin"></div>
+          <div className="w-8 h-8 border-3 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
       ) : filteredMembers.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <AnimatePresence mode="popLayout">
             {filteredMembers.map((member) => (
               <motion.div
                 key={member.id}
-                initial={{ opacity: 0, scale: 0.9 }}
+                initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9 }}
-                className="bg-zinc-900 border border-zinc-800 p-5 rounded-2xl hover:border-yellow-500/30 transition-all group"
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl relative group hover:border-orange-500/30 transition-all shadow-xl"
               >
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-xl font-bold text-white group-hover:text-yellow-500 transition-colors">{member.ign}</h3>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="inline-block px-2 py-1 rounded-md bg-zinc-800 text-xs font-medium text-zinc-400">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="w-12 h-12 rounded-2xl bg-orange-500/10 flex items-center justify-center text-orange-500 font-bold text-xl border border-orange-500/20">
+                    {member.ign.charAt(0)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-zinc-100 text-lg truncate">{member.ign}</h3>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
                         {member.job}
                       </span>
-                      <span className="text-[10px] font-bold uppercase text-zinc-500">
+                      <span className="w-1 h-1 rounded-full bg-zinc-700" />
+                      <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-wider">
                         {member.role || 'DPS'}
                       </span>
                     </div>
                   </div>
+                  <div className="px-2 py-1 rounded-md bg-orange-500/10 border border-orange-500/20 text-[10px] font-bold text-orange-500 uppercase tracking-wider">
+                    On Leave
+                  </div>
                 </div>
 
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-zinc-500">Status</span>
-                    <span className="px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500 text-xs font-medium">
-                      On Leave
-                    </span>
+                <div className="space-y-4">
+                  <div className="bg-zinc-950/50 p-4 rounded-2xl border border-zinc-800/50 relative">
+                    <MessageSquare className="absolute -top-2 -left-2 w-4 h-4 text-zinc-700" />
+                    <div className="flex justify-between items-start mb-2">
+                      <p className="text-sm text-zinc-400 italic leading-relaxed">
+                        "{member.leaveReason || 'On Leave (Admin Set)'}"
+                      </p>
+                    </div>
+                    {member.absentEvent && (
+                      <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 font-bold uppercase mt-2">
+                        <AlertCircle className="w-3 h-3 text-orange-500/50" />
+                        Reported for: <span className="text-zinc-400">{member.absentEvent}</span>
+                      </div>
+                    )}
                   </div>
-                  {(member as any).returnDate && (
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-zinc-500">Return Date</span>
-                      <span className="text-zinc-300 font-bold">{(member as any).returnDate}</span>
+
+                  {member.leaveDates && member.leaveDates.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {member.leaveDates.map(date => (
+                        <span key={date} className="text-[9px] font-bold uppercase tracking-wider bg-zinc-800 text-zinc-400 px-3 py-1.5 rounded-lg border border-zinc-700/50">
+                          {date}
+                        </span>
+                      ))}
                     </div>
                   )}
-                  {(member as any).absentEvent && (
-                    <div className="flex flex-col gap-1 text-sm">
-                      <span className="text-zinc-500">Missed Event</span>
-                      <span className="text-zinc-300 bg-zinc-800/50 px-3 py-1.5 rounded-xl border border-zinc-700/50 text-xs">
-                        {(member as any).absentEvent}
-                      </span>
+
+                  {member.returnDate && (
+                    <div className="flex items-center gap-2 text-[10px] text-zinc-500 font-bold uppercase tracking-widest pt-2 border-t border-zinc-800/50">
+                      <Calendar className="w-3 h-3 text-orange-500/50" />
+                      Expected Return: <span className="text-zinc-300 ml-auto">{member.returnDate}</span>
                     </div>
                   )}
                 </div>
@@ -142,7 +160,7 @@ export default function OnLeavePage() {
                 <div className="mt-6">
                   <button
                     onClick={() => handleMakeActive(member)}
-                    className="w-full py-2.5 rounded-xl bg-zinc-800 text-white font-bold hover:bg-green-600 transition-all flex items-center justify-center gap-2 group/btn"
+                    className="w-full py-3 rounded-2xl bg-zinc-800 text-white font-bold hover:bg-green-600 transition-all flex items-center justify-center gap-2 group/btn border border-zinc-700 hover:border-green-500/50"
                   >
                     <UserCheck className="w-4 h-4 group-hover/btn:scale-110 transition-transform" />
                     Mark as Active

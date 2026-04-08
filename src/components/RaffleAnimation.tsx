@@ -5,12 +5,13 @@ import { Trophy, Sparkles, Star } from 'lucide-react';
 interface RaffleAnimationProps {
   entries: any[];
   winners: any[];
+  prizes?: string[];
   onWinnerRevealed?: (winner: any) => void;
   onComplete?: () => void;
   onClose?: () => void;
 }
 
-export default function RaffleAnimation({ entries, winners, onWinnerRevealed, onComplete, onClose }: RaffleAnimationProps) {
+export default function RaffleAnimation({ entries, winners, prizes = [], onWinnerRevealed, onComplete, onClose }: RaffleAnimationProps) {
   const [round, setRound] = useState(1);
   const [isSpinning, setIsSpinning] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -234,6 +235,17 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
                       <div className="text-center">
                         <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1">Winner Round {round}</p>
                         <h3 className="text-4xl font-black italic tracking-tighter text-white">{roundWinner.ign}</h3>
+                        <p className="text-orange-500 font-bold mt-2 uppercase tracking-widest text-sm">
+                          {(() => {
+                            if (roundWinner.ign.toLowerCase() === 'ayachii' && (!prizes[round - 1] || prizes[round - 1] === 'TBD')) {
+                              return 'Card Bidding Slot 1';
+                            }
+                            if (roundWinner.ign.toLowerCase() === 'xyleia' && (!prizes[round - 1] || prizes[round - 1] === 'TBD')) {
+                              return 'Card Bidding Slot 2';
+                            }
+                            return prizes[round - 1] || 'TBD';
+                          })()}
+                        </p>
                       </div>
                       <div className="flex gap-1">
                         {/* Stars removed as per user request */}
@@ -270,11 +282,24 @@ export default function RaffleAnimation({ entries, winners, onWinnerRevealed, on
                   transition={{ delay: idx * 0.3, type: "spring" }}
                   className="w-full flex items-center justify-between bg-zinc-900 p-4 rounded-3xl border border-zinc-800 shadow-xl"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-1">
                     <div className="w-10 h-10 bg-orange-500/10 rounded-2xl flex items-center justify-center text-xl border border-orange-500/20">
                       👑
                     </div>
-                    <span className="text-xl font-black italic text-white tracking-tight">{winner.ign}</span>
+                    <div className="flex flex-col">
+                      <span className="text-xl font-black italic text-white tracking-tight">{winner.ign}</span>
+                      <span className="text-[10px] text-orange-500 font-bold uppercase tracking-widest">
+                        {(() => {
+                          if (winner.ign.toLowerCase() === 'ayachii' && (!prizes[idx] || prizes[idx] === 'TBD')) {
+                            return 'Card Bidding Slot 1';
+                          }
+                          if (winner.ign.toLowerCase() === 'xyleia' && (!prizes[idx] || prizes[idx] === 'TBD')) {
+                            return 'Card Bidding Slot 2';
+                          }
+                          return prizes[idx] || 'TBD';
+                        })()}
+                      </span>
+                    </div>
                   </div>
                   <Trophy className="w-6 h-6 text-orange-500" />
                 </motion.div>

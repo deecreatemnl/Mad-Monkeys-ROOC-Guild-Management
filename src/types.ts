@@ -6,6 +6,11 @@ export interface Member {
   dateJoined: string;
   uid?: string;
   status?: 'active' | 'inactive' | 'busy' | 'left' | 'on-leave';
+  leaveReason?: string;
+  leaveDates?: string[];
+  leaveStartedAt?: string;
+  absentEvent?: string;
+  returnDate?: string;
 }
 
 export interface MemberLog {
@@ -84,6 +89,38 @@ export interface UserProfile {
 export interface Job {
   id?: string;
   name: string;
+  color?: string;
+}
+
+export interface RaffleEntry {
+  id: string;
+  memberId: string;
+  ign: string;
+  week: number;
+  month: number;
+  year: number;
+  timestamp: string;
+}
+
+export interface RaffleWinner extends RaffleEntry {
+  round: number;
+  prize?: string;
+}
+
+export interface RaffleSettings {
+  currentWeek: number;
+  currentMonth: number;
+  currentYear: number;
+  isOpen: boolean;
+  restrictedMemberIds?: string[];
+  prizes?: string[];
+}
+
+export interface Raffle {
+  id: string;
+  entries: RaffleEntry[];
+  winners: RaffleWinner[];
+  settings: RaffleSettings;
 }
 
 export interface Role {

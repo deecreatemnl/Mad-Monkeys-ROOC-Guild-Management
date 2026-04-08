@@ -233,7 +233,11 @@ export default function RafflePage() {
     const winnersToDraw = raffleWinnersCount || 2;
     console.log(`[RafflePage] Drawing ${winnersToDraw} test winners (settings: ${raffleWinnersCount})`);
     const shuffled = [...fakeEntries].sort(() => 0.5 - Math.random());
-    const winners = shuffled.slice(0, winnersToDraw);
+    const winners = shuffled.slice(0, winnersToDraw).map((w, idx) => ({
+      ...w,
+      round: idx + 1,
+      prize: raffle.settings.prizes?.[idx] || 'TBD'
+    }));
     
     setTestEntries(fakeEntries);
     setTestWinners(winners);
@@ -296,7 +300,8 @@ export default function RafflePage() {
         body: JSON.stringify({
           currentWeek: Number(tempSettings.week),
           currentMonth: Number(tempSettings.month),
-          currentYear: Number(tempSettings.year)
+          currentYear: Number(tempSettings.year),
+          prizes: raffle.settings.prizes || []
         })
       });
       setIsSettingsModalOpen(false);
@@ -343,11 +348,18 @@ export default function RafflePage() {
     return acc;
   }, {});
 
-  const currentWeekEntries = (raffle.entries || []).filter((e: any) => 
-    e.week === raffle.settings.currentWeek &&
-    e.month === raffle.settings.currentMonth &&
-    e.year === raffle.settings.currentYear
-  );
+  const currentWeekEntries = (raffle.entries || []).filter((e: any) => {
+    const isCorrectWeek = e.week === raffle.settings.currentWeek &&
+                         e.month === raffle.settings.currentMonth &&
+                         e.year === raffle.settings.currentYear;
+    // Ensure they haven't won this month already (in case they joined before winning)
+    const hasAlreadyWonThisMonth = (raffle.winners || []).some(w => 
+      w.memberId === e.memberId && 
+      Number(w.month) === Number(raffle.settings.currentMonth) && 
+      Number(w.year) === Number(raffle.settings.currentYear)
+    );
+    return isCorrectWeek && !hasAlreadyWonThisMonth;
+  });
 
   const currentWeekWinners = (raffle.winners || []).filter((w: any) => 
     Number(w.week) === Number(raffle.settings.currentWeek) &&
@@ -375,8 +387,10 @@ export default function RafflePage() {
   };
 
   const availableMembers = members.filter(m => {
-    // Only active members
-    if ((m.status || 'active') !== 'active') return false;
+    // Active, busy, or on-leave members can join the raffle
+    const status = m.status || 'active';
+    if (status === 'left') return false;
+    
     // Not a winner this month
     const isWinnerThisMonth = currentMonthWinners.some(w => w.memberId === m.id);
     // Not already entered this week
@@ -386,6 +400,44 @@ export default function RafflePage() {
 
   const monthName = new Intl.DateTimeFormat('en-US', { month: 'long' }).format(new Date(raffle.settings.currentYear, raffle.settings.currentMonth - 1));
   const locked = isRaffleLocked();
+
+  const getActualCurrentWeek = () => {
+    const now = new Date();
+    // PHT is UTC+8
+    const phtDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Singapore' }));
+    const day = phtDate.getDay(); // 0 is Sunday
+    const hours = phtDate.getHours();
+    
+    // The "Current" week for the winners list is the week of the MOST RECENT draw.
+    // Draws happen Sunday 10pm.
+    const lastDrawSunday = new Date(phtDate);
+    if (day === 0 && hours < 22) {
+      // It's Sunday before 10pm, the last draw was LAST Sunday.
+      lastDrawSunday.setDate(phtDate.getDate() - 7);
+    } else {
+      // It's Sunday after 10pm or any other day, the last draw was this past Sunday.
+      lastDrawSunday.setDate(phtDate.getDate() - day);
+    }
+    
+    const month = lastDrawSunday.getMonth();
+    const year = lastDrawSunday.getFullYear();
+    
+    // Find the first Sunday of that month
+    const firstOfMonth = new Date(year, month, 1);
+    let firstSunday = new Date(firstOfMonth);
+    while (firstSunday.getDay() !== 0) {
+      firstSunday.setDate(firstSunday.getDate() + 1);
+    }
+    
+    const diff = lastDrawSunday.getDate() - firstSunday.getDate();
+    if (diff < 0) return 0; // Draw was in previous month
+    return Math.floor(diff / 7) + 1;
+  };
+
+  const actualCurrentWeek = getActualCurrentWeek();
+  const now = new Date();
+  const actualMonth = now.getMonth() + 1;
+  const actualYear = now.getFullYear();
 
   const getBiddingDates = (week: number, month: number, year: number) => {
     // Find all Sundays in the month
@@ -517,9 +569,14 @@ export default function RafflePage() {
                       <div className="flex flex-col gap-1 text-xs font-bold text-zinc-500 uppercase tracking-widest">
                         <div className="flex items-center justify-between">
                           <span>Week {week}</span>
-                          {raffle.settings.currentWeek === week && (
-                            <span className="text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded-full">Current</span>
-                          )}
+                          <div className="flex items-center gap-1">
+                            {raffle.settings.currentWeek === week && (
+                              <span className="text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded-full text-[9px]">Upcoming</span>
+                            )}
+                            {actualCurrentWeek === week && actualMonth === raffle.settings.currentMonth && actualYear === raffle.settings.currentYear && (
+                              <span className="text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded-full text-[9px]">Current</span>
+                            )}
+                          </div>
                         </div>
                         {biddingDates && (
                           <div className="text-[10px] text-zinc-600 normal-case font-medium">
@@ -534,7 +591,24 @@ export default function RafflePage() {
                               <div className="w-8 h-8 rounded-full bg-yellow-500/10 flex items-center justify-center">
                                 <Trophy className="w-4 h-4 text-yellow-500" />
                               </div>
-                              <span className="font-bold text-sm flex-1">{winner.ign}</span>
+                              <div className="flex flex-col flex-1">
+                                <span className="font-bold text-sm">{winner.ign}</span>
+                                {(() => {
+                                  // Hardcoded fallback for specific users as requested
+                                  if (winner.ign.toLowerCase() === 'ayachii' && (!winner.prize || winner.prize === 'TBD')) {
+                                    return <span className="text-[10px] text-orange-500/70 font-bold uppercase">Card Bidding Slot 1</span>;
+                                  }
+                                  if (winner.ign.toLowerCase() === 'xyleia' && (!winner.prize || winner.prize === 'TBD')) {
+                                    return <span className="text-[10px] text-orange-500/70 font-bold uppercase">Card Bidding Slot 2</span>;
+                                  }
+
+                                  const prize = winner.prize || (raffle.settings.prizes && raffle.settings.prizes[winner.round - 1]);
+                                  if (prize && prize !== 'TBD') {
+                                    return <span className="text-[10px] text-orange-500/70 font-bold uppercase">{prize}</span>;
+                                  }
+                                  return <span className="text-[10px] text-zinc-600 font-bold uppercase italic">TBD</span>;
+                                })()}
+                              </div>
                               {isAdmin && raffle.settings.currentWeek === week && (
                                 <div className="flex items-center gap-1">
                                   <button
@@ -584,6 +658,7 @@ export default function RafflePage() {
                 <RaffleAnimation 
                   entries={isTest ? testEntries : currentWeekEntries} 
                   winners={isTest ? testWinners : lastWinners} 
+                  prizes={raffle.settings.prizes || []}
                   onWinnerRevealed={(winner) => {
                     setRevealedWinners(prev => [...prev, winner]);
                   }}
@@ -718,6 +793,32 @@ export default function RafflePage() {
               </div>
             )}
 
+            {/* Prize Preview Section */}
+            <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6 backdrop-blur-sm">
+              <h2 className="text-lg font-bold flex items-center gap-2 mb-6">
+                <Sparkles className="w-5 h-5 text-orange-500" />
+                Upcoming Week Prizes
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {Array.from({ length: raffleWinnersCount }).map((_, idx) => {
+                  const prize = raffle.settings.prizes?.[idx];
+                  return (
+                    <div key={idx} className="bg-zinc-800/30 border border-zinc-700/30 p-4 rounded-2xl flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-orange-500/10 flex items-center justify-center text-orange-500 font-black italic">
+                        R{idx + 1}
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Round {idx + 1} Prize</p>
+                        <p className={cn("text-sm font-bold", prize ? "text-white" : "text-zinc-600 italic")}>
+                          {prize || 'TBD'}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Current Entries List */}
             <div className="bg-zinc-900/30 border border-zinc-800 rounded-3xl p-6">
               <div className="flex items-center justify-between mb-6">
@@ -725,25 +826,6 @@ export default function RafflePage() {
                   <History className="w-5 h-5 text-orange-500" />
                   Current Entries ({currentWeekEntries.length})
                 </h2>
-                {isAdmin && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={handleClearEntries}
-                      className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white text-xs font-bold px-4 py-2 rounded-xl transition-all active:scale-95"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      Clear All
-                    </button>
-                    <button
-                      onClick={handleDraw}
-                      disabled={drawing || currentWeekEntries.length < 2}
-                      className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all active:scale-95 disabled:opacity-50"
-                    >
-                      <Play className="w-4 h-4" />
-                      Draw Winners
-                    </button>
-                  </div>
-                )}
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
@@ -773,67 +855,7 @@ export default function RafflePage() {
               </div>
             </div>
 
-            {/* Admin Controls */}
-            {isAdmin && (
-              <div className="bg-zinc-900/50 border border-zinc-800 rounded-3xl p-6">
-                <h2 className="text-lg font-bold flex items-center gap-2 mb-6 text-orange-500">
-                  <Settings className="w-5 h-5" />
-                  Admin Controls
-                </h2>
-                <div className="flex flex-wrap gap-4">
-                  <button
-                    onClick={() => setIsEditingHeader(true)}
-                    className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold px-4 py-2 rounded-xl border border-zinc-700 transition-all"
-                  >
-                    <Edit2 className="w-4 h-4 text-blue-500" />
-                    Edit Header Text
-                  </button>
-
-                  <button
-                    onClick={handleReset}
-                    className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold px-4 py-2 rounded-xl border border-zinc-700 transition-all"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    Reset / Set Week
-                  </button>
-                  <button
-                    onClick={handleTestAnimation}
-                    className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold px-4 py-2 rounded-xl border border-zinc-700 transition-all"
-                  >
-                    <Sparkles className="w-4 h-4 text-orange-500" />
-                    Test Animation
-                  </button>
-
-                  <button
-                    onClick={() => setIsRestrictedModalOpen(true)}
-                    className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold px-4 py-2 rounded-xl border border-zinc-700 transition-all"
-                  >
-                    <UserMinus className="w-4 h-4 text-red-500" />
-                    Monthly Restrictions
-                  </button>
-
-                  <button
-                    onClick={async () => {
-                      const isOpen = !raffle.settings.isOpen;
-                      await fetchAPI('/api/raffle/settings', {
-                        method: 'POST',
-                        body: JSON.stringify({ isOpen })
-                      });
-                      await loadData();
-                    }}
-                    className={cn(
-                      "flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-xl transition-all",
-                      raffle.settings.isOpen 
-                        ? "bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20" 
-                        : "bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/20"
-                    )}
-                  >
-                    {raffle.settings.isOpen ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
-                    {raffle.settings.isOpen ? 'Close Raffle' : 'Open Raffle'}
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Admin Controls removed as per user request */}
           </div>
         </div>
       </div>
@@ -1088,56 +1110,145 @@ export default function RafflePage() {
                 </button>
               </div>
               
-              <div className="p-6 space-y-4">
-                <p className="text-zinc-400 text-sm">Override the current week, month, and year for the raffle.</p>
-                
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Week</label>
-                    <select
-                      value={tempSettings.week}
-                      onChange={(e) => setTempSettings({ ...tempSettings, week: Number(e.target.value) })}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
-                    >
-                      {[1, 2, 3, 4, 5].map(w => <option key={w} value={w}>Week {w}</option>)}
-                    </select>
+              <div className="p-6 space-y-6">
+                <div className="space-y-4">
+                  <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Upcoming Week Settings</h3>
+                  <p className="text-zinc-500 text-[10px] leading-tight">These settings determine which week, month, and year new entries will be assigned to.</p>
+                  
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">Week</label>
+                      <select
+                        value={tempSettings.week}
+                        onChange={(e) => setTempSettings({ ...tempSettings, week: Number(e.target.value) })}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-sm text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                      >
+                        {[1, 2, 3, 4, 5].map(w => <option key={w} value={w}>Week {w}</option>)}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">Month</label>
+                      <select
+                        value={tempSettings.month}
+                        onChange={(e) => setTempSettings({ ...tempSettings, month: Number(e.target.value) })}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-sm text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                      >
+                        {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                          <option key={m} value={m}>{new Date(2026, m - 1).toLocaleString('default', { month: 'short' })}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">Year</label>
+                      <select
+                        value={tempSettings.year}
+                        onChange={(e) => setTempSettings({ ...tempSettings, year: Number(e.target.value) })}
+                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-sm text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                      >
+                        {[2025, 2026, 2027, 2028].map(y => <option key={y} value={y}>{y}</option>)}
+                      </select>
+                    </div>
                   </div>
+
                   <div className="space-y-2">
-                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Month</label>
-                    <select
-                      value={tempSettings.month}
-                      onChange={(e) => setTempSettings({ ...tempSettings, month: Number(e.target.value) })}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
-                    >
-                      {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
-                        <option key={m} value={m}>{new Date(2026, m - 1).toLocaleString('default', { month: 'short' })}</option>
+                    <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">Prizes (Round 1 to {raffleWinnersCount})</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {Array.from({ length: raffleWinnersCount }).map((_, idx) => (
+                        <input
+                          key={idx}
+                          type="text"
+                          placeholder={`Round ${idx + 1} Prize`}
+                          value={raffle.settings.prizes?.[idx] || ''}
+                          onChange={(e) => {
+                            const newPrizes = [...(raffle.settings.prizes || [])];
+                            // Ensure the array is long enough
+                            while (newPrizes.length < raffleWinnersCount) newPrizes.push('');
+                            newPrizes[idx] = e.target.value;
+                            setRaffle({ ...raffle, settings: { ...raffle.settings, prizes: newPrizes } });
+                          }}
+                          className="bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-xs text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                        />
                       ))}
-                    </select>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Year</label>
-                    <select
-                      value={tempSettings.year}
-                      onChange={(e) => setTempSettings({ ...tempSettings, year: Number(e.target.value) })}
-                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+
+                  <button
+                    onClick={handleUpdateRaffleSettings}
+                    className="w-full px-6 py-2.5 rounded-xl text-sm font-bold bg-orange-500 hover:bg-orange-600 text-white transition-all shadow-lg shadow-orange-500/20"
+                  >
+                    Sync Upcoming Week & Prizes
+                  </button>
+                </div>
+
+                <div className="h-px bg-zinc-800" />
+
+                <div className="space-y-4">
+                  <h3 className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Raffle Management</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={handleDraw}
+                      disabled={drawing || currentWeekEntries.length < 2}
+                      className="flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold py-3 rounded-xl transition-all active:scale-95 disabled:opacity-50"
                     >
-                      {[2025, 2026, 2027, 2028].map(y => <option key={y} value={y}>{y}</option>)}
-                    </select>
+                      <Play className="w-4 h-4" />
+                      Draw Winners
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const isOpen = !raffle.settings.isOpen;
+                        await fetchAPI('/api/raffle/settings', {
+                          method: 'POST',
+                          body: JSON.stringify({ isOpen })
+                        });
+                        await loadData();
+                      }}
+                      className={cn(
+                        "flex items-center justify-center gap-2 text-xs font-bold py-3 rounded-xl transition-all",
+                        raffle.settings.isOpen 
+                          ? "bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20" 
+                          : "bg-green-500/10 text-green-500 border border-green-500/20 hover:bg-green-500/20"
+                      )}
+                    >
+                      {raffle.settings.isOpen ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                      {raffle.settings.isOpen ? 'Close Raffle' : 'Open Raffle'}
+                    </button>
+                    <button
+                      onClick={() => { setIsSettingsModalOpen(false); setIsEditingHeader(true); }}
+                      className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold py-3 rounded-xl border border-zinc-700 transition-all"
+                    >
+                      <Edit2 className="w-4 h-4 text-blue-500" />
+                      Edit Header
+                    </button>
+                    <button
+                      onClick={() => { setIsSettingsModalOpen(false); setIsRestrictedModalOpen(true); }}
+                      className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold py-3 rounded-xl border border-zinc-700 transition-all"
+                    >
+                      <UserMinus className="w-4 h-4 text-red-500" />
+                      Restrictions
+                    </button>
+                    <button
+                      onClick={() => { setIsSettingsModalOpen(false); handleTestAnimation(); }}
+                      className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white text-xs font-bold py-3 rounded-xl border border-zinc-700 transition-all"
+                    >
+                      <Sparkles className="w-4 h-4 text-orange-500" />
+                      Test Animation
+                    </button>
+                    <button
+                      onClick={handleClearEntries}
+                      className="flex items-center justify-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-red-400 hover:text-red-300 text-xs font-bold py-3 rounded-xl border border-zinc-700 transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Clear Entries
+                    </button>
                   </div>
                 </div>
 
-                <div className="pt-4 flex justify-end gap-3">
+                <div className="pt-2">
                   <button
                     onClick={() => setIsSettingsModalOpen(false)}
-                    className="px-6 py-2 rounded-xl text-sm font-bold text-zinc-400 hover:text-white transition-colors"
+                    className="w-full px-6 py-2 rounded-xl text-sm font-bold text-zinc-500 hover:text-white transition-colors"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleUpdateRaffleSettings}
-                    className="px-6 py-2 rounded-xl text-sm font-bold bg-orange-500 hover:bg-orange-600 text-white transition-all shadow-lg shadow-orange-500/20"
-                  >
-                    Sync Settings
+                    Close Settings
                   </button>
                 </div>
               </div>

@@ -467,23 +467,8 @@ export class FileDatabase implements Database {
   }
 
   async seed() {
-    try {
-      const users = await this.getUsers();
-      if (!users["readyhit"]) {
-        const hashedPassword = await bcrypt.hash("s5ZIpBmHpdSOmA", 10);
-        await this.saveUser({
-          id: "readyhit",
-          username: "readyhit",
-          displayName: "ReadyHit",
-          role: "superadmin",
-          isApproved: true,
-          createdAt: new Date().toISOString(),
-          password: hashedPassword
-        });
-      }
-    } catch (e: any) {
-      console.error("FileDatabase Seed Error:", e.message);
-    }
+    // No default users created here to ensure fresh installs are clean.
+    // Users are created via the Setup Wizard.
   }
 }
 
@@ -637,7 +622,10 @@ export class SupabaseDatabase implements Database {
         role: m.role,
         dateJoined: m.date_joined,
         uid: m.uid,
-        status: m.status || 'active'
+        status: m.status || 'active',
+        leaveReason: m.leave_reason,
+        leaveDates: m.leave_dates || [],
+        leaveStartedAt: m.leave_started_at
       }));
 
       // Migrate existing dates to the new format
@@ -661,16 +649,58 @@ export class SupabaseDatabase implements Database {
   }
 
   async saveMember(member: any) {
-    const { error } = await this.supabase.from('members').upsert({
+    const payload: any = {
       id: member.id,
       ign: member.ign,
       job: member.job,
       role: member.role,
       date_joined: formatDateForDB(member.dateJoined),
       uid: member.uid,
-      status: member.status || 'active'
-    });
-    if (error) console.error("Supabase Save Member Error:", error.message);
+      status: member.status || 'active',
+      leave_reason: member.leaveReason,
+      leave_dates: member.leaveDates || [],
+      leave_started_at: member.leaveStartedAt
+    };
+
+    const { error } = await this.supabase.from('members').upsert(payload);
+    
+    if (error) {
+      console.error("Supabase Save Member Error:", error.message);
+      
+      // Handle missing columns by retrying without them
+      if (error.message.toLowerCase().includes("column") && (error.message.toLowerCase().includes("not found") || error.message.toLowerCase().includes("could not find"))) {
+        const cleanPayload = { ...payload };
+        // Try to match column name in single or double quotes
+        const missingColumn = error.message.match(/column ['"]([^'"]+)['"]/) || error.message.match(/['"]([^'"]+)['"] column/);
+        const columnName = missingColumn ? missingColumn[1] : null;
+        
+        if (columnName && cleanPayload[columnName] !== undefined) {
+          console.warn(`Retrying saveMember without missing column: ${columnName}`);
+          delete cleanPayload[columnName];
+          const { error: retryError } = await this.supabase.from('members').upsert(cleanPayload);
+          if (retryError) {
+            // If it fails again, it might be ANOTHER column missing
+            const secondMissingColumn = retryError.message.match(/column ['"]([^'"]+)['"]/) || retryError.message.match(/['"]([^'"]+)['"] column/);
+            const secondColumnName = secondMissingColumn ? secondMissingColumn[1] : null;
+            if (secondColumnName && cleanPayload[secondColumnName] !== undefined) {
+              console.warn(`Retrying saveMember without second missing column: ${secondColumnName}`);
+              delete cleanPayload[secondColumnName];
+              const { error: thirdError } = await this.supabase.from('members').upsert(cleanPayload);
+              if (thirdError) {
+                // Try one more time for the third possible missing column
+                const thirdMissingColumn = thirdError.message.match(/column ['"]([^'"]+)['"]/) || thirdError.message.match(/['"]([^'"]+)['"] column/);
+                const thirdColumnName = thirdMissingColumn ? thirdMissingColumn[1] : null;
+                if (thirdColumnName && cleanPayload[thirdColumnName] !== undefined) {
+                  console.warn(`Retrying saveMember without third missing column: ${thirdColumnName}`);
+                  delete cleanPayload[thirdColumnName];
+                  await this.supabase.from('members').upsert(cleanPayload);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   async deleteMember(id: string) {
@@ -861,6 +891,9 @@ export class SupabaseDatabase implements Database {
    *   date_joined TEXT,
    *   uid TEXT,
    *   status TEXT DEFAULT 'active',
+   *   leave_reason TEXT,
+   *   leave_dates JSONB DEFAULT '[]'::jsonb,
+   *   leave_started_at TIMESTAMP WITH TIME ZONE,
    *   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
    * );
    * 
@@ -1023,13 +1056,18 @@ export class SupabaseDatabase implements Database {
     const { error } = await this.supabase.from('settings').upsert(payload);
     if (error) {
       console.error("Supabase Save Settings Error:", error.message);
-      if (error.message.includes("disable_signups") && error.message.includes("not found")) {
-        console.warn("Retrying without disable_signups column. Please run the SQL migration to add it.");
-        delete payload.disable_signups;
-        await this.supabase.from('settings').upsert(payload);
-      } else if (error.message.includes("column") && error.message.includes("not found")) {
-        console.warn("WARNING: It looks like your 'settings' table is missing columns. Please run the SQL migration:");
-        console.warn("ALTER TABLE settings ADD COLUMN IF NOT EXISTS discord_guild_id TEXT, ADD COLUMN IF NOT EXISTS discord_announcements_channel_id TEXT, ADD COLUMN IF NOT EXISTS discord_absence_channel_id TEXT, ADD COLUMN IF NOT EXISTS github_repo TEXT, ADD COLUMN IF NOT EXISTS disable_signups BOOLEAN;");
+      
+      // Handle missing columns by retrying without them
+      if (error.message.includes("column") && error.message.includes("not found")) {
+        const cleanPayload = { ...payload };
+        const missingColumn = error.message.match(/column "([^"]+)"/)?.[1];
+        
+        if (missingColumn && cleanPayload[missingColumn] !== undefined) {
+          console.warn(`Retrying saveSettings without missing column: ${missingColumn}`);
+          delete cleanPayload[missingColumn];
+          const { error: retryError } = await this.supabase.from('settings').upsert(cleanPayload);
+          if (retryError) console.error("Supabase Retry Save Settings Error:", retryError.message);
+        }
       }
     }
   }

@@ -190,6 +190,12 @@ export default function App() {
     init();
   }, []);
 
+  useEffect(() => {
+    if (guildSettings.name) {
+      document.title = `${guildSettings.name} Guild Manager`;
+    }
+  }, [guildSettings.name]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget as HTMLFormElement);

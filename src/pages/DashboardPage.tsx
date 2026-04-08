@@ -122,7 +122,7 @@ export default function DashboardPage() {
         ]);
 
         const membersList = Object.values(membersRes || {}) as any[];
-        const activeMembers = membersList.filter((m: any) => !m.status || m.status === 'active' || m.status === 'busy');
+        const activeMembers = membersList.filter((m: any) => m.status !== 'left');
 
         // Process Raffle Winners
         let recentWinners: any[] = [];

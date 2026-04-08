@@ -241,38 +241,38 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
 
     let hasChanges = false;
     const updatedMembers = await Promise.all(members.map(async (member: any) => {
-      if (member.status === 'on-leave') {
-        const memberAbsences: any[] = [];
-        events.forEach((event: any) => {
-          if (event.absences) {
-            const absence = event.absences.find((a: any) => a.memberId === member.id);
-            if (absence) {
-              memberAbsences.push({ ...absence, eventName: event.name });
-            }
+      const memberAbsences: any[] = [];
+      events.forEach((event: any) => {
+        if (event.absences) {
+          const absence = event.absences.find((a: any) => a.memberId === member.id);
+          if (absence) {
+            memberAbsences.push({ ...absence, eventName: event.name });
+          }
+        }
+      });
+
+      if (memberAbsences.length > 0) {
+        let latestDate: Date | null = null;
+        let latestAbsence: any = null;
+        
+        memberAbsences.forEach(absence => {
+          if (absence.dates && absence.dates.length > 0) {
+            absence.dates.forEach((dStr: string) => {
+              const d = parseAbsenceDate(dStr);
+              if (!latestDate || d > latestDate) {
+                latestDate = d;
+                latestAbsence = absence;
+              }
+            });
           }
         });
 
-        if (memberAbsences.length > 0) {
-          let latestDate: Date | null = null;
-          let latestAbsence: any = null;
+        if (latestDate) {
+          const returnDate = new Date(latestDate);
+          returnDate.setDate(returnDate.getDate() + 1);
           
-          memberAbsences.forEach(absence => {
-            if (absence.dates && absence.dates.length > 0) {
-              absence.dates.forEach((dStr: string) => {
-                const d = parseAbsenceDate(dStr);
-                if (!latestDate || d > latestDate) {
-                  latestDate = d;
-                  latestAbsence = absence;
-                }
-              });
-            }
-          });
-
-          if (latestDate) {
-            const returnDate = new Date(latestDate);
-            returnDate.setDate(returnDate.getDate() + 1);
-            
-            if (now > returnDate) {
+          if (now > returnDate) {
+            if (member.status === 'on-leave') {
               member.status = 'active';
               await db.saveMember(member);
               await db.saveMemberLog({
@@ -284,10 +284,18 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
                 details: 'Automatically marked active as leave period ended.'
               });
               hasChanges = true;
-            } else {
-              member.returnDate = returnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-              member.absentEvent = latestAbsence.eventName;
             }
+          } else {
+            // If they have an active absence, ensure they are 'on-leave'
+            if (member.status !== 'on-leave' && member.status !== 'left') {
+              member.status = 'on-leave';
+              member.leaveReason = latestAbsence.reason;
+              member.leaveDates = latestAbsence.dates;
+              await db.saveMember(member);
+              hasChanges = true;
+            }
+            member.returnDate = returnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            member.absentEvent = latestAbsence.eventName;
           }
         }
       }
@@ -337,6 +345,24 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       const newJob = req.body.job || oldJob;
 
       const updatedMember = { ...member, ...req.body };
+      
+      // If status is changed to active, clear leave details and remove from all event absences
+      if (newStatus === 'active' && oldStatus === 'on-leave') {
+        updatedMember.leaveReason = undefined;
+        updatedMember.leaveDates = undefined;
+        
+        // Remove from all event absences
+        const events = await db.getEvents();
+        for (const event of events) {
+          if (event.absences && event.absences.some((a: any) => a.memberId === member.id)) {
+            const updatedEvent = {
+              ...event,
+              absences: event.absences.filter((a: any) => a.memberId !== member.id)
+            };
+            await db.saveEvent(updatedEvent);
+          }
+        }
+      }
       
       // Log changes
       if (oldStatus !== newStatus) {
@@ -677,8 +703,14 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
 
     await db.saveEvent(updatedEvent);
 
-    // Update member status to 'on-leave'
-    await db.saveMember({ ...member, status: 'on-leave' });
+    // Update member status to 'on-leave' and save leave details
+    await db.saveMember({ 
+      ...member, 
+      status: 'on-leave',
+      leaveReason: message || 'No reason provided',
+      leaveDates: dates || [],
+      leaveStartedAt: new Date().toISOString()
+    });
     
     // Log the status change
     await db.saveMemberLog({
@@ -1179,13 +1211,15 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
 
     // Shuffle and pick winners
     const shuffled = [...uniqueEntries].sort(() => 0.5 - Math.random());
-    const winners = shuffled.slice(0, numWinners).map(e => ({
+    const winners = shuffled.slice(0, numWinners).map((e, idx) => ({
       id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5),
       memberId: e.memberId,
       ign: e.ign,
       week: raffle.settings.currentWeek,
       month: raffle.settings.currentMonth,
       year: raffle.settings.currentYear,
+      round: idx + 1,
+      prize: raffle.settings.prizes?.[idx] || 'TBD',
       timestamp: new Date().toISOString()
     }));
 
@@ -1231,6 +1265,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     }
     
     raffle.settings.isOpen = true;
+    raffle.settings.prizes = []; // Reset prizes for the new week
     console.log(`[Raffle Advance] New Settings:`, raffle.settings);
     await db.saveRaffle(raffle);
     console.log(`[Raffle Advance] Raffle advanced and entries cleared`);
@@ -1277,6 +1312,8 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5),
       memberId: newWinnerEntry.memberId,
       ign: newWinnerEntry.ign,
+      round: oldWinner.round, // Preserve round
+      prize: oldWinner.prize || raffle.settings.prizes?.[oldWinner.round - 1] || 'TBD',
       timestamp: new Date().toISOString()
     };
 
@@ -1320,6 +1357,8 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5),
       memberId: newMemberId,
       ign: newMember.ign,
+      round: oldWinner.round, // Preserve round
+      prize: oldWinner.prize || raffle.settings.prizes?.[oldWinner.round - 1] || 'TBD',
       timestamp: new Date().toISOString()
     };
 
@@ -1417,7 +1456,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     res.json({ success: true, raffle: initialRaffle });
   }));
 
-  app.post("/api/settings/guild_settings", asyncHandler(async (req: any, res: any) => {
+  app.post("/api/settings/guild_settings", checkSuperAdmin, asyncHandler(async (req: any, res: any) => {
     const settings = await db.getSettings();
     const updatedSettings = { ...settings, ...req.body };
     await db.saveSettings(updatedSettings);

@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS users (
     display_name TEXT,
     ign TEXT,
     uid TEXT,
-    discord_id TEXT,
     role TEXT DEFAULT 'user',
     is_approved BOOLEAN DEFAULT false,
     password_hash TEXT NOT NULL,
@@ -23,7 +22,19 @@ CREATE TABLE IF NOT EXISTS members (
     role TEXT,
     date_joined TEXT,
     uid TEXT,
-    discord_id TEXT,
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2.1 Member Logs Table
+CREATE TABLE IF NOT EXISTS member_logs (
+    id TEXT PRIMARY KEY,
+    member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    details TEXT,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -31,6 +42,15 @@ CREATE TABLE IF NOT EXISTS members (
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
+    color TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3.1 Roles Table
+CREATE TABLE IF NOT EXISTS roles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    color TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -43,6 +63,7 @@ CREATE TABLE IF NOT EXISTS events (
     schedule JSONB DEFAULT '[]'::jsonb,
     absences JSONB DEFAULT '[]'::jsonb,
     subevents JSONB DEFAULT '[]'::jsonb,
+    "order" INTEGER DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -50,15 +71,16 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS settings (
     id TEXT PRIMARY KEY, -- usually 'guild_settings'
     name TEXT,
-    subtitle TEXT,
     timezone TEXT DEFAULT 'UTC',
     logo_url TEXT,
     max_party_size INTEGER DEFAULT 12,
-    discord_channel_id TEXT,
     discord_guild_id TEXT,
     discord_announcements_channel_id TEXT,
     discord_absence_channel_id TEXT,
-    discord_webhook_url TEXT,
+    github_repo TEXT,
+    vercel_deploy_hook_url TEXT,
+    disable_signups BOOLEAN DEFAULT false,
+    raffle_winners INTEGER DEFAULT 2,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -69,4 +91,13 @@ CREATE TABLE IF NOT EXISTS raffle (
     winners JSONB DEFAULT '[]'::jsonb,
     settings JSONB DEFAULT '{"currentWeek": 1, "currentMonth": 1, "currentYear": 2026, "isOpen": true}'::jsonb,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 7. Event Share Links Table
+CREATE TABLE IF NOT EXISTS event_share_links (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 );

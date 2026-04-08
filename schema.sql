@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS members (
     date_joined TEXT,
     uid TEXT,
     status TEXT DEFAULT 'active',
+    leave_reason TEXT,
+    leave_dates JSONB DEFAULT '[]'::jsonb,
+    leave_started_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -34,13 +37,15 @@ CREATE TABLE IF NOT EXISTS member_logs (
     old_value TEXT,
     new_value TEXT,
     details TEXT,
-    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 3. Jobs Table
 CREATE TABLE IF NOT EXISTS jobs (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
+    color TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -76,6 +81,7 @@ CREATE TABLE IF NOT EXISTS settings (
     discord_announcements_channel_id TEXT,
     discord_absence_channel_id TEXT,
     github_repo TEXT,
+    vercel_deploy_hook_url TEXT,
     disable_signups BOOLEAN DEFAULT false,
     raffle_winners INTEGER DEFAULT 2,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -86,7 +92,7 @@ CREATE TABLE IF NOT EXISTS raffle (
     id TEXT PRIMARY KEY DEFAULT 'main',
     entries JSONB DEFAULT '[]'::jsonb,
     winners JSONB DEFAULT '[]'::jsonb,
-    settings JSONB DEFAULT '{"currentWeek": 1, "currentMonth": 1, "currentYear": 2026, "isOpen": true}'::jsonb,
+    settings JSONB DEFAULT '{"currentWeek": 1, "currentMonth": 1, "currentYear": 2026, "isOpen": true, "prizes": []}'::jsonb,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
