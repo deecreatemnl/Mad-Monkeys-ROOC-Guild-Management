@@ -17,6 +17,7 @@ export interface Database {
   saveMember: (member: any) => Promise<void>;
   deleteMember: (id: string) => Promise<void>;
   getMemberLogs: (memberId: string) => Promise<any[]>;
+  getAllMemberLogs: () => Promise<any[]>;
   saveMemberLog: (log: any) => Promise<void>;
   getJobs: () => Promise<any>;
   saveJob: (job: any) => Promise<void>;
@@ -179,6 +180,20 @@ export class FileDatabase implements Database {
     const data = await this.get();
     if (!data.member_logs) data.member_logs = {};
     return data.member_logs[memberId] || [];
+  }
+
+  async getAllMemberLogs() {
+    const data = await this.get();
+    if (!data.member_logs) return [];
+    
+    const allLogs: any[] = [];
+    Object.values(data.member_logs).forEach((logs: any) => {
+      if (Array.isArray(logs)) {
+        allLogs.push(...logs);
+      }
+    });
+    
+    return allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }
 
   async saveMemberLog(log: any) {
@@ -567,6 +582,28 @@ export class SupabaseDatabase implements Database {
     }
   }
 
+  async getAllMemberLogs() {
+    try {
+      const { data, error } = await this.supabase.from('member_logs').select('*').order('timestamp', { ascending: false });
+      if (error) {
+        console.error("Supabase Get All Member Logs Error:", error.message);
+        return [];
+      }
+      return (data || []).map(l => ({
+        id: l.id,
+        memberId: l.member_id,
+        type: l.type,
+        oldValue: l.old_value,
+        newValue: l.new_value,
+        details: l.details,
+        timestamp: l.timestamp
+      }));
+    } catch (e: any) {
+      console.error("Supabase Exception in getAllMemberLogs():", e.message);
+      return [];
+    }
+  }
+
   async saveMemberLog(log: any) {
     const { error } = await this.supabase.from('member_logs').insert({
       id: log.id || Date.now().toString(),
@@ -670,14 +707,16 @@ export class SupabaseDatabase implements Database {
    * -- 1. Roles Table
    * CREATE TABLE IF NOT EXISTS roles (
    *   id TEXT PRIMARY KEY,
-   *   name TEXT NOT NULL,
-   *   color TEXT NOT NULL
+   *   name TEXT NOT NULL UNIQUE,
+   *   color TEXT NOT NULL,
+   *   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
    * );
    * 
    * -- 2. Jobs Table
    * CREATE TABLE IF NOT EXISTS jobs (
    *   id TEXT PRIMARY KEY,
-   *   name TEXT NOT NULL
+   *   name TEXT NOT NULL UNIQUE,
+   *   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
    * );
    * 
    * -- 3. Members Table
@@ -688,18 +727,19 @@ export class SupabaseDatabase implements Database {
    *   role TEXT,
    *   date_joined TEXT,
    *   uid TEXT,
-   *   status TEXT DEFAULT 'active'
+   *   status TEXT DEFAULT 'active',
+   *   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
    * );
    * 
    * -- 4. Member Logs Table
    * CREATE TABLE IF NOT EXISTS member_logs (
    *   id TEXT PRIMARY KEY,
-   *   member_id TEXT NOT NULL,
+   *   member_id TEXT NOT NULL REFERENCES members(id) ON DELETE CASCADE,
    *   type TEXT NOT NULL,
    *   old_value TEXT,
    *   new_value TEXT,
    *   details TEXT,
-   *   timestamp TIMESTAMPTZ DEFAULT NOW()
+   *   timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
    * );
    * 
    * -- 5. Events Table
@@ -710,21 +750,22 @@ export class SupabaseDatabase implements Database {
    *   instructions TEXT,
    *   schedule JSONB DEFAULT '[]'::jsonb,
    *   absences JSONB DEFAULT '[]'::jsonb,
+   *   subevents JSONB DEFAULT '[]'::jsonb,
    *   "order" INTEGER DEFAULT 0,
-   *   created_at TIMESTAMPTZ DEFAULT NOW()
+   *   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
    * );
    * 
    * -- 6. Users Table
    * CREATE TABLE IF NOT EXISTS users (
    *   id TEXT PRIMARY KEY,
-   *   username TEXT UNIQUE NOT NULL,
+   *   username TEXT NOT NULL,
    *   display_name TEXT,
    *   ign TEXT,
    *   uid TEXT,
-   *   is_approved BOOLEAN DEFAULT FALSE,
    *   role TEXT DEFAULT 'user',
-   *   created_at TIMESTAMPTZ DEFAULT NOW(),
-   *   password_hash TEXT NOT NULL
+   *   is_approved BOOLEAN DEFAULT false,
+   *   password_hash TEXT NOT NULL,
+   *   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
    * );
    */
   async saveEvent(event: any) {
@@ -809,11 +850,9 @@ export class SupabaseDatabase implements Database {
         timezone: data.timezone,
         logoUrl: data.logo_url,
         maxPartySize: data.max_party_size || 12,
-        discordChannelId: data.discord_channel_id || '',
         discordGuildId: data.discord_guild_id || '',
         discordAnnouncementsChannelId: data.discord_announcements_channel_id || '',
         discordAbsenceChannelId: data.discord_absence_channel_id || '',
-        discordWebhookUrl: data.discord_webhook_url || '',
         githubRepo: data.github_repo || '',
         vercelDeployHookUrl: data.vercel_deploy_hook_url || '',
         raffleWinners: data.raffle_winners || 2
@@ -836,11 +875,9 @@ export class SupabaseDatabase implements Database {
 
     // Only add Discord fields if they are provided, to avoid schema errors if columns are missing
     // Note: If columns are missing, Supabase will still throw an error on upsert if we include them.
-    if (settings.discordChannelId !== undefined) payload.discord_channel_id = settings.discordChannelId;
     if (settings.discordGuildId !== undefined) payload.discord_guild_id = settings.discordGuildId;
     if (settings.discordAnnouncementsChannelId !== undefined) payload.discord_announcements_channel_id = settings.discordAnnouncementsChannelId;
     if (settings.discordAbsenceChannelId !== undefined) payload.discord_absence_channel_id = settings.discordAbsenceChannelId;
-    if (settings.discordWebhookUrl !== undefined) payload.discord_webhook_url = settings.discordWebhookUrl;
     if (settings.githubRepo !== undefined) payload.github_repo = settings.githubRepo;
     if (settings.vercelDeployHookUrl !== undefined) payload.vercel_deploy_hook_url = settings.vercelDeployHookUrl;
     if (settings.raffleWinners !== undefined) payload.raffle_winners = settings.raffleWinners;
@@ -849,8 +886,8 @@ export class SupabaseDatabase implements Database {
     if (error) {
       console.error("Supabase Save Settings Error:", error.message);
       if (error.message.includes("column") && error.message.includes("not found")) {
-        console.warn("WARNING: It looks like your 'settings' table is missing Discord columns. Please run the SQL migration:");
-        console.warn("ALTER TABLE settings ADD COLUMN IF NOT EXISTS discord_guild_id TEXT, ADD COLUMN IF NOT EXISTS discord_announcements_channel_id TEXT, ADD COLUMN IF NOT EXISTS discord_absence_channel_id TEXT, ADD COLUMN IF NOT EXISTS discord_webhook_url TEXT;");
+        console.warn("WARNING: It looks like your 'settings' table is missing columns. Please run the SQL migration:");
+        console.warn("ALTER TABLE settings ADD COLUMN IF NOT EXISTS discord_guild_id TEXT, ADD COLUMN IF NOT EXISTS discord_announcements_channel_id TEXT, ADD COLUMN IF NOT EXISTS discord_absence_channel_id TEXT, ADD COLUMN IF NOT EXISTS github_repo TEXT, ADD COLUMN IF NOT EXISTS vercel_deploy_hook_url TEXT;");
       }
     }
   }

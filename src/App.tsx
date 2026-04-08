@@ -7,6 +7,7 @@ import { cn } from './lib/utils';
 import { UserProfile, GuildSettings } from './types';
 
 // Lazy load pages for performance
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const MembersPage = lazy(() => import('./pages/MembersPage'));
 const EventsPage = lazy(() => import('./pages/EventsPage'));
 const AdminsPage = lazy(() => import('./pages/UsersPage'));
@@ -341,6 +342,10 @@ export default function App() {
                     </div>
 
                     <nav className="flex-1 px-4 py-4 space-y-1">
+                      <Link to="/dashboard" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
+                        <BarChart3 className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
+                        <span className="font-medium">Dashboard</span>
+                      </Link>
                       <Link to="/" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
                         <Users className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
                         <span className="font-medium">Guild Members</span>
@@ -407,6 +412,7 @@ export default function App() {
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
                     <Route path="/" element={<MembersPage isAdmin={isAdmin} />} />
+                    <Route path="/dashboard" element={<DashboardPage />} />
                     <Route path="/events" element={<EventsPage isAdmin={isAdmin} />} />
                     <Route path="/jobs" element={isAdmin ? <JobsPage isAdmin={isAdmin} /> : <Navigate to="/" replace />} />
                     <Route path="/statistics" element={<StatisticsPage isAdmin={isAdmin} />} />

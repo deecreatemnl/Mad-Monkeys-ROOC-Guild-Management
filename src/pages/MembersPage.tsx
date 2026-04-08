@@ -18,7 +18,10 @@ import {
   UserCheck,
   UserMinus,
   UserX,
-  AlertCircle
+  AlertCircle,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -55,6 +58,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
   const [importData, setImportData] = useState<any[]>([]);
   const [importIndex, setImportIndex] = useState(0);
   const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null);
   
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
@@ -307,6 +311,42 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     return matchesSearch && matchesJob && matchesStatus;
   });
 
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const sortedMembers = [...filteredMembers].sort((a, b) => {
+    if (!sortConfig) return 0;
+    
+    let aValue: any = a[sortConfig.key as keyof Member];
+    let bValue: any = b[sortConfig.key as keyof Member];
+
+    if (sortConfig.key === 'dateJoined') {
+      aValue = new Date(aValue || 0).getTime();
+      bValue = new Date(bValue || 0).getTime();
+    } else {
+      aValue = (aValue || '').toString().toLowerCase();
+      bValue = (bValue || '').toString().toLowerCase();
+    }
+
+    if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const SortIcon = ({ columnKey }: { columnKey: string }) => {
+    if (sortConfig?.key !== columnKey) {
+      return <ArrowUpDown className="w-3 h-3 ml-1 opacity-50" />;
+    }
+    return sortConfig.direction === 'asc' ? 
+      <ArrowUp className="w-3 h-3 ml-1 text-orange-500" /> : 
+      <ArrowDown className="w-3 h-3 ml-1 text-orange-500" />;
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -413,7 +453,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
       ) : viewMode === 'tile' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <AnimatePresence mode="popLayout">
-            {filteredMembers.map((member) => (
+            {sortedMembers.map((member) => (
               <motion.div
                 key={member.id}
                 layout
@@ -486,16 +526,24 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-zinc-950 border-b border-zinc-800">
-                <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">IGN</th>
-                <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Status</th>
-                <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Job / Class</th>
-                <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider">Date Joined</th>
+                <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:bg-zinc-900 transition-colors" onClick={() => handleSort('ign')}>
+                  <div className="flex items-center gap-1">IGN <SortIcon columnKey="ign" /></div>
+                </th>
+                <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:bg-zinc-900 transition-colors" onClick={() => handleSort('status')}>
+                  <div className="flex items-center gap-1">Status <SortIcon columnKey="status" /></div>
+                </th>
+                <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:bg-zinc-900 transition-colors" onClick={() => handleSort('job')}>
+                  <div className="flex items-center gap-1">Job / Class <SortIcon columnKey="job" /></div>
+                </th>
+                <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider cursor-pointer hover:bg-zinc-900 transition-colors" onClick={() => handleSort('dateJoined')}>
+                  <div className="flex items-center gap-1">Date Joined <SortIcon columnKey="dateJoined" /></div>
+                </th>
                 <th className="p-4 text-xs font-bold text-zinc-500 uppercase tracking-wider text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               <AnimatePresence mode="popLayout">
-                {filteredMembers.map((member) => (
+                {sortedMembers.map((member) => (
                   <motion.tr
                     key={member.id}
                     layout

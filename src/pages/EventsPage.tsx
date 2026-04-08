@@ -1375,7 +1375,10 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           const oldIndex = currentAssignments.findIndex(a => a.id === active.id);
           const overIndex = currentAssignments.findIndex(a => a.id === over.id);
           if (oldIndex !== -1 && overIndex !== -1 && oldIndex !== overIndex) {
-            const reordered = arrayMove(currentAssignments, oldIndex, overIndex);
+            const reordered = arrayMove(currentAssignments, oldIndex, overIndex).map((a, index) => ({
+              ...a,
+              order: index
+            }));
             // Find which subevent this party belongs to
             let subEventId = '';
             for (const seId in parties) {
@@ -1418,11 +1421,25 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                     ...se,
                     parties: (se.parties || []).map((p: any) => {
                       if (p.id === oldPartyId) {
-                        return { ...p, assignments: (p.assignments || []).filter((a: any) => a.id !== active.id) };
+                        return { 
+                          ...p, 
+                          assignments: (p.assignments || [])
+                            .filter((a: any) => a.id !== active.id)
+                            .map((a: any, index: number) => ({ ...a, order: index }))
+                        };
                       }
                       if (p.id === currentPartyId) {
-                        const newAssignment = { ...assignment, partyId: currentPartyId, subEventId: targetSubEventId };
-                        return { ...p, assignments: [...(p.assignments || []), newAssignment] };
+                        // The currentAssignments array already has the item inserted by handleDragOver
+                        // We just need to ensure the order is correct
+                        return { 
+                          ...p, 
+                          assignments: currentAssignments.map((a: any, index: number) => ({
+                            ...a,
+                            partyId: currentPartyId,
+                            subEventId: targetSubEventId,
+                            order: index
+                          }))
+                        };
                       }
                       return p;
                     })

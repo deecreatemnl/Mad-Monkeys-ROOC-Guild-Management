@@ -214,6 +214,11 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     res.json(members);
   }));
 
+  app.get("/api/logs", asyncHandler(async (req: any, res: any) => {
+    const logs = await db.getAllMemberLogs();
+    res.json(logs);
+  }));
+
   app.get("/api/members/:id/logs", asyncHandler(async (req: any, res: any) => {
     const logs = await db.getMemberLogs(req.params.id);
     res.json(logs);
@@ -1575,14 +1580,17 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     const originalUsername = username.trim();
     const hashedPassword = await bcrypt.hash(password, 10);
     
+    // Check if this is the very first user being registered (fallback if setup wizard wasn't used)
+    const isFirstUser = Object.keys(users).length === 0;
+    
     const newUser = { 
       id: userId, 
       username: originalUsername, 
       displayName: originalUsername, 
       ign: ign || originalUsername,
       uid: uid || '',
-      isApproved: userId === 'readyhit',
-      role: userId === 'readyhit' ? 'superadmin' : 'user', 
+      isApproved: isFirstUser,
+      role: isFirstUser ? 'superadmin' : 'user', 
       createdAt: new Date().toISOString(), 
       password: hashedPassword 
     };
