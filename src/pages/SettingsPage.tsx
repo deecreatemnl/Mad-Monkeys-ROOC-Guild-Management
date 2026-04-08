@@ -17,8 +17,7 @@ const TIMEZONES = [
 
 export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: () => void }) {
   const [settings, setSettings] = useState<GuildSettings>({
-    name: 'MadMonkeys',
-    subtitle: 'Guild Management System',
+    name: 'Guild Name',
     timezone: 'Asia/Singapore',
     logoUrl: '',
     maxPartySize: 12,
@@ -248,8 +247,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
 
         if (data && Object.keys(data).length > 0) {
           const newSettings = {
-            name: data.name || '',
-            subtitle: data.subtitle || '',
+            name: data.name || 'Guild Name',
             timezone: data.timezone || 'Asia/Singapore',
             logoUrl: data.logoUrl || '',
             maxPartySize: data.maxPartySize || 12,
@@ -381,8 +379,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
   }
 
   const tabs = [
-    { id: 'identity', label: 'Identity', icon: Type },
-    { id: 'visuals', label: 'Visuals', icon: ImageIcon },
+    { id: 'identity', label: 'Identity & Visuals', icon: Type },
     { id: 'localization', label: 'Localization', icon: Globe },
     { id: 'users', label: 'User Settings', icon: Users },
     { id: 'raffle', label: 'Raffle Settings', icon: Trophy },
@@ -429,35 +426,71 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
           >
             <form onSubmit={handleSubmit} className="p-8 space-y-8">
               {activeTab === 'identity' && (
-                <div className="space-y-6">
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Type className="w-5 h-5 text-orange-500" />
-                    Identity
-                  </h2>
-                  
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Guild Name</label>
-                      <input
-                        required
-                        type="text"
-                        value={settings.name}
-                        onChange={(e) => setSettings({ ...settings, name: e.target.value })}
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
-                        placeholder="e.g. MadMonkeys"
-                      />
-                    </div>
+                <div className="space-y-8">
+                  <div className="space-y-6">
+                    <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                      <Type className="w-5 h-5 text-orange-500" />
+                      Identity & Visuals
+                    </h2>
+                    
+                    <div className="space-y-6">
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Guild Name</label>
+                        <input
+                          required
+                          type="text"
+                          value={settings.name}
+                          onChange={(e) => setSettings({ ...settings, name: e.target.value })}
+                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                          placeholder="Guild Name"
+                        />
+                      </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Subtitle</label>
-                      <input
-                        required
-                        type="text"
-                        value={settings.subtitle}
-                        onChange={(e) => setSettings({ ...settings, subtitle: e.target.value })}
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
-                        placeholder="e.g. Guild Management System"
-                      />
+                      <div>
+                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Guild Logo</label>
+                        <div className="flex gap-6 items-start">
+                          <div className="w-24 h-24 bg-zinc-800 border border-zinc-700 rounded-2xl flex items-center justify-center overflow-hidden shrink-0 shadow-inner relative group">
+                            {settings.logoUrl ? (
+                              <img src={settings.logoUrl} alt="Preview" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                            ) : (
+                              <ImageIcon className="w-8 h-8 text-zinc-600" />
+                            )}
+                            {uploading && (
+                              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 space-y-3">
+                            <input
+                              type="file"
+                              ref={fileInputRef}
+                              onChange={handleLogoUpload}
+                              accept="image/*"
+                              className="hidden"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => fileInputRef.current?.click()}
+                              disabled={uploading}
+                              className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm font-bold py-2 px-4 rounded-lg border border-zinc-700 transition-all active:scale-95 disabled:opacity-50"
+                            >
+                              <Upload className="w-4 h-4" />
+                              {uploading ? 'Uploading...' : 'Upload Logo'}
+                            </button>
+                            <div className="space-y-1">
+                              <label className="block text-[10px] font-bold text-zinc-600 uppercase tracking-widest">Or use URL</label>
+                              <input
+                                type="url"
+                                value={settings.logoUrl}
+                                onChange={(e) => setSettings({ ...settings, logoUrl: e.target.value })}
+                                className="w-full bg-zinc-800 border border-zinc-700 rounded-lg py-2 px-3 text-xs text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
+                                placeholder="https://example.com/logo.png"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

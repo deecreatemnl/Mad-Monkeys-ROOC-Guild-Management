@@ -69,7 +69,6 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS settings (
     id TEXT PRIMARY KEY, -- usually 'guild_settings'
     name TEXT,
-    subtitle TEXT,
     timezone TEXT DEFAULT 'UTC',
     logo_url TEXT,
     max_party_size INTEGER DEFAULT 12,

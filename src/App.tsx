@@ -50,7 +50,6 @@ const AuthUI = ({ guildSettings, authMode, setAuthMode, handleLogin, handleSignu
           )}
         </div>
         <h1 className="text-2xl font-bold text-white">{guildSettings.name}</h1>
-        <p className="text-zinc-400 text-sm">{guildSettings.subtitle}</p>
       </div>
 
       <form onSubmit={authMode === 'login' ? handleLogin : handleSignup} className="space-y-4">
@@ -154,8 +153,7 @@ export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [needsSetup, setNeedsSetup] = useState(false);
   const [guildSettings, setGuildSettings] = useState<GuildSettings>({
-    name: 'MadMonkeys',
-    subtitle: 'Guild Management System',
+    name: 'Guild Name',
     timezone: 'GMT+8 (Singapore/Manila)',
     logoUrl: '',
   });
@@ -340,7 +338,6 @@ export default function App() {
                       </div>
                       <div>
                         <h2 className="font-bold text-white leading-tight">{guildSettings.name}</h2>
-                        <p className="text-xs text-zinc-500">{guildSettings.subtitle}</p>
                       </div>
                     </div>
 

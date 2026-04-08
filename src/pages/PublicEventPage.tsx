@@ -279,7 +279,7 @@ export default function PublicEventPage() {
             {event.name}
           </h1>
           <p className="text-zinc-500 max-w-2xl mx-auto text-lg">
-            {event.description || guildSettings?.subtitle}
+            {event.description}
           </p>
           <div className="mt-8 max-w-5xl mx-auto text-left space-y-6">
             {event.instructions && (

@@ -19,7 +19,6 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
     password: '',
     confirmPassword: '',
     guildName: '',
-    guildSubtitle: '',
   });
 
   // Fetch env status on mount
@@ -59,7 +58,6 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
           displayName: formData.displayName,
           password: formData.password,
           guildName: formData.guildName,
-          guildSubtitle: formData.guildSubtitle
         })
       });
       setStep(4);
@@ -274,17 +272,6 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                 onChange={e => setFormData({ ...formData, guildName: e.target.value })}
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-red-500 transition-colors"
                 placeholder="My Awesome Guild"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-zinc-400 mb-1.5 uppercase tracking-wider">Guild Subtitle</label>
-              <input
-                type="text"
-                value={formData.guildSubtitle}
-                onChange={e => setFormData({ ...formData, guildSubtitle: e.target.value })}
-                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-red-500 transition-colors"
-                placeholder="The best guild in the world"
               />
             </div>
 

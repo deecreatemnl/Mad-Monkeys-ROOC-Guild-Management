@@ -187,25 +187,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     e.target.value = '';
   };
 
-  const processNextImport = async (data: any[], index: number) => {
-    if (index >= data.length) {
-      loadData();
-      return;
-    }
-
-    const item = data[index];
-    const existingMember = members.find(m => m.ign.toLowerCase() === item.ign.toLowerCase());
-
-    if (existingMember) {
-      setImportIndex(index);
-      setIsOverrideModalOpen(true);
-    } else {
-      await saveImportedMember(item);
-      processNextImport(data, index + 1);
-    }
-  };
-
-  const saveImportedMember = async (item: any, existingId?: string) => {
+  const saveImportedMember = async (item: any, existingId?: string, currentRoles: Role[] = roles) => {
     try {
       // Check and create missing job
       if (item.job) {
@@ -225,7 +207,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
 
       // Check and create missing role
       if (item.role) {
-        const roleExists = roles.some(r => r.name.toLowerCase() === item.role.toLowerCase());
+        const roleExists = currentRoles.some(r => r.name.toLowerCase() === item.role.toLowerCase());
         if (!roleExists) {
           try {
             const colors = ['#ef4444', '#3b82f6', '#22c55e', '#eab308', '#a855f7', '#ec4899', '#6366f1', '#14b8a6', '#f97316'];
@@ -235,6 +217,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
               body: JSON.stringify({ name: item.role, color: randomColor })
             });
             setRoles(prev => [...prev, newRole]);
+            currentRoles.push(newRole);
           } catch (e) {
             console.error('Failed to create missing role:', e);
           }
@@ -257,16 +240,35 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     }
   };
 
+  const processNextImport = async (data: any[], index: number, currentRoles: Role[] = [...roles]) => {
+    if (index >= data.length) {
+      loadData();
+      return;
+    }
+
+    const item = data[index];
+    const existingMember = members.find(m => m.ign.toLowerCase() === item.ign.toLowerCase());
+
+    if (existingMember) {
+      setImportIndex(index);
+      setIsOverrideModalOpen(true);
+    } else {
+      await saveImportedMember(item, undefined, currentRoles);
+      processNextImport(data, index + 1, currentRoles);
+    }
+  };
+
   const handleConfirmOverride = async (confirm: boolean) => {
     setIsOverrideModalOpen(false);
     const item = importData[importIndex];
+    const currentRoles = [...roles];
     
     if (confirm) {
       const existingMember = members.find(m => m.ign.toLowerCase() === item.ign.toLowerCase());
-      await saveImportedMember(item, existingMember?.id);
+      await saveImportedMember(item, existingMember?.id, currentRoles);
     }
     
-    processNextImport(importData, importIndex + 1);
+    processNextImport(importData, importIndex + 1, currentRoles);
   };
 
   useEffect(() => {

@@ -103,7 +103,6 @@ export interface EventShareLink {
 export interface GuildSettings {
   id?: string;
   name: string;
-  subtitle: string;
   timezone: string;
   logoUrl?: string;
   maxPartySize?: number;

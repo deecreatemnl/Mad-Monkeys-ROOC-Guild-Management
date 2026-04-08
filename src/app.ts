@@ -102,7 +102,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       return res.status(403).json({ error: "System already setup" });
     }
 
-    const { username, password, displayName } = req.body;
+    const { username, password, displayName, guildName } = req.body;
     if (!username || !password) {
       return res.status(400).json({ error: "Username and password required" });
     }
@@ -119,10 +119,28 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     };
 
     await db.saveUser(superAdmin);
+
+    // Save initial guild settings if provided
+    if (guildName) {
+      const settings = await db.getSettings();
+      await db.saveSettings({ ...settings, name: guildName });
+    }
+
     res.json({ success: true, message: "Superadmin created successfully" });
   }));
 
   // Health check
+  // Check for Discord environment variables
+  const discordConfig = {
+    clientId: process.env.DISCORD_CLIENT_ID,
+    clientSecret: process.env.DISCORD_CLIENT_SECRET,
+    botToken: process.env.DISCORD_BOT_TOKEN
+  };
+
+  if (!discordConfig.clientId || !discordConfig.clientSecret || !discordConfig.botToken) {
+    console.warn("⚠️ Discord Integration: Missing environment variables (DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, or DISCORD_BOT_TOKEN). Discord features will be disabled.");
+  }
+
   app.get("/api/health", asyncHandler(async (req: any, res: any) => {
     let dbStatus = "unknown";
     try {
