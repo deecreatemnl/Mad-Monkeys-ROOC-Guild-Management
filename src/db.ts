@@ -5,6 +5,17 @@ import bcrypt from "bcryptjs";
 
 dotenv.config();
 
+const formatDateForDB = (dateString: string) => {
+  if (!dateString) return '';
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    return date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  } catch (e) {
+    return dateString;
+  }
+};
+
 // Database Interface
 export interface Database {
   get: () => Promise<any>;
@@ -36,6 +47,10 @@ export interface Database {
   getJobById: (id: string) => Promise<any>;
   getEventById: (id: string) => Promise<any>;
   getUserById: (id: string) => Promise<any>;
+  getEventShareLinks: (eventId: string) => Promise<any[]>;
+  getEventShareLinkByToken: (token: string) => Promise<any>;
+  saveEventShareLink: (link: any) => Promise<void>;
+  deleteEventShareLink: (id: string) => Promise<void>;
   reorderEvents: (orderedIds: string[]) => Promise<void>;
   updateMembersJob: (oldJobName: string, newJobName: string) => Promise<void>;
   updateRoleName: (oldRoleName: string, newRoleName: string) => Promise<void>;
@@ -50,6 +65,7 @@ export const initialDb: any = {
   members: [],
   member_logs: {},
   events: [],
+  event_share_links: [],
   jobs: [
     { id: "1", name: "Lord Knight" },
     { id: "2", name: "High Priest" },
@@ -83,6 +99,7 @@ export const initialDb: any = {
       discordAnnouncementsChannelId: '',
       discordAbsenceChannelId: '',
       discordWebhookUrl: '',
+      disableSignups: false,
       raffleWinners: 2,
     }
   },
@@ -158,14 +175,33 @@ export class FileDatabase implements Database {
 
   async getMembers() {
     const data = await this.get();
-    return data.members || [];
+    const members = data.members || [];
+    let hasChanges = false;
+    
+    // Migrate existing dates to the new format
+    const migratedMembers = members.map((m: any) => {
+      const newDate = formatDateForDB(m.dateJoined);
+      if (m.dateJoined !== newDate) {
+        hasChanges = true;
+        return { ...m, dateJoined: newDate };
+      }
+      return m;
+    });
+    
+    if (hasChanges) {
+      data.members = migratedMembers;
+      await this.save(data);
+    }
+    
+    return migratedMembers;
   }
 
   async saveMember(member: any) {
     const data = await this.get();
-    const index = data.members.findIndex((m: any) => m.id === member.id);
-    if (index !== -1) data.members[index] = member;
-    else data.members.push(member);
+    const formattedMember = { ...member, dateJoined: formatDateForDB(member.dateJoined) };
+    const index = data.members.findIndex((m: any) => m.id === formattedMember.id);
+    if (index !== -1) data.members[index] = formattedMember;
+    else data.members.push(formattedMember);
     await this.save(data);
   }
 
@@ -179,6 +215,21 @@ export class FileDatabase implements Database {
   async getMemberLogs(memberId: string) {
     const data = await this.get();
     if (!data.member_logs) data.member_logs = {};
+    
+    // Cleanup logs older than 3 months
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const cutoff = threeMonthsAgo.getTime();
+    
+    let hasChanges = false;
+    if (data.member_logs[memberId]) {
+      const originalLength = data.member_logs[memberId].length;
+      data.member_logs[memberId] = data.member_logs[memberId].filter((l: any) => new Date(l.timestamp).getTime() >= cutoff);
+      if (data.member_logs[memberId].length !== originalLength) hasChanges = true;
+    }
+    
+    if (hasChanges) await this.save(data);
+    
     return data.member_logs[memberId] || [];
   }
 
@@ -186,12 +237,27 @@ export class FileDatabase implements Database {
     const data = await this.get();
     if (!data.member_logs) return [];
     
+    // Cleanup logs older than 3 months
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const cutoff = threeMonthsAgo.getTime();
+    let hasChanges = false;
+    
     const allLogs: any[] = [];
-    Object.values(data.member_logs).forEach((logs: any) => {
+    Object.keys(data.member_logs).forEach((memberId) => {
+      const logs = data.member_logs[memberId];
       if (Array.isArray(logs)) {
-        allLogs.push(...logs);
+        const originalLength = logs.length;
+        const filteredLogs = logs.filter((l: any) => new Date(l.timestamp).getTime() >= cutoff);
+        if (filteredLogs.length !== originalLength) {
+          data.member_logs[memberId] = filteredLogs;
+          hasChanges = true;
+        }
+        allLogs.push(...filteredLogs);
       }
     });
+    
+    if (hasChanges) await this.save(data);
     
     return allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
   }
@@ -201,6 +267,13 @@ export class FileDatabase implements Database {
     if (!data.member_logs) data.member_logs = {};
     if (!data.member_logs[log.memberId]) data.member_logs[log.memberId] = [];
     data.member_logs[log.memberId].push({ ...log, id: Date.now().toString() });
+    
+    // Cleanup logs older than 3 months
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    const cutoff = threeMonthsAgo.getTime();
+    data.member_logs[log.memberId] = data.member_logs[log.memberId].filter((l: any) => new Date(l.timestamp).getTime() >= cutoff);
+    
     await this.save(data);
   }
 
@@ -362,6 +435,36 @@ export class FileDatabase implements Database {
       }))
     }));
     await this.save(data);
+  }
+
+  async getEventShareLinks(eventId: string) {
+    const data = await this.get();
+    return (data.event_share_links || []).filter((l: any) => l.eventId === eventId);
+  }
+
+  async getEventShareLinkByToken(token: string) {
+    const data = await this.get();
+    return (data.event_share_links || []).find((l: any) => l.token === token);
+  }
+
+  async saveEventShareLink(link: any) {
+    const data = await this.get();
+    if (!data.event_share_links) data.event_share_links = [];
+    const index = data.event_share_links.findIndex((l: any) => l.id === link.id);
+    if (index >= 0) {
+      data.event_share_links[index] = link;
+    } else {
+      data.event_share_links.push(link);
+    }
+    await this.save(data);
+  }
+
+  async deleteEventShareLink(id: string) {
+    const data = await this.get();
+    if (data.event_share_links) {
+      data.event_share_links = data.event_share_links.filter((l: any) => l.id !== id);
+      await this.save(data);
+    }
   }
 
   async seed() {
@@ -527,7 +630,8 @@ export class SupabaseDatabase implements Database {
         }
         return [];
       }
-      return (data || []).map(m => ({
+      
+      const members = (data || []).map(m => ({
         id: m.id,
         ign: m.ign,
         job: m.job,
@@ -536,6 +640,21 @@ export class SupabaseDatabase implements Database {
         uid: m.uid,
         status: m.status || 'active'
       }));
+
+      // Migrate existing dates to the new format
+      let hasChanges = false;
+      const migratedMembers = members.map(m => {
+        const newDate = formatDateForDB(m.dateJoined);
+        if (m.dateJoined !== newDate) {
+          hasChanges = true;
+          // Fire and forget update to DB
+          this.supabase.from('members').update({ date_joined: newDate }).eq('id', m.id).then();
+          return { ...m, dateJoined: newDate };
+        }
+        return m;
+      });
+
+      return migratedMembers;
     } catch (e: any) {
       console.error("Supabase Exception in getMembers():", e.message);
       return [];
@@ -548,7 +667,7 @@ export class SupabaseDatabase implements Database {
       ign: member.ign,
       job: member.job,
       role: member.role,
-      date_joined: member.dateJoined,
+      date_joined: formatDateForDB(member.dateJoined),
       uid: member.uid,
       status: member.status || 'active'
     });
@@ -562,6 +681,11 @@ export class SupabaseDatabase implements Database {
 
   async getMemberLogs(memberId: string) {
     try {
+      // Cleanup logs older than 3 months
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      await this.supabase.from('member_logs').delete().lt('timestamp', threeMonthsAgo.toISOString());
+
       const { data, error } = await this.supabase.from('member_logs').select('*').eq('member_id', memberId).order('timestamp', { ascending: false });
       if (error) {
         console.error("Supabase Get Member Logs Error:", error.message);
@@ -584,6 +708,11 @@ export class SupabaseDatabase implements Database {
 
   async getAllMemberLogs() {
     try {
+      // Cleanup logs older than 3 months
+      const threeMonthsAgo = new Date();
+      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+      await this.supabase.from('member_logs').delete().lt('timestamp', threeMonthsAgo.toISOString());
+
       const { data, error } = await this.supabase.from('member_logs').select('*').order('timestamp', { ascending: false });
       if (error) {
         console.error("Supabase Get All Member Logs Error:", error.message);
@@ -615,6 +744,11 @@ export class SupabaseDatabase implements Database {
       timestamp: log.timestamp || new Date().toISOString()
     });
     if (error) console.error("Supabase Save Member Log Error:", error.message);
+    
+    // Cleanup logs older than 3 months
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    await this.supabase.from('member_logs').delete().lt('timestamp', threeMonthsAgo.toISOString());
   }
 
   async getJobs() {
@@ -854,7 +988,7 @@ export class SupabaseDatabase implements Database {
         discordAnnouncementsChannelId: data.discord_announcements_channel_id || '',
         discordAbsenceChannelId: data.discord_absence_channel_id || '',
         githubRepo: data.github_repo || '',
-        vercelDeployHookUrl: data.vercel_deploy_hook_url || '',
+        disableSignups: data.disable_signups || false,
         raffleWinners: data.raffle_winners || 2
       };
     } catch (e: any) {
@@ -879,15 +1013,19 @@ export class SupabaseDatabase implements Database {
     if (settings.discordAnnouncementsChannelId !== undefined) payload.discord_announcements_channel_id = settings.discordAnnouncementsChannelId;
     if (settings.discordAbsenceChannelId !== undefined) payload.discord_absence_channel_id = settings.discordAbsenceChannelId;
     if (settings.githubRepo !== undefined) payload.github_repo = settings.githubRepo;
-    if (settings.vercelDeployHookUrl !== undefined) payload.vercel_deploy_hook_url = settings.vercelDeployHookUrl;
+    if (settings.disableSignups !== undefined) payload.disable_signups = settings.disableSignups;
     if (settings.raffleWinners !== undefined) payload.raffle_winners = settings.raffleWinners;
 
     const { error } = await this.supabase.from('settings').upsert(payload);
     if (error) {
       console.error("Supabase Save Settings Error:", error.message);
-      if (error.message.includes("column") && error.message.includes("not found")) {
+      if (error.message.includes("disable_signups") && error.message.includes("not found")) {
+        console.warn("Retrying without disable_signups column. Please run the SQL migration to add it.");
+        delete payload.disable_signups;
+        await this.supabase.from('settings').upsert(payload);
+      } else if (error.message.includes("column") && error.message.includes("not found")) {
         console.warn("WARNING: It looks like your 'settings' table is missing columns. Please run the SQL migration:");
-        console.warn("ALTER TABLE settings ADD COLUMN IF NOT EXISTS discord_guild_id TEXT, ADD COLUMN IF NOT EXISTS discord_announcements_channel_id TEXT, ADD COLUMN IF NOT EXISTS discord_absence_channel_id TEXT, ADD COLUMN IF NOT EXISTS github_repo TEXT, ADD COLUMN IF NOT EXISTS vercel_deploy_hook_url TEXT;");
+        console.warn("ALTER TABLE settings ADD COLUMN IF NOT EXISTS discord_guild_id TEXT, ADD COLUMN IF NOT EXISTS discord_announcements_channel_id TEXT, ADD COLUMN IF NOT EXISTS discord_absence_channel_id TEXT, ADD COLUMN IF NOT EXISTS github_repo TEXT, ADD COLUMN IF NOT EXISTS disable_signups BOOLEAN;");
       }
     }
   }
@@ -983,6 +1121,50 @@ export class SupabaseDatabase implements Database {
       createdAt: data.created_at,
       password: data.password_hash
     };
+  }
+
+  async getEventShareLinks(eventId: string) {
+    const { data, error } = await this.supabase.from('event_share_links').select('*').eq('event_id', eventId);
+    if (error) {
+      console.error("Supabase Get EventShareLinks Error:", error.message);
+      return [];
+    }
+    return data.map((l: any) => ({
+      id: l.id,
+      eventId: l.event_id,
+      token: l.token,
+      createdAt: l.created_at,
+      expiresAt: l.expires_at
+    }));
+  }
+
+  async getEventShareLinkByToken(token: string) {
+    const { data, error } = await this.supabase.from('event_share_links').select('*').eq('token', token).single();
+    if (error) return null;
+    return {
+      id: data.id,
+      eventId: data.event_id,
+      token: data.token,
+      createdAt: data.created_at,
+      expiresAt: data.expires_at
+    };
+  }
+
+  async saveEventShareLink(link: any) {
+    const payload = {
+      id: link.id,
+      event_id: link.eventId,
+      token: link.token,
+      created_at: link.createdAt,
+      expires_at: link.expiresAt
+    };
+    const { error } = await this.supabase.from('event_share_links').upsert(payload);
+    if (error) console.error("Supabase Save EventShareLink Error:", error.message);
+  }
+
+  async deleteEventShareLink(id: string) {
+    const { error } = await this.supabase.from('event_share_links').delete().eq('id', id);
+    if (error) console.error("Supabase Delete EventShareLink Error:", error.message);
   }
 
   async updateMembersJob(oldJobName: string, newJobName: string) {

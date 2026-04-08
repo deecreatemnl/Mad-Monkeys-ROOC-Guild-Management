@@ -133,15 +133,17 @@ const AuthUI = ({ guildSettings, authMode, setAuthMode, handleLogin, handleSignu
         </Link>
       </div>
 
-      <p className="text-center mt-8 text-sm text-zinc-500">
-        {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
-        <button 
-          onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
-          className="text-orange-500 font-bold hover:underline"
-        >
-          {authMode === 'login' ? 'Sign Up' : 'Sign In'}
-        </button>
-      </p>
+      {!guildSettings.disableSignups && (
+        <p className="text-center mt-8 text-sm text-zinc-500">
+          {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
+          <button 
+            onClick={() => setAuthMode(authMode === 'login' ? 'signup' : 'login')}
+            className="text-orange-500 font-bold hover:underline"
+          >
+            {authMode === 'login' ? 'Sign Up' : 'Sign In'}
+          </button>
+        </p>
+      )}
     </motion.div>
   </div>
 );
@@ -286,6 +288,7 @@ export default function App() {
     <Router>
       <Routes>
         <Route path="/public/event/:eventId" element={<PublicEventPage />} />
+        <Route path="/public/event/link/:token" element={<PublicEventPage />} />
         <Route path="/raffle" element={<RafflePage />} />
         <Route path="*" element={
           !user ? (
@@ -323,7 +326,7 @@ export default function App() {
                     animate={{ x: 0 }}
                     exit={{ x: -300 }}
                     className={cn(
-                      "fixed md:relative inset-y-0 left-0 w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col z-40 transition-all",
+                      "fixed inset-y-0 left-0 w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col z-40 transition-all",
                       !isMenuOpen && "hidden md:flex"
                     )}
                   >
@@ -341,7 +344,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    <nav className="flex-1 px-4 py-4 space-y-1">
+                    <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
                       <Link to="/dashboard" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
                         <BarChart3 className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
                         <span className="font-medium">Dashboard</span>
@@ -408,7 +411,7 @@ export default function App() {
               </AnimatePresence>
 
               {/* Main Content */}
-              <main className="flex-1 overflow-auto p-4 md:p-8">
+              <main className="flex-1 overflow-auto p-4 md:p-8 md:ml-64">
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
                     <Route path="/" element={<MembersPage isAdmin={isAdmin} />} />

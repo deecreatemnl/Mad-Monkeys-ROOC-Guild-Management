@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS settings (
     discord_announcements_channel_id TEXT,
     discord_absence_channel_id TEXT,
     github_repo TEXT,
-    vercel_deploy_hook_url TEXT,
+    disable_signups BOOLEAN DEFAULT false,
     raffle_winners INTEGER DEFAULT 2,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -89,6 +89,15 @@ CREATE TABLE IF NOT EXISTS raffle (
     winners JSONB DEFAULT '[]'::jsonb,
     settings JSONB DEFAULT '{"currentWeek": 1, "currentMonth": 1, "currentYear": 2026, "isOpen": true}'::jsonb,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 7. Event Share Links Table
+CREATE TABLE IF NOT EXISTS event_share_links (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    token TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
 -- Enable RLS (Row Level Security) - Optional but recommended

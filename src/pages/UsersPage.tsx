@@ -94,6 +94,31 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
     }
   };
 
+  const promoteToSuperAdmin = async (user: UserProfile) => {
+    if (!isSuperAdmin) return;
+    
+    setConfirmModal({
+      isOpen: true,
+      title: 'Promote to Superadmin',
+      message: `Are you sure you want to promote ${user.displayName} to Superadmin? They will have full control over the system.`,
+      onConfirm: async () => {
+        // Optimistic update
+        setUsers(prev => prev.map(u => u.id === user.id ? { ...u, role: 'superadmin' } : u));
+
+        try {
+          await fetchAPI(`/api/users/${user.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({ role: 'superadmin' })
+          });
+          loadUsers();
+        } catch (error) {
+          console.error('Failed to promote user to superadmin:', error);
+          loadUsers(); // Rollback
+        }
+      }
+    });
+  };
+
   const handleApproveUser = async (user: UserProfile) => {
     try {
       await fetchAPI(`/api/users/${user.id}`, {
@@ -208,11 +233,11 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
                         <span className="text-[10px] bg-orange-500/10 text-orange-500 px-1.5 py-0.5 rounded border border-orange-500/20 uppercase font-bold tracking-wider">Pending Approval</span>
                       )}
                     </div>
-                    <div className="flex flex-col gap-0.5">
-                      <p className="text-xs text-zinc-500 font-mono">User: {user.username}</p>
-                      {user.ign && <p className="text-xs text-zinc-400">IGN: <span className="text-zinc-200">{user.ign}</span></p>}
-                      {user.uid && <p className="text-xs text-zinc-400">UID: <span className="text-zinc-200 font-mono">{user.uid}</span></p>}
-                    </div>
+                    {user.uid && (
+                      <div className="flex flex-col gap-0.5">
+                        <p className="text-xs text-zinc-400">UID: <span className="text-zinc-200 font-mono">{user.uid}</span></p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -237,18 +262,29 @@ export default function UsersPage({ isSuperAdmin = false }: { isSuperAdmin?: boo
                     )}
 
                     {isSuperAdmin && user.role !== 'superadmin' && (
-                      <button
-                        onClick={() => toggleAdmin(user)}
-                        className={cn(
-                          "p-2 rounded-lg transition-all",
-                          user.role === 'admin' 
-                            ? "bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700" 
-                            : "bg-blue-500/10 text-blue-500 hover:bg-blue-500/20"
+                      <>
+                        <button
+                          onClick={() => toggleAdmin(user)}
+                          className={cn(
+                            "p-2 rounded-lg transition-all",
+                            user.role === 'admin' 
+                              ? "bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700" 
+                              : "bg-blue-500/10 text-blue-500 hover:bg-blue-500/20"
+                          )}
+                          title={user.role === 'admin' ? "Demote to User" : "Promote to Admin"}
+                        >
+                          {user.role === 'admin' ? <UserX className="w-5 h-5" /> : <UserCheck className="w-5 h-5" />}
+                        </button>
+                        {user.role === 'admin' && (
+                          <button
+                            onClick={() => promoteToSuperAdmin(user)}
+                            className="p-2 bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 rounded-lg transition-all"
+                            title="Promote to Superadmin"
+                          >
+                            <ShieldAlert className="w-5 h-5" />
+                          </button>
                         )}
-                        title={user.role === 'admin' ? "Demote to User" : "Promote to Admin"}
-                      >
-                        {user.role === 'admin' ? <UserX className="w-5 h-5" /> : <UserCheck className="w-5 h-5" />}
-                      </button>
+                      </>
                     )}
 
                     {(isSuperAdmin || (user.role === 'user')) && user.role !== 'superadmin' && (

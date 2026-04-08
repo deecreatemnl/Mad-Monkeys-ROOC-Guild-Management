@@ -92,6 +92,14 @@ export interface Role {
   color: string;
 }
 
+export interface EventShareLink {
+  id?: string;
+  eventId: string;
+  token: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
 export interface GuildSettings {
   id?: string;
   name: string;
@@ -103,6 +111,6 @@ export interface GuildSettings {
   discordAnnouncementsChannelId?: string;
   discordAbsenceChannelId?: string;
   githubRepo?: string;
-  vercelDeployHookUrl?: string;
+  disableSignups?: boolean;
   raffleWinners?: number;
 }

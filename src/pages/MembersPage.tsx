@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { fetchAPI } from '../lib/api';
 import { 
   Plus, 
@@ -29,6 +29,28 @@ import ConfirmModal from '../components/ConfirmModal';
 import { Member, Job, MemberLog, Role } from '../types';
 import { format } from 'date-fns';
 
+const formatDateForDisplay = (dateString: string) => {
+  if (!dateString) return '';
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return dateString;
+    return format(date, 'MMMM d, yyyy');
+  } catch (e) {
+    return dateString;
+  }
+};
+
+const formatDateForInput = (dateString: string) => {
+  if (!dateString) return '';
+  try {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return '';
+    return format(date, 'yyyy-MM-dd');
+  } catch (e) {
+    return '';
+  }
+};
+
 interface MembersPageProps {
   isAdmin?: boolean;
 }
@@ -45,7 +67,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     ign: '', 
     job: '', 
     role: '', 
-    dateJoined: new Date().toISOString().split('T')[0],
+    dateJoined: formatDateForDisplay(new Date().toISOString()),
     status: 'active' as any
   });
   const [viewMode, setViewMode] = useState<'tile' | 'list'>('list');
@@ -138,10 +160,12 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     reader.onload = async (event) => {
       const text = event.target?.result as string;
       const lines = text.split('\n');
-      const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+      // Split by comma, but ignore commas inside quotes
+      const splitRegex = /,(?=(?:(?:[^"]*"){2})*[^"]*$)/;
+      const headers = lines[0].split(splitRegex).map(h => h.trim().replace(/^"|"$/g, ''));
       
       const parsedData = lines.slice(1).filter(line => line.trim()).map(line => {
-        const values = line.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+        const values = line.split(splitRegex).map(v => v.trim().replace(/^"|"$/g, ''));
         const obj: any = {};
         headers.forEach((header, i) => {
           if (header === 'IGN') obj.ign = values[i];
@@ -183,6 +207,40 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
 
   const saveImportedMember = async (item: any, existingId?: string) => {
     try {
+      // Check and create missing job
+      if (item.job) {
+        const jobExists = jobs.some(j => j.name.toLowerCase() === item.job.toLowerCase());
+        if (!jobExists) {
+          try {
+            const newJob = await fetchAPI('/api/jobs', {
+              method: 'POST',
+              body: JSON.stringify({ name: item.job })
+            });
+            setJobs(prev => [...prev, newJob]);
+          } catch (e) {
+            console.error('Failed to create missing job:', e);
+          }
+        }
+      }
+
+      // Check and create missing role
+      if (item.role) {
+        const roleExists = roles.some(r => r.name.toLowerCase() === item.role.toLowerCase());
+        if (!roleExists) {
+          try {
+            const colors = ['#ef4444', '#3b82f6', '#22c55e', '#eab308', '#a855f7', '#ec4899', '#6366f1', '#14b8a6', '#f97316'];
+            const randomColor = colors[Math.floor(Math.random() * colors.length)];
+            const newRole = await fetchAPI('/api/roles', {
+              method: 'POST',
+              body: JSON.stringify({ name: item.role, color: randomColor })
+            });
+            setRoles(prev => [...prev, newRole]);
+          } catch (e) {
+            console.error('Failed to create missing role:', e);
+          }
+        }
+      }
+
       if (existingId) {
         await fetchAPI(`/api/members/${existingId}`, {
           method: 'PUT',
@@ -289,7 +347,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
         ign: '', 
         job: jobs[0]?.name || '', 
         role: 'DPS', 
-        dateJoined: new Date().toISOString().split('T')[0],
+        dateJoined: formatDateForDisplay(new Date().toISOString()),
         status: 'active'
       });
     }
@@ -301,15 +359,17 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     setEditingMember(null);
   };
 
-  const filteredMembers = members.filter(m => {
-    const ign = m.ign || '';
-    const job = m.job || '';
-    const matchesSearch = ign.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         job.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesJob = selectedJob === 'All' || m.job === selectedJob;
-    const matchesStatus = selectedStatus === 'All' || (m.status || 'active') === selectedStatus;
-    return matchesSearch && matchesJob && matchesStatus;
-  });
+  const filteredMembers = useMemo(() => {
+    return members.filter(m => {
+      const ign = m.ign || '';
+      const job = m.job || '';
+      const matchesSearch = ign.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           job.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesJob = selectedJob === 'All' || m.job === selectedJob;
+      const matchesStatus = selectedStatus === 'All' || (m.status || 'active') === selectedStatus;
+      return matchesSearch && matchesJob && matchesStatus;
+    });
+  }, [members, searchTerm, selectedJob, selectedStatus]);
 
   const handleSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -319,24 +379,26 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     setSortConfig({ key, direction });
   };
 
-  const sortedMembers = [...filteredMembers].sort((a, b) => {
-    if (!sortConfig) return 0;
-    
-    let aValue: any = a[sortConfig.key as keyof Member];
-    let bValue: any = b[sortConfig.key as keyof Member];
+  const sortedMembers = useMemo(() => {
+    return [...filteredMembers].sort((a, b) => {
+      if (!sortConfig) return 0;
+      
+      let aValue: any = a[sortConfig.key as keyof Member];
+      let bValue: any = b[sortConfig.key as keyof Member];
 
-    if (sortConfig.key === 'dateJoined') {
-      aValue = new Date(aValue || 0).getTime();
-      bValue = new Date(bValue || 0).getTime();
-    } else {
-      aValue = (aValue || '').toString().toLowerCase();
-      bValue = (bValue || '').toString().toLowerCase();
-    }
+      if (sortConfig.key === 'dateJoined') {
+        aValue = new Date(aValue || 0).getTime();
+        bValue = new Date(bValue || 0).getTime();
+      } else {
+        aValue = (aValue || '').toString().toLowerCase();
+        bValue = (bValue || '').toString().toLowerCase();
+      }
 
-    if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
-    if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
-    return 0;
-  });
+      if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+  }, [filteredMembers, sortConfig]);
 
   const SortIcon = ({ columnKey }: { columnKey: string }) => {
     if (sortConfig?.key !== columnKey) {
@@ -456,7 +518,6 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
             {sortedMembers.map((member) => (
               <motion.div
                 key={member.id}
-                layout
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.9 }}
@@ -706,8 +767,8 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                   <input
                     required
                     type="date"
-                    value={formData.dateJoined}
-                    onChange={(e) => setFormData({ ...formData, dateJoined: e.target.value })}
+                    value={formatDateForInput(formData.dateJoined)}
+                    onChange={(e) => setFormData({ ...formData, dateJoined: formatDateForDisplay(e.target.value) })}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
                   />
                 </div>

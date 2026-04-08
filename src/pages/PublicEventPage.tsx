@@ -7,12 +7,6 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Link } from 'react-router-dom';
 
-const ROLES = [
-  { name: 'DPS', color: 'text-zinc-400', bg: 'bg-zinc-400/10', border: 'border-zinc-400/20', icon: <Sword className="w-3 h-3" /> },
-  { name: 'Support', color: 'text-blue-400', bg: 'bg-blue-400/10', border: 'border-blue-400/20', icon: <Heart className="w-3 h-3" /> },
-  { name: 'Tank', color: 'text-orange-400', bg: 'bg-orange-400/10', border: 'border-orange-400/20', icon: <Shield className="w-3 h-3" /> },
-];
-
 const getMemberCategory = (member: Member) => {
   if (member.role) return member.role;
   const supports = ['Gypsy', 'Minstrel', 'High Priest', 'Minstrel (M)', 'Gypsy (F)'];
@@ -53,7 +47,7 @@ const getJobIcon = (member: Member) => {
 };
 
 export default function PublicEventPage() {
-  const { eventId } = useParams<{ eventId: string }>();
+  const { eventId, token } = useParams<{ eventId?: string; token?: string }>();
   const [event, setEvent] = useState<GuildEvent | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
@@ -64,6 +58,8 @@ export default function PublicEventPage() {
   const [error, setError] = useState<string | null>(null);
   const [collapsedSubEvents, setCollapsedSubEvents] = useState<Set<string>>(new Set());
   const [guildSettings, setGuildSettings] = useState<GuildSettings | null>(null);
+
+  const [roles, setRoles] = useState<any[]>([]);
 
   useEffect(() => {
     fetchAPI('/api/settings/guild_settings').then(data => {
@@ -84,19 +80,21 @@ export default function PublicEventPage() {
   };
 
   useEffect(() => {
-    if (!eventId) return;
+    if (!eventId && !token) return;
 
     const loadData = async () => {
       try {
-        const [eventData, membersData, jobsData] = await Promise.all([
-          fetchAPI(`/api/events/${eventId}`),
+        const [eventData, membersData, jobsData, rolesData] = await Promise.all([
+          token ? fetchAPI(`/api/public/events/by-token/${token}`) : fetchAPI(`/api/events/${eventId}`),
           fetchAPI('/api/members'),
-          fetchAPI('/api/jobs')
+          fetchAPI('/api/jobs'),
+          fetchAPI('/api/roles')
         ]);
         
         setMembers(membersData);
         setEvent(eventData);
         setJobs(jobsData);
+        setRoles(rolesData || []);
         
         // Process nested data from eventData
         const subEventsData = [...(eventData.subevents || [])];
@@ -121,9 +119,9 @@ export default function PublicEventPage() {
         setParties(newParties);
         setAssignments(newAssignments);
         setLoading(false);
-      } catch (err) {
+      } catch (err: any) {
         console.error('Error loading event data:', err);
-        setError('Error loading event.');
+        setError(err.message || 'Error loading event.');
         setLoading(false);
       }
     };
@@ -133,11 +131,24 @@ export default function PublicEventPage() {
     // Add polling for sync every 10 seconds
     const interval = setInterval(loadData, 10000);
     return () => clearInterval(interval);
-  }, [eventId]);
+  }, [eventId, token]);
 
   const getMemberName = (id: string) => members.find(m => m.id === id)?.ign || 'Unknown Member';
   const getMemberJob = (id: string) => members.find(m => m.id === id)?.job || 'Unknown Job';
-  const getRoleConfig = (roleName: string) => ROLES.find(r => r.name === roleName) || ROLES[0];
+  
+  const getRoleConfig = (roleName: string) => {
+    const role = roles.find(r => r.name === roleName);
+    if (role) {
+      return { 
+        name: role.name, 
+        color: role.color, 
+        bg: `${role.color}10`, // 10% opacity hex
+        border: `${role.color}20`, // 20% opacity hex
+        icon: <Shield className="w-3 h-3" /> // Default icon for dynamic roles
+      };
+    }
+    return { name: roleName, color: '#a1a1aa', bg: '#a1a1aa10', border: '#a1a1aa20', icon: <Shield className="w-3 h-3" /> };
+  };
 
   const [reportingAbsence, setReportingAbsence] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState('');
@@ -442,7 +453,10 @@ export default function PublicEventPage() {
                                       <div>
                                         <div className="font-bold text-zinc-100 text-[1em]">{member?.ign || 'Unknown'}</div>
                                         <div className="flex items-center gap-2 mt-1">
-                                          <div className={cn("flex items-center gap-1 text-[9px] font-bold uppercase", role.color)}>
+                                          <div 
+                                            className="flex items-center gap-1 text-[9px] font-bold uppercase"
+                                            style={{ color: role.color }}
+                                          >
                                             {role.icon}
                                             {assignment.role}
                                           </div>

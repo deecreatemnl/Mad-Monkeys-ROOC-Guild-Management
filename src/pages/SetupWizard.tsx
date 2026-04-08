@@ -126,7 +126,19 @@ export default function SetupWizard({ onComplete }: SetupWizardProps) {
                   {!envStatus?.hasSupabase ? (
                     <p className="text-xs text-red-500 mt-1 font-medium">Supabase is required for this installation. Please configure your environment variables.</p>
                   ) : (
-                    <p className="text-xs text-zinc-500 mt-1">Supabase connection verified. Ensure you have run the schema.sql script.</p>
+                    <div className="space-y-1 mt-1">
+                      <p className="text-xs text-zinc-500">Supabase connection verified.</p>
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-[9px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider", envStatus.hasDatabaseUrl ? "bg-green-500/10 text-green-500 border border-green-500/20" : "bg-orange-500/10 text-orange-500 border border-orange-500/20")}>
+                          {envStatus.hasDatabaseUrl ? 'Auto-Migration Ready' : 'Manual SQL Required'}
+                        </span>
+                        <p className="text-[10px] text-zinc-500">
+                          {envStatus.hasDatabaseUrl 
+                            ? 'DATABASE_URL detected. Tables will sync automatically.' 
+                            : 'DATABASE_URL missing. You must run schema.sql manually.'}
+                        </p>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>

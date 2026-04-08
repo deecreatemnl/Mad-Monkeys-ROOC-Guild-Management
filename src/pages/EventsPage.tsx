@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { fetchAPI } from '../lib/api';
 import { GuildEvent, Member, Assignment, Party, SubEvent } from '../types';
-import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Clock, Shield, Sword, Heart, Star, Share2, Check, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search, Zap, Target, Music, Hammer, FlaskConical, Hand, Cross, Skull, MessageSquare, Loader2, Menu } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Clock, Shield, Sword, Heart, Star, Share2, Check, Copy, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search, Zap, Target, Music, Hammer, FlaskConical, Hand, Cross, Skull, MessageSquare, Loader2, Menu } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import ConfirmModal from '../components/ConfirmModal';
@@ -946,10 +946,57 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     loadData();
   }, [loadData]);
 
-  const handleShare = (eventId: string) => {
-    const url = `${window.location.origin}/public/event/${eventId}`;
+  const [shareLinks, setShareLinks] = useState<Record<string, any[]>>({});
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [activeShareEventId, setActiveShareEventId] = useState<string | null>(null);
+
+  const handleShare = async (eventId: string) => {
+    setActiveShareEventId(eventId);
+    setIsShareModalOpen(true);
+    await loadShareLinks(eventId);
+  };
+
+  const loadShareLinks = async (eventId: string) => {
+    try {
+      const links = await fetchAPI(`/api/events/${eventId}/share-links`);
+      setShareLinks(prev => ({ ...prev, [eventId]: links }));
+    } catch (error) {
+      console.error('Failed to load share links:', error);
+    }
+  };
+
+  const generateShareLink = async (eventId: string) => {
+    try {
+      const newLink = await fetchAPI(`/api/events/${eventId}/share-links`, {
+        method: 'POST'
+      });
+      setShareLinks(prev => ({
+        ...prev,
+        [eventId]: [...(prev[eventId] || []), newLink]
+      }));
+    } catch (error: any) {
+      alert(error.message || 'Failed to generate share link');
+    }
+  };
+
+  const deleteShareLink = async (eventId: string, linkId: string) => {
+    try {
+      await fetchAPI(`/api/events/${eventId}/share-links/${linkId}`, {
+        method: 'DELETE'
+      });
+      setShareLinks(prev => ({
+        ...prev,
+        [eventId]: (prev[eventId] || []).filter(l => l.id !== linkId)
+      }));
+    } catch (error) {
+      console.error('Failed to delete share link:', error);
+    }
+  };
+
+  const copyShareLink = (token: string) => {
+    const url = `${window.location.origin}/public/event/link/${token}`;
     navigator.clipboard.writeText(url);
-    setCopiedId(eventId);
+    setCopiedId(token);
     setTimeout(() => setCopiedId(null), 2000);
   };
 
@@ -1962,6 +2009,86 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         message={confirmModal.message}
         variant={confirmModal.variant}
       />
+
+      {/* Share Modal */}
+      <AnimatePresence>
+        {isShareModalOpen && activeShareEventId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsShareModalOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500">
+                    <Share2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-white">Share Lineup</h2>
+                    <p className="text-xs text-zinc-500 uppercase font-bold tracking-widest">Manage Access Links</p>
+                  </div>
+                </div>
+                <button onClick={() => setIsShareModalOpen(false)} className="p-2 text-zinc-500 hover:text-white transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <p className="text-sm text-zinc-400">
+                    Active Links: <span className="text-white font-bold">{shareLinks[activeShareEventId]?.length || 0}/2</span>
+                  </p>
+                  <button
+                    onClick={() => generateShareLink(activeShareEventId)}
+                    disabled={shareLinks[activeShareEventId]?.length >= 2}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 text-white text-sm font-bold rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Generate New Link
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {shareLinks[activeShareEventId]?.length === 0 ? (
+                    <div className="text-center py-8 text-zinc-500 text-sm">
+                      No active share links. Generate one to share this lineup.
+                    </div>
+                  ) : (
+                    shareLinks[activeShareEventId]?.map(link => (
+                      <div key={link.id} className="flex items-center justify-between p-3 bg-zinc-800/50 border border-zinc-700/50 rounded-xl">
+                        <div className="flex-1 min-w-0 mr-4">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-mono text-zinc-300 truncate">
+                              {`${window.location.origin}/public/event/link/${link.token}`}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-zinc-500">
+                            Expires: {new Date(link.expiresAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => copyShareLink(link.token)}
+                            className="p-2 bg-zinc-700 hover:bg-zinc-600 text-white rounded-lg transition-colors"
+                            title="Copy Link"
+                          >
+                            {copiedId === link.token ? <Check className="w-4 h-4 text-green-400" /> : <Copy className="w-4 h-4" />}
+                          </button>
+                          <button
+                            onClick={() => deleteShareLink(activeShareEventId, link.id)}
+                            className="p-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-lg transition-colors"
+                            title="Delete Link"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Discord Share Modal */}
       <AnimatePresence>

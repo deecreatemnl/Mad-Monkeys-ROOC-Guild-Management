@@ -139,6 +139,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       env: {
         isVercel,
         hasSupabase: !!hasSupabase,
+        hasDatabaseUrl: !!process.env.DATABASE_URL,
         nodeEnv: process.env.NODE_ENV,
         hasDiscord: !!(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET && process.env.DISCORD_BOT_TOKEN)
       }
@@ -454,7 +455,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     res.json(events);
   }));
 
-  app.get("/api/events/:id", asyncHandler(async (req: any, res: any) => {
+  app.get("/api/events/:id", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const event = await db.getEventById(req.params.id);
     if (event) res.json(event);
     else res.status(404).json({ error: "Event not found" });
@@ -492,6 +493,72 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     await db.deleteEvent(req.params.id);
     if (emitUpdate) emitUpdate('events');
     res.json({ success: true });
+  }));
+
+  // Event Share Links
+  app.get("/api/events/:eventId/share-links", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    const links = await db.getEventShareLinks(req.params.eventId);
+    // Filter out expired links
+    const now = new Date();
+    const validLinks = links.filter((l: any) => new Date(l.expiresAt) > now);
+    
+    // Delete expired links
+    for (const link of links) {
+      if (new Date(link.expiresAt) <= now) {
+        await db.deleteEventShareLink(link.id);
+      }
+    }
+    
+    res.json(validLinks);
+  }));
+
+  app.post("/api/events/:eventId/share-links", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    const eventId = req.params.eventId;
+    const links = await db.getEventShareLinks(eventId);
+    const now = new Date();
+    const validLinks = links.filter((l: any) => new Date(l.expiresAt) > now);
+
+    if (validLinks.length >= 2) {
+      return res.status(400).json({ error: "Maximum of 2 active share links allowed per event." });
+    }
+
+    const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
+
+    const newLink = {
+      id: Date.now().toString(),
+      eventId,
+      token,
+      createdAt: now.toISOString(),
+      expiresAt: expiresAt.toISOString()
+    };
+
+    await db.saveEventShareLink(newLink);
+    res.json(newLink);
+  }));
+
+  app.delete("/api/events/:eventId/share-links/:linkId", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    await db.deleteEventShareLink(req.params.linkId);
+    res.json({ success: true });
+  }));
+
+  app.get("/api/public/events/by-token/:token", asyncHandler(async (req: any, res: any) => {
+    const link = await db.getEventShareLinkByToken(req.params.token);
+    if (!link) {
+      return res.status(404).json({ error: "Link not found or expired" });
+    }
+
+    if (new Date(link.expiresAt) <= new Date()) {
+      await db.deleteEventShareLink(link.id);
+      return res.status(404).json({ error: "Link expired" });
+    }
+
+    const event = await db.getEventById(link.eventId);
+    if (event) {
+      res.json(event);
+    } else {
+      res.status(404).json({ error: "Event not found" });
+    }
   }));
 
   app.post("/api/events/:eventId/absent", asyncHandler(async (req: any, res: any) => {
@@ -1278,55 +1345,6 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     res.json(updatedSettings);
   }));
 
-  // System Update API
-  app.get("/api/system/update-check", checkAdmin, asyncHandler(async (req: any, res: any) => {
-    const githubRepo = process.env.GITHUB_REPO;
-    const githubToken = process.env.GITHUB_TOKEN;
-    
-    if (!githubRepo) {
-      return res.status(400).json({ error: "GitHub repository not configured in environment variables." });
-    }
-
-    try {
-      // Fetch package.json from the main branch
-      const headers: any = {};
-      if (githubToken) {
-        headers['Authorization'] = `token ${githubToken}`;
-      }
-      
-      const response = await axios.get(`https://raw.githubusercontent.com/${githubRepo}/main/package.json`, { headers });
-      const latestVersion = response.data.version;
-      
-      // Get current version from local package.json
-      const localPackageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8'));
-      const currentVersion = localPackageJson.version;
-
-      res.json({
-        currentVersion,
-        latestVersion,
-        hasUpdate: currentVersion !== latestVersion
-      });
-    } catch (err: any) {
-      console.error("Failed to check for updates:", err.message);
-      res.status(500).json({ error: "Failed to check for updates. Ensure the repository is accessible and the token is valid." });
-    }
-  }));
-
-  app.post("/api/system/install-update", checkAdmin, asyncHandler(async (req: any, res: any) => {
-    const settings = await db.getSettings();
-    if (!settings.vercelDeployHookUrl) {
-      return res.status(400).json({ error: "Vercel Deploy Hook URL not configured." });
-    }
-
-    try {
-      await axios.post(settings.vercelDeployHookUrl);
-      res.json({ success: true });
-    } catch (err: any) {
-      console.error("Failed to trigger Vercel deploy hook:", err.message);
-      res.status(500).json({ error: "Failed to trigger update." });
-    }
-  }));
-
   // Discord OAuth API
   app.get("/api/auth/discord/url", (req: any, res: any) => {
     const { origin } = req.query;
@@ -1567,6 +1585,11 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
   }));
 
   app.post("/api/auth/signup", asyncHandler(async (req: any, res: any) => {
+    const settings = await db.getSettings();
+    if (settings.disableSignups) {
+      return res.status(403).json({ error: "Sign-ups are currently disabled by the administrator." });
+    }
+
     const { username, password, ign, uid } = req.body;
     const userId = username.trim().toLowerCase();
     const existingUser = await db.getUserById(userId);

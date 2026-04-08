@@ -257,6 +257,8 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
             discordGuildId: data.discordGuildId || '',
             discordAnnouncementsChannelId: data.discordAnnouncementsChannelId || '',
             discordAbsenceChannelId: data.discordAbsenceChannelId || '',
+            disableSignups: data.disableSignups || false,
+            githubRepo: data.githubRepo || '',
           };
           setSettings(newSettings);
           
@@ -382,10 +384,10 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
     { id: 'identity', label: 'Identity', icon: Type },
     { id: 'visuals', label: 'Visuals', icon: ImageIcon },
     { id: 'localization', label: 'Localization', icon: Globe },
+    { id: 'users', label: 'User Settings', icon: Users },
     { id: 'raffle', label: 'Raffle Settings', icon: Trophy },
     { id: 'events', label: 'Event Settings', icon: Calendar },
     { id: 'discord', label: 'Discord Integration', icon: MessageSquare },
-    { id: 'system', label: 'Deployment Management', icon: RefreshCw },
   ];
 
   return (
@@ -456,6 +458,42 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                         className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
                         placeholder="e.g. Guild Management System"
                       />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'users' && (
+                <div className="space-y-6">
+                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Users className="w-5 h-5 text-orange-500" />
+                    User Settings
+                  </h2>
+
+                  <div className="space-y-4">
+                    <div className="p-4 bg-zinc-800/50 border border-zinc-700/50 rounded-2xl">
+                      <label className="flex items-center justify-between cursor-pointer group">
+                        <div>
+                          <span className="block text-sm font-bold text-white mb-1">Disable New Sign-ups</span>
+                          <span className="block text-xs text-zinc-500">Prevent new users from registering accounts on the login page.</span>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="checkbox"
+                            className="sr-only"
+                            checked={settings.disableSignups || false}
+                            onChange={(e) => setSettings({ ...settings, disableSignups: e.target.checked })}
+                          />
+                          <div className={cn(
+                            "block w-14 h-8 rounded-full transition-colors",
+                            settings.disableSignups ? "bg-orange-500" : "bg-zinc-700"
+                          )}></div>
+                          <div className={cn(
+                            "absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform",
+                            settings.disableSignups ? "transform translate-x-6" : ""
+                          )}></div>
+                        </div>
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -798,74 +836,6 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                         )}
                       </div>
                     )}
-                  </div>
-                </div>
-              )}
-
-              {activeTab === 'system' && (
-                <div className="space-y-6">
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <RefreshCw className="w-5 h-5 text-orange-500" />
-                    Deployment Management
-                  </h2>
-
-                  <div className="space-y-6">
-                    <div className="grid grid-cols-1 gap-6">
-                      <div>
-                        <label className="block text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">Vercel Deploy Hook URL</label>
-                        <input
-                          type="password"
-                          value={settings.vercelDeployHookUrl || ''}
-                          onChange={(e) => setSettings({ ...settings, vercelDeployHookUrl: e.target.value })}
-                          className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-3 px-4 text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all"
-                          placeholder="https://api.vercel.com/v1/integrations/deploy/..."
-                        />
-                        <p className="mt-2 text-[10px] text-zinc-500 italic">Used to trigger a manual redeploy to sync with the latest code.</p>
-                      </div>
-                    </div>
-
-                    <div className="pt-6 border-t border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-6">
-                      <div>
-                        <h3 className="text-sm font-bold text-white mb-1">Deployment Sync</h3>
-                        {updateInfo ? (
-                          <div className="text-xs text-zinc-400 space-y-1">
-                            <p>Current Version: <span className="text-white font-mono">{updateInfo.currentVersion}</span></p>
-                            <p>Latest Version: <span className="text-white font-mono">{updateInfo.latestVersion}</span></p>
-                            {updateInfo.hasUpdate ? (
-                              <p className="text-green-500 font-bold mt-2">✨ A newer version is available on GitHub!</p>
-                            ) : (
-                              <p className="text-zinc-500 mt-2">Your deployment is up to date with GitHub.</p>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-zinc-500">Check if your deployment is in sync with the latest GitHub version.</p>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center gap-3">
-                        <button
-                          type="button"
-                          onClick={checkForUpdates}
-                          disabled={checkingUpdate}
-                          className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white font-bold py-2.5 px-5 rounded-xl transition-all active:scale-95 border border-zinc-700"
-                        >
-                          {checkingUpdate ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                          Check Sync Status
-                        </button>
-                        
-                        {updateInfo?.hasUpdate && (
-                          <button
-                            type="button"
-                            onClick={handleInstallUpdate}
-                            disabled={installingUpdate || !settings.vercelDeployHookUrl}
-                            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white font-bold py-2.5 px-5 rounded-xl transition-all active:scale-95 shadow-lg shadow-green-600/20"
-                          >
-                            {installingUpdate ? <Loader2 className="w-4 h-4 animate-spin" /> : <CloudDownload className="w-4 h-4" />}
-                            Trigger Redeploy
-                          </button>
-                        )}
-                      </div>
-                    </div>
                   </div>
                 </div>
               )}
