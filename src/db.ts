@@ -93,7 +93,6 @@ export const initialDb: any = {
       timezone: 'Asia/Singapore',
       logoUrl: '',
       maxPartySize: 12,
-      discordChannelId: '',
       discordGuildId: '',
       discordAnnouncementsChannelId: '',
       discordAbsenceChannelId: '',

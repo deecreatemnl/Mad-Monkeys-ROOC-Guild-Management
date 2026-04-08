@@ -183,18 +183,6 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
     }
   };
 
-  const handleDiscordConnect = async () => {
-    try {
-      // Use absolute URL to avoid issues on some platforms
-      const baseUrl = window.location.origin;
-      const { url } = await fetchAPI(`/api/auth/discord/url?origin=${encodeURIComponent(baseUrl)}`);
-      window.open(url, 'discord_oauth', 'width=500,height=800');
-    } catch (err) {
-      console.error('Discord connect error:', err);
-      alert('Failed to start Discord connection. Check your console for details.');
-    }
-  };
-
   const handleDisconnect = async () => {
     if (!showDisconnectConfirm) {
       setShowDisconnectConfirm(true);
