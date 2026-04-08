@@ -971,7 +971,14 @@ export class SupabaseDatabase implements Database {
     try {
       const { data, error } = await this.supabase.from('settings').select('*').eq('id', 'guild_settings').single();
       if (error) {
-        if (error.code !== 'PGRST116' && !error.message.includes("Could not find the table")) {
+        if (error.code === 'PGRST116') {
+          // Record not found, initialize it
+          const initialState = initialDb.settings.guild_settings;
+          await this.saveSettings(initialState);
+          return initialState;
+        }
+        
+        if (!error.message.includes("Could not find the table")) {
           console.error("Supabase Get Settings Error:", error.message);
         }
         return initialDb.settings.guild_settings;
@@ -1029,13 +1036,18 @@ export class SupabaseDatabase implements Database {
 
   async getRaffle() {
     try {
-      console.log('[Supabase] Fetching raffle data...');
       const { data, error } = await this.supabase.from('raffle').select('*').eq('id', 'main').single();
       if (error) {
-        if (error.code !== 'PGRST116' && !error.message.includes("Could not find the table")) {
-          console.error("Supabase Get Raffle Error:", error.message, error.details, error.hint);
+        if (error.code === 'PGRST116') {
+          // Record not found, initialize it
+          const initialState = JSON.parse(JSON.stringify(initialDb.raffle));
+          await this.saveRaffle(initialState);
+          return initialState;
         }
-        console.log('[Supabase] Raffle not found or error, returning initial state');
+        
+        if (!error.message.includes("Could not find the table")) {
+          console.error("Supabase Get Raffle Error:", error.message);
+        }
         return JSON.parse(JSON.stringify(initialDb.raffle));
       }
       

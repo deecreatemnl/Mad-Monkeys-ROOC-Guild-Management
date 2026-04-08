@@ -13,6 +13,9 @@ export async function fetchAPI(path: string, options: RequestInit = {}) {
   console.log(`[fetchAPI] Path: ${path}, Role: ${user.role}`);
   const headers = {
     'Content-Type': 'application/json',
+    'Cache-Control': 'no-cache, no-store, must-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...(user.role ? { 'user-role': user.role } : {}),
     ...(user.id ? { 'user-id': user.id } : {}),

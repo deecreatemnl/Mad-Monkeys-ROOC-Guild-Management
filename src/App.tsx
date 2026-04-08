@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { fetchAPI } from './lib/api';
-import { Users, Calendar, MessageSquare, LogIn, LogOut, Menu, X, Shield, Briefcase, Mail, Lock, UserPlus as UserPlusIcon, Settings, BarChart3, Trophy } from 'lucide-react';
+import { Users, Calendar, MessageSquare, LogIn, LogOut, Menu, X, Shield, Briefcase, Mail, Lock, UserPlus as UserPlusIcon, Settings, BarChart3, Trophy, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from './lib/utils';
 import { UserProfile, GuildSettings } from './types';
@@ -18,6 +18,7 @@ const RafflePage = lazy(() => import('./pages/RafflePage'));
 const PublicEventPage = lazy(() => import('./pages/PublicEventPage'));
 const AccountPage = lazy(() => import('./pages/AccountPage'));
 const SetupWizard = lazy(() => import('./pages/SetupWizard'));
+const OnLeavePage = lazy(() => import('./pages/OnLeavePage'));
 
 // Loading component
 const PageLoader = () => (
@@ -160,7 +161,7 @@ export default function App() {
 
   const loadSettings = async () => {
     try {
-      const data = await fetchAPI('/api/settings');
+      const data = await fetchAPI(`/api/settings?t=${Date.now()}`);
       setGuildSettings(data);
     } catch (err) {
       console.error('Failed to load settings:', err);
@@ -350,13 +351,17 @@ export default function App() {
                         <Users className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
                         <span className="font-medium">Guild Members</span>
                       </Link>
+                      <Link to="/on-leave" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
+                        <Clock className="w-5 h-5 group-hover:text-yellow-500 transition-colors" />
+                        <span className="font-medium">On Leave</span>
+                      </Link>
                       <Link to="/events" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
                         <Calendar className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
                         <span className="font-medium">Guild Events</span>
                       </Link>
                       <Link to="/raffle" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
                         <Trophy className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
-                        <span className="font-medium">Card Raffle</span>
+                        <span className="font-medium">Guild Raffle</span>
                       </Link>
                       <Link to="/statistics" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
                         <BarChart3 className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
@@ -412,6 +417,7 @@ export default function App() {
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
                     <Route path="/" element={<MembersPage isAdmin={isAdmin} />} />
+                    <Route path="/on-leave" element={<OnLeavePage />} />
                     <Route path="/dashboard" element={<DashboardPage />} />
                     <Route path="/events" element={<EventsPage isAdmin={isAdmin} />} />
                     <Route path="/jobs" element={isAdmin ? <JobsPage isAdmin={isAdmin} /> : <Navigate to="/" replace />} />

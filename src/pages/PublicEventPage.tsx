@@ -110,7 +110,10 @@ export default function PublicEventPage() {
           newParties[subEvent.id!] = partiesData;
           
           for (const party of partiesData) {
-            const assignmentsData = [...(party.assignments || [])];
+            const assignmentsData = [...(party.assignments || [])].filter(a => {
+              const member = membersData.find((m: any) => m.id === a.memberId);
+              return !member || member.status !== 'on-leave';
+            });
             assignmentsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
             newAssignments[party.id!] = assignmentsData;
           }
@@ -305,7 +308,7 @@ export default function PublicEventPage() {
             >
               <h4 className="text-xs font-bold text-blue-500 uppercase tracking-widest mb-4 flex items-center gap-2">
                 <Shield className="w-3 h-3" />
-                Leave of Absence
+                Leave Request
               </h4>
               <p className="text-sm text-zinc-400 mb-4">
                 If you cannot attend this event or will be away, please select your name and provide details.

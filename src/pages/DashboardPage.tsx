@@ -122,20 +122,18 @@ export default function DashboardPage() {
         ]);
 
         const membersList = Object.values(membersRes || {}) as any[];
+        const activeMembers = membersList.filter((m: any) => !m.status || m.status === 'active' || m.status === 'busy');
 
-        // Process Raffle Winners (Weekly winners from history + current)
+        // Process Raffle Winners
         let recentWinners: any[] = [];
-        if (raffleRes) {
-          if (raffleRes.history) {
-            recentWinners = raffleRes.history.flatMap((h: any) => 
-              (h.winners || []).map((w: any) => ({ ...w, week: h.week }))
-            );
-          }
-          if (raffleRes.winners && raffleRes.winners.length > 0) {
-             recentWinners = [...recentWinners, ...raffleRes.winners.map((w: any) => ({ ...w, week: raffleRes.currentWeek }))];
-          }
-          // Sort by week descending
-          recentWinners.sort((a, b) => b.week - a.week);
+        if (raffleRes && raffleRes.winners) {
+          recentWinners = [...raffleRes.winners];
+          // Sort by year, month, week descending
+          recentWinners.sort((a, b) => {
+            if (b.year !== a.year) return b.year - a.year;
+            if (b.month !== a.month) return b.month - a.month;
+            return b.week - a.week;
+          });
         }
 
         // Process Member Logs
@@ -145,10 +143,10 @@ export default function DashboardPage() {
         });
 
         // Process Members on Leave
-        const membersOnLeave = membersList.filter((m: any) => m.status === 'leave');
+        const membersOnLeave = membersList.filter((m: any) => m.status === 'on-leave');
 
         setStats({
-          totalMembers: membersList.length,
+          totalMembers: activeMembers.length,
           activeEvents: (eventsRes || []).length,
           activeJobs: (jobsRes || []).length,
           recentWinners,

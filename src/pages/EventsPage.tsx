@@ -910,7 +910,10 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           newParties[subEvent.id!] = partiesData;
           
           for (const party of partiesData) {
-            const assignmentsData = [...(party.assignments || [])];
+            const assignmentsData = [...(party.assignments || [])].filter(a => {
+              const member = membersData.find((m: any) => m.id === a.memberId);
+              return !member || member.status !== 'on-leave';
+            });
             assignmentsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
             newAssignments[party.id!] = assignmentsData;
           }

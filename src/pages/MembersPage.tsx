@@ -478,6 +478,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
             >
               <option value="All">All Status</option>
               <option value="active">Active</option>
+              <option value="on-leave">On Leave</option>
               <option value="busy">Busy</option>
               <option value="inactive">Inactive</option>
               <option value="left">Left Guild</option>
@@ -759,6 +760,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                     >
                       <option value="active">Active</option>
                       <option value="busy">Busy</option>
+                      <option value="on-leave">On Leave</option>
                       <option value="inactive">Inactive</option>
                       <option value="left">Left Guild</option>
                     </select>

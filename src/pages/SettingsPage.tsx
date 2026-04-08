@@ -237,8 +237,8 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
     const loadSettings = async () => {
       try {
         const [data, health] = await Promise.all([
-          fetchAPI('/api/settings/guild_settings'),
-          fetchAPI('/api/health')
+          fetchAPI(`/api/settings/guild_settings?t=${Date.now()}`),
+          fetchAPI(`/api/health?t=${Date.now()}`)
         ]);
         
         if (health && health.env) {
@@ -313,10 +313,13 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
     setSaving(true);
     setSaveSuccess(false);
     try {
-      await fetchAPI('/api/settings/guild_settings', {
+      const updated = await fetchAPI('/api/settings/guild_settings', {
         method: 'POST',
         body: JSON.stringify(settings)
       });
+      if (updated) {
+        setSettings(prev => ({ ...prev, ...updated }));
+      }
       setSaveSuccess(true);
       if (onUpdateSettings) onUpdateSettings();
       setTimeout(() => setSaveSuccess(false), 3000);

@@ -5,7 +5,7 @@ export interface Member {
   role?: string;
   dateJoined: string;
   uid?: string;
-  status?: 'active' | 'inactive' | 'busy' | 'left';
+  status?: 'active' | 'inactive' | 'busy' | 'left' | 'on-leave';
 }
 
 export interface MemberLog {

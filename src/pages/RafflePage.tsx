@@ -49,8 +49,10 @@ export default function RafflePage() {
   const [isRestrictedModalOpen, setIsRestrictedModalOpen] = useState(false);
   const [restrictedMemberIds, setRestrictedMemberIds] = useState<string[]>([]);
   const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [overrideWinnerId, setOverrideWinnerId] = useState<string | null>(null);
   const [overrideMemberId, setOverrideMemberId] = useState('');
+  const [tempSettings, setTempSettings] = useState({ week: 1, month: 1, year: 2026 });
 
   const [raffleWinnersCount, setRaffleWinnersCount] = useState(2);
 
@@ -74,6 +76,12 @@ export default function RafflePage() {
       if (raffleData.settings.header) {
         setHeaderSettings(prev => ({ ...prev, ...raffleData.settings.header }));
       }
+
+      setTempSettings({
+        week: raffleData.settings.currentWeek,
+        month: raffleData.settings.currentMonth,
+        year: raffleData.settings.currentYear
+      });
       
       // Check if current user is admin
       const storedUser = localStorage.getItem('user');
@@ -281,6 +289,25 @@ export default function RafflePage() {
     }
   };
 
+  const handleUpdateRaffleSettings = async () => {
+    try {
+      await fetchAPI('/api/raffle/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          currentWeek: Number(tempSettings.week),
+          currentMonth: Number(tempSettings.month),
+          currentYear: Number(tempSettings.year)
+        })
+      });
+      setIsSettingsModalOpen(false);
+      await loadData();
+      alert('Raffle settings updated and synced!');
+    } catch (err: any) {
+      console.error('Failed to update raffle settings:', err);
+      alert('Failed to update raffle settings: ' + err.message);
+    }
+  };
+
   const toggleRestriction = (memberId: string) => {
     setRestrictedMemberIds(prev => 
       prev.includes(memberId) 
@@ -413,7 +440,18 @@ export default function RafflePage() {
             <Trophy className="w-5 h-5 text-orange-500" />
             <span className="font-black italic tracking-tighter">GUILD RAFFLE</span>
           </div>
-          <div className="w-24" /> {/* Spacer */}
+          <div className="flex items-center gap-2">
+            {isAdmin && (
+              <button
+                onClick={() => setIsSettingsModalOpen(true)}
+                className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-colors text-zinc-400 hover:text-white"
+                title="Raffle Settings"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
+            )}
+            <div className="w-10" /> {/* Spacer */}
+          </div>
         </div>
       </div>
 
@@ -1021,6 +1059,88 @@ export default function RafflePage() {
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Raffle Settings Modal */}
+      <AnimatePresence>
+        {isSettingsModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsSettingsModalOpen(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden shadow-2xl"
+            >
+              <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
+                <h2 className="text-xl font-bold">Raffle Settings</h2>
+                <button onClick={() => setIsSettingsModalOpen(false)} className="p-2 hover:bg-zinc-800 rounded-full transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-4">
+                <p className="text-zinc-400 text-sm">Override the current week, month, and year for the raffle.</p>
+                
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Week</label>
+                    <select
+                      value={tempSettings.week}
+                      onChange={(e) => setTempSettings({ ...tempSettings, week: Number(e.target.value) })}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                    >
+                      {[1, 2, 3, 4, 5].map(w => <option key={w} value={w}>Week {w}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Month</label>
+                    <select
+                      value={tempSettings.month}
+                      onChange={(e) => setTempSettings({ ...tempSettings, month: Number(e.target.value) })}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                    >
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+                        <option key={m} value={m}>{new Date(2026, m - 1).toLocaleString('default', { month: 'short' })}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Year</label>
+                    <select
+                      value={tempSettings.year}
+                      onChange={(e) => setTempSettings({ ...tempSettings, year: Number(e.target.value) })}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-3 text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                    >
+                      {[2025, 2026, 2027, 2028].map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="pt-4 flex justify-end gap-3">
+                  <button
+                    onClick={() => setIsSettingsModalOpen(false)}
+                    className="px-6 py-2 rounded-xl text-sm font-bold text-zinc-400 hover:text-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUpdateRaffleSettings}
+                    className="px-6 py-2 rounded-xl text-sm font-bold bg-orange-500 hover:bg-orange-600 text-white transition-all shadow-lg shadow-orange-500/20"
+                  >
+                    Sync Settings
+                  </button>
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

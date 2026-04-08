@@ -230,7 +230,72 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
   // Members API
   app.get("/api/members", asyncHandler(async (req: any, res: any) => {
     const members = await db.getMembers();
-    res.json(members);
+    const events = await db.getEvents();
+    const now = new Date();
+    
+    // Helper to parse "Thu, Apr 9" format
+    const parseAbsenceDate = (dateStr: string) => {
+      const currentYear = new Date().getFullYear();
+      return new Date(`${dateStr}, ${currentYear}`);
+    };
+
+    let hasChanges = false;
+    const updatedMembers = await Promise.all(members.map(async (member: any) => {
+      if (member.status === 'on-leave') {
+        const memberAbsences: any[] = [];
+        events.forEach((event: any) => {
+          if (event.absences) {
+            const absence = event.absences.find((a: any) => a.memberId === member.id);
+            if (absence) {
+              memberAbsences.push({ ...absence, eventName: event.name });
+            }
+          }
+        });
+
+        if (memberAbsences.length > 0) {
+          let latestDate: Date | null = null;
+          let latestAbsence: any = null;
+          
+          memberAbsences.forEach(absence => {
+            if (absence.dates && absence.dates.length > 0) {
+              absence.dates.forEach((dStr: string) => {
+                const d = parseAbsenceDate(dStr);
+                if (!latestDate || d > latestDate) {
+                  latestDate = d;
+                  latestAbsence = absence;
+                }
+              });
+            }
+          });
+
+          if (latestDate) {
+            const returnDate = new Date(latestDate);
+            returnDate.setDate(returnDate.getDate() + 1);
+            
+            if (now > returnDate) {
+              member.status = 'active';
+              await db.saveMember(member);
+              await db.saveMemberLog({
+                memberId: member.id,
+                type: 'status_change',
+                oldValue: 'on-leave',
+                newValue: 'active',
+                timestamp: new Date().toISOString(),
+                details: 'Automatically marked active as leave period ended.'
+              });
+              hasChanges = true;
+            } else {
+              member.returnDate = returnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              member.absentEvent = latestAbsence.eventName;
+            }
+          }
+        }
+      }
+      return member;
+    }));
+
+    if (hasChanges && emitUpdate) emitUpdate('members');
+    res.json(updatedMembers);
   }));
 
   app.get("/api/logs", asyncHandler(async (req: any, res: any) => {
@@ -612,7 +677,23 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
 
     await db.saveEvent(updatedEvent);
 
-    // Get settings for timezone
+    // Update member status to 'on-leave'
+    await db.saveMember({ ...member, status: 'on-leave' });
+    
+    // Log the status change
+    await db.saveMemberLog({
+      memberId: member.id,
+      type: 'status_change',
+      oldValue: member.status || 'active',
+      newValue: 'on-leave',
+      timestamp: new Date().toISOString(),
+      details: `Status automatically changed to on-leave due to absence report for ${event.name}`
+    });
+
+    if (emitUpdate) {
+      emitUpdate('events');
+      emitUpdate('members');
+    }
     const settings = await db.getSettings();
     let timezone = settings.timezone || 'UTC';
     
@@ -949,6 +1030,14 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
   app.get("/api/settings/guild_settings", asyncHandler(async (req: any, res: any) => {
     const settings = await db.getSettings();
     res.json(settings);
+  }));
+
+  app.post("/api/raffle/settings", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    const raffle = await db.getRaffle();
+    raffle.settings = { ...raffle.settings, ...req.body };
+    await db.saveRaffle(raffle);
+    if (emitUpdate) emitUpdate('raffle');
+    res.json(raffle.settings);
   }));
 
   // Raffle API
