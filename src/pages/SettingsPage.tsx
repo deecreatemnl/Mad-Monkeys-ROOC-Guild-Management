@@ -33,9 +33,11 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
   const [isDiscordConfigured, setIsDiscordConfigured] = useState(true);
   const [guilds, setGuilds] = useState<any[]>([]);
   const [channels, setChannels] = useState<any[]>([]);
+  const [discordRoles, setDiscordRoles] = useState<any[]>([]);
   const [selectedGuildId, setSelectedGuildId] = useState('');
   const [fetchingGuilds, setFetchingGuilds] = useState(false);
   const [fetchingChannels, setFetchingChannels] = useState(false);
+  const [fetchingRoles, setFetchingRoles] = useState(false);
   const [channelError, setChannelError] = useState<string | null>(null);
   const [updateInfo, setUpdateInfo] = useState<{ currentVersion: string, latestVersion: string, hasUpdate: boolean } | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
@@ -53,6 +55,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
         const newSettings = { ...settings, discordGuildId: guildId };
         setSettings(newSettings);
         fetchChannels(guildId, newSettings);
+        fetchDiscordRoles(guildId);
       }
     };
 
@@ -174,6 +177,22 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
     }
   };
 
+  const fetchDiscordRoles = async (guildId: string) => {
+    setFetchingRoles(true);
+    try {
+      const data = await fetchAPI(`/api/discord/roles/${guildId}`);
+      // Filter out @everyone and sort by position
+      const sortedRoles = data
+        .filter((r: any) => r.name !== '@everyone')
+        .sort((a: any, b: any) => b.position - a.position);
+      setDiscordRoles(sortedRoles);
+    } catch (err) {
+      console.error('Failed to fetch Discord roles:', err);
+    } finally {
+      setFetchingRoles(false);
+    }
+  };
+
   const handleInviteBot = async () => {
     try {
       const { url } = await fetchAPI('/api/auth/discord/invite');
@@ -245,6 +264,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
             discordGuildId: data.discordGuildId || '',
             discordAnnouncementsChannelId: data.discordAnnouncementsChannelId || '',
             discordAbsenceChannelId: data.discordAbsenceChannelId || '',
+            discordDefaultRoleToTag: data.discordDefaultRoleToTag || '',
             disableSignups: data.disableSignups || false,
             githubRepo: data.githubRepo || '',
           };
@@ -257,6 +277,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
               setSelectedGuildId(newSettings.discordGuildId);
               fetchGuildInfo(newSettings.discordGuildId);
               fetchChannels(newSettings.discordGuildId, newSettings);
+              fetchDiscordRoles(newSettings.discordGuildId);
             }
           }
         }
@@ -782,6 +803,7 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                                   const newSettings = { ...settings, discordGuildId: guildId };
                                   setSettings(newSettings);
                                   fetchChannels(guildId, newSettings);
+                                  fetchDiscordRoles(guildId);
                                 }}
                                 className="w-full bg-zinc-800 border border-zinc-700 rounded-lg py-2 px-3 text-xs text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all appearance-none"
                               >
@@ -826,6 +848,28 @@ export default function SettingsPage({ onUpdateSettings }: { onUpdateSettings?: 
                                         <option key={c.id} value={c.id}># {c.name}</option>
                                       ))}
                                     </select>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-1.5">Default Role to Tag</label>
+                                    {fetchingRoles ? (
+                                      <div className="flex items-center gap-2 text-zinc-500 text-[10px]">
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                        Fetching roles...
+                                      </div>
+                                    ) : (
+                                      <select
+                                        value={settings.discordDefaultRoleToTag}
+                                        onChange={(e) => setSettings({ ...settings, discordDefaultRoleToTag: e.target.value })}
+                                        className="w-full bg-zinc-800 border border-zinc-700 rounded-lg py-2 px-3 text-xs text-white focus:ring-2 focus:ring-orange-500/50 outline-none transition-all appearance-none"
+                                      >
+                                        <option value="">@everyone (Default)</option>
+                                        {discordRoles.map(r => (
+                                          <option key={r.id} value={r.id}>@ {r.name}</option>
+                                        ))}
+                                      </select>
+                                    )}
+                                    <p className="mt-1 text-[9px] text-zinc-500">This role will be tagged when sharing lineup links to Discord.</p>
                                   </div>
                                 </div>
                               ) : (

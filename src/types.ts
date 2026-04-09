@@ -146,6 +146,7 @@ export interface GuildSettings {
   discordGuildId?: string;
   discordAnnouncementsChannelId?: string;
   discordAbsenceChannelId?: string;
+  discordDefaultRoleToTag?: string;
   githubRepo?: string;
   disableSignups?: boolean;
   raffleWinners?: number;

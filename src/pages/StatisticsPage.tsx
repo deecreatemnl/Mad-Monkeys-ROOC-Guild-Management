@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { fetchAPI } from '../lib/api';
 import { Member, Job } from '../types';
 import { 
@@ -41,12 +41,12 @@ export default function StatisticsPage({ isAdmin = false }: StatisticsPageProps)
     loadData();
   }, []);
 
-  const jobStats = jobs.map(job => ({
+  const jobStats = useMemo(() => jobs.map(job => ({
     name: job.name,
     count: members.filter(m => m.job === job.name).length
-  })).sort((a, b) => b.count - a.count);
+  })).sort((a, b) => b.count - a.count), [jobs, members]);
 
-  const pieData = jobStats.filter(s => s.count > 0);
+  const pieData = useMemo(() => jobStats.filter(s => s.count > 0), [jobStats]);
   const totalMembers = members.length;
 
   const handleJobClick = (jobName: string) => {
@@ -54,7 +54,7 @@ export default function StatisticsPage({ isAdmin = false }: StatisticsPageProps)
     setShowModal(true);
   };
 
-  const selectedJobMembers = members.filter(m => m.job === selectedJobName);
+  const selectedJobMembers = useMemo(() => members.filter(m => m.job === selectedJobName), [members, selectedJobName]);
 
   if (loading) {
     return (

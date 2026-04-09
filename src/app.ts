@@ -239,6 +239,34 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
   }));
 
   // Members API
+  app.get("/api/dashboard/summary", asyncHandler(async (req: any, res: any) => {
+    const [members, events, raffle, logs, jobs] = await Promise.all([
+      db.getMembers(),
+      db.getEvents(),
+      db.getRaffle(),
+      db.getAllMemberLogs(),
+      db.getJobs()
+    ]);
+
+    const activeMembers = members.filter((m: any) => m.status !== 'left');
+    const membersOnLeave = members.filter((m: any) => m.status === 'on-leave');
+    
+    // Only return the last 20 logs to keep the response small
+    const recentLogs = [...logs].sort((a: any, b: any) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    ).slice(0, 20);
+
+    res.json({
+      totalMembers: activeMembers.length,
+      activeEvents: events.length,
+      activeJobs: jobs.length,
+      recentWinners: raffle.winners || [],
+      memberLogs: recentLogs,
+      membersOnLeave: membersOnLeave,
+      members: members // Still need full members for some dashboard processing if needed, but summarized is better
+    });
+  }));
+
   app.get("/api/members", asyncHandler(async (req: any, res: any) => {
     const members = await db.getMembers();
     const events = await db.getEvents();
@@ -785,16 +813,49 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
   }));
 
   app.post("/api/events/:eventId/share-discord", asyncHandler(async (req: any, res: any) => {
-    const { message } = req.body;
+    let { message } = req.body;
     const eventId = req.params.eventId;
     const event = await db.getEventById(eventId);
     if (!event) return res.status(404).json({ error: "Event not found" });
+
+    if (message && message.includes('[LINEUP_LINK]')) {
+      // Get or create a share link
+      const links = await db.getEventShareLinks(eventId);
+      let link;
+      if (links.length > 0) {
+        link = links[0];
+      } else {
+        // Create a new link that expires in 7 days
+        const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        link = {
+          id: Date.now().toString(),
+          eventId,
+          token,
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+        };
+        await db.saveEventShareLink(link);
+      }
+      
+      const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+      const host = req.headers.host;
+      const shareUrl = `${protocol}://${host}/public/event/link/${link.token}`;
+      message = message.replace('[LINEUP_LINK]', shareUrl);
+    }
+
+    if (message && message.includes('[ROLE_TAG]')) {
+      const settings = await db.getSettings();
+      const tag = settings.discordDefaultRoleToTag 
+        ? `<@&${settings.discordDefaultRoleToTag}>` 
+        : '@everyone';
+      message = message.replace('[ROLE_TAG]', tag);
+    }
 
     if (message) {
       await sendDiscordMessage(message, 'announcements');
     }
 
-    res.json({ success: true });
+    res.json({ success: true, finalMessage: message });
   }));
 
   // SubEvents API
@@ -1739,6 +1800,22 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       const errorMsg = err.response?.data?.message || err.message;
       console.error(`Discord API Error at /api/discord/channels/${req.params.guildId}:`, errorMsg);
       res.status(500).json({ error: `Failed to fetch channels: ${errorMsg}. Is the bot in this server?` });
+    }
+  }));
+
+  app.get("/api/discord/roles/:guildId", asyncHandler(async (req: any, res: any) => {
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) return res.status(500).json({ error: "Bot token not configured" });
+
+    try {
+      const response = await axios.get(`https://discord.com/api/v10/guilds/${req.params.guildId}/roles`, {
+        headers: { Authorization: `Bot ${botToken}` }
+      });
+      res.json(response.data);
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.message || err.message;
+      console.error(`Discord API Error at /api/discord/roles/${req.params.guildId}:`, errorMsg);
+      res.status(500).json({ error: `Failed to fetch roles: ${errorMsg}` });
     }
   }));
 

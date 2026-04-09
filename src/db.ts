@@ -96,6 +96,7 @@ export const initialDb: any = {
       discordGuildId: '',
       discordAnnouncementsChannelId: '',
       discordAbsenceChannelId: '',
+      discordDefaultRoleToTag: '',
       discordWebhookUrl: '',
       disableSignups: false,
       raffleWinners: 2,
@@ -473,6 +474,26 @@ export class FileDatabase implements Database {
 
 export class SupabaseDatabase implements Database {
   private supabase;
+  private cache: Record<string, { data: any, timestamp: number }> = {};
+  private CACHE_TTL = 5000; // 5 seconds cache
+
+  private async getCached(key: string, fetcher: () => Promise<any>) {
+    const now = Date.now();
+    if (this.cache[key] && (now - this.cache[key].timestamp < this.CACHE_TTL)) {
+      return this.cache[key].data;
+    }
+    const data = await fetcher();
+    this.cache[key] = { data, timestamp: now };
+    return data;
+  }
+
+  private clearCache(key?: string) {
+    if (key) {
+      delete this.cache[key];
+    } else {
+      this.cache = {};
+    }
+  }
 
   constructor() {
     const url = process.env.SUPABASE_URL;
@@ -556,36 +577,39 @@ export class SupabaseDatabase implements Database {
   }
 
   async getUsers() {
-    try {
-      const { data, error } = await this.supabase.from('users').select('*');
-      if (error) {
-        if (!error.message.includes("Could not find the table")) {
-          console.error("Supabase Get Users Error:", error.message, error.code);
+    return this.getCached('users', async () => {
+      try {
+        const { data, error } = await this.supabase.from('users').select('*');
+        if (error) {
+          if (!error.message.includes("Could not find the table")) {
+            console.error("Supabase Get Users Error:", error.message, error.code);
+          }
+          return initialDb.users;
         }
+        const usersObj: any = {};
+        data?.forEach(u => {
+          usersObj[u.id] = {
+            id: u.id,
+            username: u.username,
+            displayName: u.display_name,
+            ign: u.ign,
+            uid: u.uid,
+            isApproved: u.is_approved,
+            role: u.role,
+            createdAt: u.created_at,
+            password: u.password_hash // Map hash to password field for app compatibility
+          };
+        });
+        return usersObj;
+      } catch (e: any) {
+        console.error("Supabase Exception in getUsers():", e.message);
         return initialDb.users;
       }
-      const usersObj: any = {};
-      data?.forEach(u => {
-        usersObj[u.id] = {
-          id: u.id,
-          username: u.username,
-          displayName: u.display_name,
-          ign: u.ign,
-          uid: u.uid,
-          isApproved: u.is_approved,
-          role: u.role,
-          createdAt: u.created_at,
-          password: u.password_hash // Map hash to password field for app compatibility
-        };
-      });
-      return usersObj;
-    } catch (e: any) {
-      console.error("Supabase Exception in getUsers():", e.message);
-      return initialDb.users;
-    }
+    });
   }
 
   async saveUser(user: any) {
+    this.clearCache('users');
     const { error } = await this.supabase.from('users').upsert({
       id: user.id,
       username: user.username,
@@ -605,49 +629,52 @@ export class SupabaseDatabase implements Database {
   }
 
   async getMembers() {
-    try {
-      const { data, error } = await this.supabase.from('members').select('*');
-      if (error) {
-        if (!error.message.includes("Could not find the table")) {
-          console.error("Supabase Get Members Error:", error.message, error.code);
+    return this.getCached('members', async () => {
+      try {
+        const { data, error } = await this.supabase.from('members').select('*');
+        if (error) {
+          if (!error.message.includes("Could not find the table")) {
+            console.error("Supabase Get Members Error:", error.message, error.code);
+          }
+          return [];
         }
+        
+        const members = (data || []).map(m => ({
+          id: m.id,
+          ign: m.ign,
+          job: m.job,
+          role: m.role,
+          dateJoined: m.date_joined,
+          uid: m.uid,
+          status: m.status || 'active',
+          leaveReason: m.leave_reason,
+          leaveDates: m.leave_dates || [],
+          leaveStartedAt: m.leave_started_at
+        }));
+
+        // Migrate existing dates to the new format
+        let hasChanges = false;
+        const migratedMembers = members.map(m => {
+          const newDate = formatDateForDB(m.dateJoined);
+          if (m.dateJoined !== newDate) {
+            hasChanges = true;
+            // Fire and forget update to DB
+            this.supabase.from('members').update({ date_joined: newDate }).eq('id', m.id).then();
+            return { ...m, dateJoined: newDate };
+          }
+          return m;
+        });
+
+        return migratedMembers;
+      } catch (e: any) {
+        console.error("Supabase Exception in getMembers():", e.message);
         return [];
       }
-      
-      const members = (data || []).map(m => ({
-        id: m.id,
-        ign: m.ign,
-        job: m.job,
-        role: m.role,
-        dateJoined: m.date_joined,
-        uid: m.uid,
-        status: m.status || 'active',
-        leaveReason: m.leave_reason,
-        leaveDates: m.leave_dates || [],
-        leaveStartedAt: m.leave_started_at
-      }));
-
-      // Migrate existing dates to the new format
-      let hasChanges = false;
-      const migratedMembers = members.map(m => {
-        const newDate = formatDateForDB(m.dateJoined);
-        if (m.dateJoined !== newDate) {
-          hasChanges = true;
-          // Fire and forget update to DB
-          this.supabase.from('members').update({ date_joined: newDate }).eq('id', m.id).then();
-          return { ...m, dateJoined: newDate };
-        }
-        return m;
-      });
-
-      return migratedMembers;
-    } catch (e: any) {
-      console.error("Supabase Exception in getMembers():", e.message);
-      return [];
-    }
+    });
   }
 
   async saveMember(member: any) {
+    this.clearCache('members');
     const payload: any = {
       id: member.id,
       ign: member.ign,
@@ -780,29 +807,32 @@ export class SupabaseDatabase implements Database {
   }
 
   async getJobs() {
-    try {
-      const { data, error } = await this.supabase.from('jobs').select('*');
-      if (error) {
-        if (!error.message.includes("Could not find the table")) {
-          console.error("Supabase Get Jobs Error:", error.message, error.code);
+    return this.getCached('jobs', async () => {
+      try {
+        const { data, error } = await this.supabase.from('jobs').select('*');
+        if (error) {
+          if (!error.message.includes("Could not find the table")) {
+            console.error("Supabase Get Jobs Error:", error.message, error.code);
+          }
+          return initialDb.jobs;
         }
+        if (!data || data.length === 0) {
+          // Seed initial jobs if empty
+          for (const job of initialDb.jobs) {
+            await this.saveJob(job);
+          }
+          return initialDb.jobs;
+        }
+        return data;
+      } catch (e: any) {
+        console.error("Supabase Exception in getJobs():", e.message);
         return initialDb.jobs;
       }
-      if (!data || data.length === 0) {
-        // Seed initial jobs if empty
-        for (const job of initialDb.jobs) {
-          await this.saveJob(job);
-        }
-        return initialDb.jobs;
-      }
-      return data;
-    } catch (e: any) {
-      console.error("Supabase Exception in getJobs():", e.message);
-      return initialDb.jobs;
-    }
+    });
   }
 
   async saveJob(job: any) {
+    this.clearCache('jobs');
     const { error } = await this.supabase.from('jobs').upsert(job);
     if (error) console.error("Supabase Save Job Error:", error.message);
   }
@@ -813,29 +843,32 @@ export class SupabaseDatabase implements Database {
   }
 
   async getRoles() {
-    try {
-      const { data, error } = await this.supabase.from('roles').select('*');
-      if (error) {
-        if (!error.message.includes("Could not find the table")) {
-          console.error("Supabase Get Roles Error:", error.message, error.code);
+    return this.getCached('roles', async () => {
+      try {
+        const { data, error } = await this.supabase.from('roles').select('*');
+        if (error) {
+          if (!error.message.includes("Could not find the table")) {
+            console.error("Supabase Get Roles Error:", error.message, error.code);
+          }
+          return initialDb.roles;
         }
+        if (!data || data.length === 0) {
+          // Seed initial roles if empty
+          for (const role of initialDb.roles) {
+            await this.saveRole(role);
+          }
+          return initialDb.roles;
+        }
+        return data;
+      } catch (e: any) {
+        console.error("Supabase Exception in getRoles():", e.message);
         return initialDb.roles;
       }
-      if (!data || data.length === 0) {
-        // Seed initial roles if empty
-        for (const role of initialDb.roles) {
-          await this.saveRole(role);
-        }
-        return initialDb.roles;
-      }
-      return data;
-    } catch (e: any) {
-      console.error("Supabase Exception in getRoles():", e.message);
-      return initialDb.roles;
-    }
+    });
   }
 
   async saveRole(role: any) {
+    this.clearCache('roles');
     const { error } = await this.supabase.from('roles').upsert(role);
     if (error) console.error("Supabase Save Role Error:", error.message);
   }
@@ -846,34 +879,36 @@ export class SupabaseDatabase implements Database {
   }
 
   async getEvents() {
-    try {
-      let { data, error } = await this.supabase.from('events').select('*').order('order', { ascending: true });
-      
-      if (error) {
-        // Fallback if 'order' column doesn't exist yet
-        if (error.code === '42703' || error.message.includes('column "order" does not exist')) {
-          console.warn("Supabase: 'order' column missing in events table, falling back to unordered query.");
-          const fallback = await this.supabase.from('events').select('*');
-          data = fallback.data;
-          error = fallback.error;
+    return this.getCached('events', async () => {
+      try {
+        let { data, error } = await this.supabase.from('events').select('*').order('order', { ascending: true });
+        
+        if (error) {
+          // Fallback if 'order' column doesn't exist yet
+          if (error.code === '42703' || error.message.includes('column "order" does not exist')) {
+            console.warn("Supabase: 'order' column missing in events table, falling back to unordered query.");
+            const fallback = await this.supabase.from('events').select('*');
+            data = fallback.data;
+            error = fallback.error;
+          }
         }
-      }
 
-      if (error) {
-        if (!error.message.includes("Could not find the table")) {
-          console.error("Supabase Get Events Error:", error.message, error.code);
+        if (error) {
+          if (!error.message.includes("Could not find the table")) {
+            console.error("Supabase Get Events Error:", error.message, error.code);
+          }
+          return [];
         }
+        return (data || []).map((event: any) => ({
+          ...event,
+          schedule: Array.isArray(event.schedule) ? event.schedule : [],
+          absences: Array.isArray(event.absences) ? event.absences : []
+        }));
+      } catch (e: any) {
+        console.error("Supabase Exception in getEvents():", e.message);
         return [];
       }
-      return (data || []).map((event: any) => ({
-        ...event,
-        schedule: Array.isArray(event.schedule) ? event.schedule : [],
-        absences: Array.isArray(event.absences) ? event.absences : []
-      }));
-    } catch (e: any) {
-      console.error("Supabase Exception in getEvents():", e.message);
-      return [];
-    }
+    });
   }
 
   /**
@@ -948,6 +983,7 @@ export class SupabaseDatabase implements Database {
    * );
    */
   async saveEvent(event: any) {
+    this.clearCache('events');
     try {
       const { error } = await this.supabase.from('events').upsert(event);
       if (error) {
@@ -1014,41 +1050,45 @@ export class SupabaseDatabase implements Database {
   }
 
   async getSettings() {
-    try {
-      const { data, error } = await this.supabase.from('settings').select('*').eq('id', 'guild_settings').single();
-      if (error) {
-        if (error.code === 'PGRST116') {
-          // Record not found, initialize it
-          const initialState = initialDb.settings.guild_settings;
-          await this.saveSettings(initialState);
-          return initialState;
+    return this.getCached('settings', async () => {
+      try {
+        const { data, error } = await this.supabase.from('settings').select('*').eq('id', 'guild_settings').single();
+        if (error) {
+          if (error.code === 'PGRST116') {
+            // Record not found, initialize it
+            const initialState = initialDb.settings.guild_settings;
+            await this.saveSettings(initialState);
+            return initialState;
+          }
+          
+          if (!error.message.includes("Could not find the table")) {
+            console.error("Supabase Get Settings Error:", error.message);
+          }
+          return initialDb.settings.guild_settings;
         }
-        
-        if (!error.message.includes("Could not find the table")) {
-          console.error("Supabase Get Settings Error:", error.message);
-        }
+        if (!data) return initialDb.settings.guild_settings;
+        return {
+          name: data.name,
+          timezone: data.timezone,
+          logoUrl: data.logo_url,
+          maxPartySize: data.max_party_size || 12,
+          discordGuildId: data.discord_guild_id || '',
+          discordAnnouncementsChannelId: data.discord_announcements_channel_id || '',
+          discordAbsenceChannelId: data.discord_absence_channel_id || '',
+          discordDefaultRoleToTag: data.discord_default_role_to_tag || '',
+          githubRepo: data.github_repo || '',
+          disableSignups: data.disable_signups || false,
+          raffleWinners: data.raffle_winners || 2
+        };
+      } catch (e: any) {
+        console.error("Supabase Exception in getSettings():", e.message);
         return initialDb.settings.guild_settings;
       }
-      if (!data) return initialDb.settings.guild_settings;
-      return {
-        name: data.name,
-        timezone: data.timezone,
-        logoUrl: data.logo_url,
-        maxPartySize: data.max_party_size || 12,
-        discordGuildId: data.discord_guild_id || '',
-        discordAnnouncementsChannelId: data.discord_announcements_channel_id || '',
-        discordAbsenceChannelId: data.discord_absence_channel_id || '',
-        githubRepo: data.github_repo || '',
-        disableSignups: data.disable_signups || false,
-        raffleWinners: data.raffle_winners || 2
-      };
-    } catch (e: any) {
-      console.error("Supabase Exception in getSettings():", e.message);
-      return initialDb.settings.guild_settings;
-    }
+    });
   }
 
   async saveSettings(settings: any) {
+    this.clearCache('settings');
     const payload: any = {
       id: 'guild_settings',
       name: settings.name,
@@ -1062,6 +1102,7 @@ export class SupabaseDatabase implements Database {
     if (settings.discordGuildId !== undefined) payload.discord_guild_id = settings.discordGuildId;
     if (settings.discordAnnouncementsChannelId !== undefined) payload.discord_announcements_channel_id = settings.discordAnnouncementsChannelId;
     if (settings.discordAbsenceChannelId !== undefined) payload.discord_absence_channel_id = settings.discordAbsenceChannelId;
+    if (settings.discordDefaultRoleToTag !== undefined) payload.discord_default_role_to_tag = settings.discordDefaultRoleToTag;
     if (settings.githubRepo !== undefined) payload.github_repo = settings.githubRepo;
     if (settings.disableSignups !== undefined) payload.disable_signups = settings.disableSignups;
     if (settings.raffleWinners !== undefined) payload.raffle_winners = settings.raffleWinners;
@@ -1071,9 +1112,11 @@ export class SupabaseDatabase implements Database {
       console.error("Supabase Save Settings Error:", error.message);
       
       // Handle missing columns by retrying without them
-      if (error.message.includes("column") && error.message.includes("not found")) {
+      if (error.message.includes("column") && (error.message.includes("not found") || error.message.includes("schema cache"))) {
         const cleanPayload = { ...payload };
-        const missingColumn = error.message.match(/column "([^"]+)"/)?.[1];
+        // Match both 'column "name"' and 'Could not find the 'name' column'
+        const missingColumn = error.message.match(/column "([^"]+)"/)?.[1] || 
+                             error.message.match(/find the '([^']+)' column/)?.[1];
         
         if (missingColumn && cleanPayload[missingColumn] !== undefined) {
           console.warn(`Retrying saveSettings without missing column: ${missingColumn}`);
@@ -1086,34 +1129,37 @@ export class SupabaseDatabase implements Database {
   }
 
   async getRaffle() {
-    try {
-      const { data, error } = await this.supabase.from('raffle').select('*').eq('id', 'main').single();
-      if (error) {
-        if (error.code === 'PGRST116') {
-          // Record not found, initialize it
-          const initialState = JSON.parse(JSON.stringify(initialDb.raffle));
-          await this.saveRaffle(initialState);
-          return initialState;
+    return this.getCached('raffle', async () => {
+      try {
+        const { data, error } = await this.supabase.from('raffle').select('*').eq('id', 'main').single();
+        if (error) {
+          if (error.code === 'PGRST116') {
+            // Record not found, initialize it
+            const initialState = JSON.parse(JSON.stringify(initialDb.raffle));
+            await this.saveRaffle(initialState);
+            return initialState;
+          }
+          
+          if (!error.message.includes("Could not find the table")) {
+            console.error("Supabase Get Raffle Error:", error.message);
+          }
+          return JSON.parse(JSON.stringify(initialDb.raffle));
         }
         
-        if (!error.message.includes("Could not find the table")) {
-          console.error("Supabase Get Raffle Error:", error.message);
-        }
+        return {
+          entries: Array.isArray(data.entries) ? data.entries : [],
+          winners: Array.isArray(data.winners) ? data.winners : [],
+          settings: data.settings || initialDb.raffle.settings
+        };
+      } catch (e: any) {
+        console.error("Supabase Exception in getRaffle():", e.message);
         return JSON.parse(JSON.stringify(initialDb.raffle));
       }
-      
-      return {
-        entries: Array.isArray(data.entries) ? data.entries : [],
-        winners: Array.isArray(data.winners) ? data.winners : [],
-        settings: data.settings || initialDb.raffle.settings
-      };
-    } catch (e: any) {
-      console.error("Supabase Exception in getRaffle():", e.message);
-      return JSON.parse(JSON.stringify(initialDb.raffle));
-    }
+    });
   }
 
   async saveRaffle(raffle: any) {
+    this.clearCache('raffle');
     console.log('[Supabase] Saving raffle data...');
     const { error } = await this.supabase.from('raffle').upsert({ 
       id: 'main', 

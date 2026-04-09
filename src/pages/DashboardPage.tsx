@@ -113,21 +113,18 @@ export default function DashboardPage() {
   useEffect(() => {
     const loadDashboardData = async () => {
       try {
-        const [membersRes, eventsRes, raffleRes, logsRes, jobsRes] = await Promise.all([
-          fetchAPI('/api/members'),
-          fetchAPI('/api/events'),
-          fetchAPI('/api/raffle'),
-          fetchAPI('/api/logs'),
-          fetchAPI('/api/jobs')
-        ]);
+        const summary = await fetchAPI('/api/dashboard/summary');
+        
+        const membersList = summary.members || [];
+        const activeMembersCount = summary.totalMembers;
 
-        const membersList = Object.values(membersRes || {}) as any[];
-        const activeMembers = membersList.filter((m: any) => m.status !== 'left');
+        // Create a map for members for faster lookup
+        const membersMap = new Map(membersList.map((m: any) => [m.id, m]));
 
         // Process Raffle Winners
         let recentWinners: any[] = [];
-        if (raffleRes && raffleRes.winners) {
-          recentWinners = [...raffleRes.winners];
+        if (summary.recentWinners) {
+          recentWinners = [...summary.recentWinners];
           // Sort by year, month, week descending
           recentWinners.sort((a, b) => {
             if (b.year !== a.year) return b.year - a.year;
@@ -137,21 +134,18 @@ export default function DashboardPage() {
         }
 
         // Process Member Logs
-        const memberLogs = (logsRes || []).map((log: any) => {
-          const member = membersList.find((m: any) => m.id === log.memberId);
+        const memberLogs = (summary.memberLogs || []).map((log: any) => {
+          const member = membersMap.get(log.memberId) as any;
           return { ...log, memberIgn: member?.ign || 'Unknown' };
         });
 
-        // Process Members on Leave
-        const membersOnLeave = membersList.filter((m: any) => m.status === 'on-leave');
-
         setStats({
-          totalMembers: activeMembers.length,
-          activeEvents: (eventsRes || []).length,
-          activeJobs: (jobsRes || []).length,
+          totalMembers: activeMembersCount,
+          activeEvents: summary.activeEvents,
+          activeJobs: summary.activeJobs,
           recentWinners,
           memberLogs,
-          membersOnLeave
+          membersOnLeave: summary.membersOnLeave || []
         });
       } catch (error) {
         console.error('Failed to load dashboard data:', error);

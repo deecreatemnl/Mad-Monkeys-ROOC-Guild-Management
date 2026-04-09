@@ -7,10 +7,18 @@ export enum OperationType {
   WRITE = 'write',
 }
 
+const pendingRequests = new Map<string, Promise<any>>();
+
 export async function fetchAPI(path: string, options: RequestInit = {}) {
+  const isGet = !options.method || options.method.toUpperCase() === 'GET';
+  const cacheKey = `${path}:${JSON.stringify(options.body || '')}`;
+
+  if (isGet && pendingRequests.has(cacheKey)) {
+    return pendingRequests.get(cacheKey);
+  }
+
   const token = localStorage.getItem('token');
   const user = JSON.parse(localStorage.getItem('user') || '{}');
-  console.log(`[fetchAPI] Path: ${path}, Role: ${user.role}`);
   const headers = {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -22,31 +30,40 @@ export async function fetchAPI(path: string, options: RequestInit = {}) {
     ...(options.headers || {}),
   };
 
-  try {
-    const response = await fetch(path, { ...options, headers });
-    if (!response.ok) {
-      if (response.status === 401) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        if (window.location.pathname !== '/' && window.location.pathname !== '/login') {
-          window.location.href = '/';
+  const requestPromise = (async () => {
+    try {
+      const response = await fetch(path, { ...options, headers });
+      if (!response.ok) {
+        if (response.status === 401) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          if (window.location.pathname !== '/' && window.location.pathname !== '/login') {
+            window.location.href = '/';
+          }
         }
+        
+        const text = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(text);
+        } catch (e) {
+          errorData = { error: `Server Error (${response.status}): ${text.slice(0, 200)}` };
+        }
+        throw new Error(errorData.error || 'API request failed');
       }
-      
-      const text = await response.text();
-      let errorData;
-      try {
-        errorData = JSON.parse(text);
-      } catch (e) {
-        errorData = { error: `Server Error (${response.status}): ${text.slice(0, 200)}` };
+      return response.json();
+    } finally {
+      if (isGet) {
+        pendingRequests.delete(cacheKey);
       }
-      throw new Error(errorData.error || 'API request failed');
     }
-    return response.json();
-  } catch (error) {
-    console.error(`API Error at ${path}:`, error);
-    throw error;
+  })();
+
+  if (isGet) {
+    pendingRequests.set(cacheKey, requestPromise);
   }
+
+  return requestPromise;
 }
 
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {

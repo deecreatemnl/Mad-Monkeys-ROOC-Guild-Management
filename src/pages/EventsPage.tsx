@@ -780,6 +780,9 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       const newParties: Record<string, Party[]> = {};
       const newAssignments: Record<string, Assignment[]> = {};
 
+      // Create a map for members for faster lookup
+      const membersMap = new Map(membersData.map((m: any) => [m.id, m]));
+
       for (const event of sortedEvents) {
         const subEventsData = [...(event.subevents || [])];
         subEventsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
@@ -792,7 +795,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           
           for (const party of partiesData) {
             const assignmentsData = [...(party.assignments || [])].filter(a => {
-              const member = membersData.find((m: any) => m.id === a.memberId);
+              const member = membersMap.get(a.memberId) as any;
               return !member || member.status !== 'on-leave';
             });
             assignmentsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
@@ -833,6 +836,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [shareLinks, setShareLinks] = useState<Record<string, any[]>>({});
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [activeShareEventId, setActiveShareEventId] = useState<string | null>(null);
+  const [discordRoles, setDiscordRoles] = useState<any[]>([]);
+  const [fetchingDiscordRoles, setFetchingDiscordRoles] = useState(false);
 
   const handleShare = async (eventId: string) => {
     setActiveShareEventId(eventId);
@@ -884,11 +889,27 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const openDiscordShareModal = (event: GuildEvent) => {
+  const openDiscordShareModal = async (event: GuildEvent) => {
     setActiveEventForDiscord(event);
-    const url = `${window.location.origin}/public/event/${event.id}`;
-    setDiscordShareMessage(`Hey @everyone! The lineup for **${event.name}** is ready. Check it out here: {link}`);
+    
+    // Fetch roles if we have a guild ID but no roles yet
+    if (settings?.discordGuildId && discordRoles.length === 0) {
+      setFetchingDiscordRoles(true);
+      try {
+        const roles = await fetchAPI(`/api/discord/roles/${settings.discordGuildId}`);
+        setDiscordRoles(roles);
+      } catch (err) {
+        console.error('Failed to fetch Discord roles for preview:', err);
+      } finally {
+        setFetchingDiscordRoles(false);
+      }
+    }
+
+    setDiscordShareMessage(`Hey [ROLE_TAG]! The lineup for **${event.name}** is ready. Check it out here: [LINEUP_LINK]`);
     setIsDiscordShareModalOpen(true);
+    if (event.id) {
+      loadShareLinks(event.id);
+    }
   };
 
   const handleDiscordShare = async (e: React.FormEvent) => {
@@ -897,15 +918,13 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     
     setIsSendingDiscord(true);
     try {
-      const url = `${window.location.origin}/public/event/${activeEventForDiscord.id}`;
-      const finalMessage = discordShareMessage.replace('{link}', url);
-      
       await fetchAPI(`/api/events/${activeEventForDiscord.id}/share-discord`, {
         method: 'POST',
-        body: JSON.stringify({ message: finalMessage })
+        body: JSON.stringify({ message: discordShareMessage })
       });
       
       setIsDiscordShareModalOpen(false);
+      alert('Lineup shared to Discord successfully!');
     } catch (error) {
       console.error('Failed to share to Discord:', error);
       alert('Failed to share to Discord. Please check your integration settings.');
@@ -1834,14 +1853,30 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                     placeholder="Enter your message..."
                   />
                   <p className="mt-2 text-[10px] text-zinc-500 italic">
-                    Use <span className="text-orange-500 font-bold">{'{link}'}</span> where you want the lineup URL to appear.
+                    Use <span className="text-orange-500 font-bold">{'[LINEUP_LINK]'}</span> for the URL and <span className="text-orange-500 font-bold">{'[ROLE_TAG]'}</span> to tag the default role.
                   </p>
                 </div>
 
                 <div className="p-3 bg-zinc-950 rounded-xl border border-zinc-800/50">
                   <p className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-2">Preview</p>
                   <p className="text-xs text-zinc-400 leading-relaxed break-words">
-                    {discordShareMessage.replace('{link}', `${window.location.origin}/public/event/${activeEventForDiscord?.id}`)}
+                    {(() => {
+                      const eventId = activeEventForDiscord?.id;
+                      const links = eventId ? (shareLinks[eventId] || []) : [];
+                      const previewUrl = links.length > 0 
+                        ? `${window.location.origin}/public/event/link/${links[0].token}`
+                        : `${window.location.origin}/public/event/${activeEventForDiscord?.id}`;
+                      
+                      let tagPreview = '@everyone';
+                      if (settings?.discordDefaultRoleToTag) {
+                        const role = discordRoles.find(r => r.id === settings.discordDefaultRoleToTag);
+                        tagPreview = role ? `@${role.name}` : `@everyone`;
+                      }
+                      
+                      return discordShareMessage
+                        .replace('[LINEUP_LINK]', previewUrl)
+                        .replace('[ROLE_TAG]', tagPreview);
+                    })()}
                   </p>
                 </div>
 

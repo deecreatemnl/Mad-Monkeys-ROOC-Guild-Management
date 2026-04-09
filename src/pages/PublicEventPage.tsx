@@ -105,6 +105,9 @@ export default function PublicEventPage() {
         const newParties: Record<string, Party[]> = {};
         const newAssignments: Record<string, Assignment[]> = {};
         
+        // Create a map for members for faster lookup
+        const membersMap = new Map(membersData.map((m: any) => [m.id, m]));
+        
         for (const subEvent of subEventsData) {
           const partiesData = [...(subEvent.parties || [])];
           partiesData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
@@ -112,7 +115,7 @@ export default function PublicEventPage() {
           
           for (const party of partiesData) {
             const assignmentsData = [...(party.assignments || [])].filter(a => {
-              const member = membersData.find((m: any) => m.id === a.memberId);
+              const member = membersMap.get(a.memberId) as any;
               return !member || member.status !== 'on-leave';
             });
             assignmentsData.sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0));
@@ -137,8 +140,10 @@ export default function PublicEventPage() {
     return () => clearInterval(interval);
   }, [eventId, token]);
 
-  const getMemberName = (id: string) => members.find(m => m.id === id)?.ign || 'Unknown Member';
-  const getMemberJob = (id: string) => members.find(m => m.id === id)?.job || 'Unknown Job';
+  const membersMap = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
+
+  const getMemberName = (id: string) => membersMap.get(id)?.ign || 'Unknown Member';
+  const getMemberJob = (id: string) => membersMap.get(id)?.job || 'Unknown Job';
   
   const getRoleConfig = (roleName: string) => {
     const role = roles.find(r => r.name === roleName);
