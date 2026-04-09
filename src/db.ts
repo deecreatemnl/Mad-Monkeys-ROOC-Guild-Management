@@ -658,7 +658,7 @@ export class SupabaseDatabase implements Database {
       status: member.status || 'active',
       leave_reason: member.leaveReason,
       leave_dates: member.leaveDates || [],
-      leave_started_at: member.leaveStartedAt
+      leave_started_at: member.leaveStartedAt === "" ? null : member.leaveStartedAt
     };
 
     const { error } = await this.supabase.from('members').upsert(payload);
@@ -769,7 +769,7 @@ export class SupabaseDatabase implements Database {
       old_value: log.oldValue,
       new_value: log.newValue,
       details: log.details,
-      timestamp: log.timestamp || new Date().toISOString()
+      timestamp: (log.timestamp && log.timestamp !== "") ? log.timestamp : new Date().toISOString()
     });
     if (error) console.error("Supabase Save Member Log Error:", error.message);
     
