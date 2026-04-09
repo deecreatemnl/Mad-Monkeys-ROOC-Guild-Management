@@ -1155,7 +1155,6 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         method: 'PUT',
         body: JSON.stringify({ subevents: newSubEvents })
       });
-      loadData();
     } catch (error) {
       console.error('Failed to reorder subevents:', error);
       loadData(); // Rollback

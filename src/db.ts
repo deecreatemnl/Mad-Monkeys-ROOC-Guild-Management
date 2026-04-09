@@ -788,7 +788,14 @@ export class SupabaseDatabase implements Database {
         }
         return initialDb.jobs;
       }
-      return data || [];
+      if (!data || data.length === 0) {
+        // Seed initial jobs if empty
+        for (const job of initialDb.jobs) {
+          await this.saveJob(job);
+        }
+        return initialDb.jobs;
+      }
+      return data;
     } catch (e: any) {
       console.error("Supabase Exception in getJobs():", e.message);
       return initialDb.jobs;
@@ -814,7 +821,14 @@ export class SupabaseDatabase implements Database {
         }
         return initialDb.roles;
       }
-      return data || [];
+      if (!data || data.length === 0) {
+        // Seed initial roles if empty
+        for (const role of initialDb.roles) {
+          await this.saveRole(role);
+        }
+        return initialDb.roles;
+      }
+      return data;
     } catch (e: any) {
       console.error("Supabase Exception in getRoles():", e.message);
       return initialDb.roles;

@@ -360,7 +360,7 @@ export default function App() {
                         <BarChart3 className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
                         <span className="font-medium">Dashboard</span>
                       </Link>
-                      <Link to="/" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
+                      <Link to="/members" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-4 py-3 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-xl transition-all group">
                         <Users className="w-5 h-5 group-hover:text-orange-500 transition-colors" />
                         <span className="font-medium">Guild Members</span>
                       </Link>
@@ -429,7 +429,8 @@ export default function App() {
               <main className="flex-1 overflow-auto p-4 md:p-8 md:ml-64">
                 <Suspense fallback={<PageLoader />}>
                   <Routes>
-                    <Route path="/" element={<MembersPage isAdmin={isAdmin} />} />
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                    <Route path="/members" element={<MembersPage isAdmin={isAdmin} />} />
                     <Route path="/on-leave" element={<OnLeavePage />} />
                     <Route path="/dashboard" element={<DashboardPage />} />
                     <Route path="/events" element={<EventsPage isAdmin={isAdmin} />} />
