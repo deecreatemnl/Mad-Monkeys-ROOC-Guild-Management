@@ -1170,81 +1170,6 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     }
   };
 
-  const handleDragOver = useCallback((event: DragOverEvent) => {
-    const { active, over } = event;
-    if (!over) return;
-
-    const activeData = active.data.current;
-    const overData = over.data.current;
-
-    if (activeData?.type === 'assignment') {
-      const activePartyId = activeData.partyId;
-      const overPartyId = overData?.type === 'assignment' ? overData.partyId : (overData?.type === 'party' ? over.id : null);
-
-      if (activePartyId && overPartyId && activePartyId === overPartyId && active.id !== over.id) {
-        setAssignments(prev => {
-          const items = prev[activePartyId] || [];
-          const oldIndex = items.findIndex(a => a.id === active.id);
-          const newIndex = items.findIndex(a => a.id === over.id);
-          if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-            return { ...prev, [activePartyId]: arrayMove(items, oldIndex, newIndex) };
-          }
-          return prev;
-        });
-      }
-      return;
-    }
-
-    if (activeData?.type === 'party') {
-      const activeSubEventId = activeData.subEventId;
-      const overSubEventId = overData?.subEventId || (overData?.type === 'subEvent' ? over.id : null);
-
-      if (activeSubEventId && overSubEventId && activeSubEventId === overSubEventId && active.id !== over.id) {
-        setParties(prev => {
-          const items = prev[activeSubEventId] || [];
-          const oldIndex = items.findIndex(p => p.id === active.id);
-          const newIndex = items.findIndex(p => p.id === over.id);
-          if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-            return { ...prev, [activeSubEventId]: arrayMove(items, oldIndex, newIndex) };
-          }
-          return prev;
-        });
-      }
-      return;
-    }
-
-    if (activeData?.type === 'subEvent') {
-      const activeEventId = activeData.eventId;
-      const overEventId = overData?.eventId || (overData?.type === 'event' ? over.id : null);
-
-      if (activeEventId && overEventId && activeEventId === overEventId && active.id !== over.id) {
-        setSubEvents(prev => {
-          const items = prev[activeEventId] || [];
-          const oldIndex = items.findIndex(s => s.id === active.id);
-          const newIndex = items.findIndex(s => s.id === over.id);
-          if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-            return { ...prev, [activeEventId]: arrayMove(items, oldIndex, newIndex) };
-          }
-          return prev;
-        });
-      }
-      return;
-    }
-
-    if (activeData?.type === 'event') {
-      if (active.id !== over.id) {
-        setEvents(prev => {
-          const oldIndex = prev.findIndex(e => e.id === active.id);
-          const newIndex = prev.findIndex(e => e.id === over.id);
-          if (oldIndex !== -1 && newIndex !== -1) {
-            return arrayMove(prev, oldIndex, newIndex);
-          }
-          return prev;
-        });
-      }
-    }
-  }, []);
-
   const handlePartyReorder = useCallback(async (eventId: string, subEventId: string, reorderedParties: Party[]) => {
     const reorderedWithOrder = reorderedParties.map((p, index) => ({
       ...p,
@@ -1260,9 +1185,9 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         method: 'PUT',
         body: JSON.stringify({ parties: reorderedWithOrder })
       });
-      loadData();
     } catch (error) {
       console.error('Failed to reorder parties:', error);
+      loadData();
     }
   }, [loadData]);
 
@@ -1281,9 +1206,9 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         method: 'PUT',
         body: JSON.stringify({ assignments: reorderedWithOrder })
       });
-      loadData();
     } catch (error) {
       console.error('Failed to reorder assignments:', error);
+      loadData();
     }
   }, [loadData]);
 
@@ -1335,9 +1260,9 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
             method: 'PUT',
             body: JSON.stringify({ subevents: reordered })
           });
-          loadData();
         } catch (error) {
           console.error('Failed to reorder subevents:', error);
+          loadData();
         }
       }
     } else if (activeData?.type === 'assignment') {
@@ -1347,7 +1272,13 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       
       if (currentPartyId && eventId && subEventId) {
         const currentAssignments = assignments[currentPartyId] || [];
-        handleAssignmentReorder(eventId, subEventId, currentPartyId, currentAssignments);
+        const oldIndex = currentAssignments.findIndex(a => a.id === active.id);
+        const overIndex = currentAssignments.findIndex(a => a.id === over.id);
+        
+        if (oldIndex !== -1 && overIndex !== -1) {
+          const reordered = arrayMove(currentAssignments, oldIndex, overIndex);
+          handleAssignmentReorder(eventId, subEventId, currentPartyId, reordered);
+        }
       }
     } else if (activeData?.type === 'party') {
       const currentSubEventId = activeData.subEventId;
@@ -1528,7 +1459,6 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
               sensors={sensors}
               collisionDetection={closestCorners}
               onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
               onDragEnd={handleDragEndTop}
             >
               <SortableContext
