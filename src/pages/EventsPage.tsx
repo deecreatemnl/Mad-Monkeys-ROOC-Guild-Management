@@ -6,6 +6,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import ConfirmModal from '../components/ConfirmModal';
 import { io } from 'socket.io-client';
+import ReactQuill from 'react-quill-new';
+import 'react-quill-new/dist/quill.snow.css';
+import DOMPurify from 'dompurify';
 import {
   DndContext,
   closestCenter,
@@ -506,9 +509,10 @@ const SortableEventItem = memo(({
                         exit={{ height: 0, opacity: 0 }}
                         className="px-3 pb-3"
                       >
-                        <p className="text-xs text-zinc-400 leading-relaxed whitespace-pre-wrap pt-1 border-t border-orange-500/10">
-                          {event.instructions}
-                        </p>
+                        <div
+                          className="text-xs text-zinc-400 leading-relaxed pt-1 border-t border-orange-500/10 prose prose-invert prose-xs max-w-none"
+                          dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(event.instructions) }}
+                        />
                       </motion.div>
                     )}
                   </AnimatePresence>
@@ -1484,49 +1488,71 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         {isEventModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeEventModal} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-              <h2 className="text-2xl font-bold text-white mb-6">{editingEvent ? 'Edit Event' : 'Add Regular Event'}</h2>
-              <form onSubmit={handleEventSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Event Name</label>
-                  <input required type="text" value={eventFormData.name} onChange={(e) => setEventFormData({ ...eventFormData, name: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white" placeholder="e.g. Guild War" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Description</label>
-                  <textarea value={eventFormData.description} onChange={(e) => setEventFormData({ ...eventFormData, description: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white h-24 resize-none" placeholder="Regular weekly schedule..." />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Instructions / Notes (Visible Publicly)</label>
-                  <textarea value={eventFormData.instructions} onChange={(e) => setEventFormData({ ...eventFormData, instructions: e.target.value })} className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white h-32 resize-none" placeholder="Add specific instructions for this event..." />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-zinc-400 mb-1.5">Recurring Schedule (Event Days)</label>
-                  <div className="flex flex-wrap gap-2">
-                    {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
-                      <button
-                        key={day}
-                        type="button"
-                        onClick={() => {
-                          const newSchedule = eventFormData.schedule.includes(index)
-                            ? eventFormData.schedule.filter(d => d !== index)
-                            : [...eventFormData.schedule, index];
-                          setEventFormData({ ...eventFormData, schedule: newSchedule });
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="relative w-full max-w-6xl bg-zinc-900 border border-zinc-800 rounded-2xl p-8 max-h-[95vh] overflow-y-auto">
+              <h2 className="text-3xl font-black tracking-tighter text-white mb-8 uppercase italic">{editingEvent ? 'Edit Event' : 'Add Regular Event'}</h2>
+              <form onSubmit={handleEventSubmit} className="space-y-8">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                  <div className="lg:col-span-4 space-y-6">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2">Event Name</label>
+                      <input required type="text" value={eventFormData.name} onChange={(e) => setEventFormData({ ...eventFormData, name: e.target.value })} className="w-full bg-zinc-800/50 border border-zinc-700 focus:border-orange-500/50 rounded-xl py-3 px-4 text-white transition-all outline-none" placeholder="e.g. Guild War" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2">Description</label>
+                      <textarea value={eventFormData.description} onChange={(e) => setEventFormData({ ...eventFormData, description: e.target.value })} className="w-full bg-zinc-800/50 border border-zinc-700 focus:border-orange-500/50 rounded-xl py-3 px-4 text-white h-32 resize-none transition-all outline-none" placeholder="Regular weekly schedule..." />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2">Recurring Schedule</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => {
+                              const newSchedule = eventFormData.schedule.includes(index)
+                                ? eventFormData.schedule.filter(d => d !== index)
+                                : [...eventFormData.schedule, index];
+                              setEventFormData({ ...eventFormData, schedule: newSchedule });
+                            }}
+                            className={cn(
+                              "py-2 rounded-lg text-[10px] font-black uppercase transition-all border",
+                              eventFormData.schedule.includes(index)
+                                ? "bg-orange-500 border-orange-400 text-white shadow-lg shadow-orange-500/20"
+                                : "bg-zinc-800 border-zinc-700 text-zinc-500 hover:border-zinc-600"
+                            )}
+                          >
+                            {day}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="lg:col-span-8 space-y-4">
+                    <label className="block text-xs font-bold uppercase tracking-widest text-zinc-500 mb-2">Instructions / Notes (Visible Publicly)</label>
+                    <div className="bg-zinc-800/30 border border-zinc-700 rounded-2xl overflow-hidden">
+                      <ReactQuill 
+                        theme="snow" 
+                        value={eventFormData.instructions} 
+                        onChange={(content) => setEventFormData({ ...eventFormData, instructions: content })}
+                        className="h-[400px] text-white"
+                        modules={{
+                          toolbar: [
+                            [{ 'header': [1, 2, 3, false] }],
+                            ['bold', 'italic', 'underline', 'strike'],
+                            [{'list': 'ordered'}, {'list': 'bullet'}],
+                            [{ 'color': [] }, { 'background': [] }],
+                            ['link', 'clean']
+                          ],
                         }}
-                        className={cn(
-                          "px-3 py-1.5 rounded-lg text-xs font-bold transition-all border",
-                          eventFormData.schedule.includes(index)
-                            ? "bg-orange-500 border-orange-400 text-white shadow-lg shadow-orange-500/20"
-                            : "bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-600"
-                        )}
-                      >
-                        {day}
-                      </button>
-                    ))}
+                      />
+                    </div>
                   </div>
                 </div>
-                <div className="pt-4 flex gap-3">
-                  <button type="button" onClick={closeEventModal} className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 font-medium hover:bg-zinc-800">Cancel</button>
-                  <button type="submit" className="flex-1 px-4 py-2.5 rounded-xl bg-orange-500 text-white font-bold hover:bg-orange-600 shadow-lg shadow-orange-500/20">{editingEvent ? 'Save' : 'Add'}</button>
+
+                <div className="pt-6 flex gap-4 justify-end border-t border-zinc-800">
+                  <button type="button" onClick={closeEventModal} className="px-10 py-3 rounded-xl border border-zinc-700 text-zinc-400 font-bold uppercase tracking-widest text-xs hover:bg-zinc-800 transition-all">Cancel</button>
+                  <button type="submit" className="px-10 py-3 rounded-xl bg-orange-500 text-white font-black uppercase tracking-widest text-xs hover:bg-orange-600 shadow-xl shadow-orange-500/20 transition-all active:scale-95">{editingEvent ? 'Save Changes' : 'Create Event'}</button>
                 </div>
               </form>
             </motion.div>

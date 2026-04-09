@@ -6,6 +6,7 @@ import { Shield, Sword, Heart, Star, Users, Calendar, Info, LayoutGrid, Layers, 
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Link } from 'react-router-dom';
+import DOMPurify from 'dompurify';
 
 const getMemberCategory = (member: Member) => {
   if (member.role) return member.role;
@@ -295,9 +296,10 @@ export default function PublicEventPage() {
                   <Zap className="w-3 h-3" />
                   Special Instructions
                 </h4>
-                <p className="text-sm text-zinc-400 whitespace-pre-wrap leading-relaxed">
-                  {event.instructions}
-                </p>
+                <div 
+                  className="text-sm text-zinc-400 leading-relaxed prose prose-invert prose-sm max-w-none"
+                  dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(event.instructions) }}
+                />
               </motion.div>
             )}
 

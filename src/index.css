@@ -1,1 +1,56 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* Quill Dark Mode Overrides */
+.ql-container.ql-snow {
+  border-color: var(--color-zinc-700) !important;
+  background-color: var(--color-zinc-800);
+  color: white;
+  font-family: inherit;
+}
+
+.ql-toolbar.ql-snow {
+  border-color: var(--color-zinc-700) !important;
+  background-color: var(--color-zinc-900);
+}
+
+.ql-snow .ql-stroke {
+  stroke: var(--color-zinc-400);
+}
+
+.ql-snow .ql-fill {
+  fill: var(--color-zinc-400);
+}
+
+.ql-snow .ql-picker {
+  color: var(--color-zinc-400);
+}
+
+.ql-snow.ql-toolbar button:hover .ql-stroke,
+.ql-snow.ql-toolbar button.ql-active .ql-stroke {
+  stroke: var(--color-orange-500);
+}
+
+.ql-snow.ql-toolbar button:hover .ql-fill,
+.ql-snow.ql-toolbar button.ql-active .ql-fill {
+  fill: var(--color-orange-500);
+}
+
+.ql-snow.ql-toolbar .ql-picker-label:hover,
+.ql-snow.ql-toolbar .ql-picker-label.ql-active {
+  color: var(--color-orange-500);
+}
+
+.ql-editor.ql-blank::before {
+  color: var(--color-zinc-500);
+  font-style: normal;
+}
+
+.ql-editor {
+  min-height: 400px;
+}
+
+.prose-xs {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+}
