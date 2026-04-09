@@ -10,8 +10,9 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 const { Client } = pg;
 
 async function reloadSchema() {
+  const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
   const client = new Client({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: dbUrl,
     ssl: { rejectUnauthorized: false }
   });
 

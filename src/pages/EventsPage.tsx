@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo, createContext, useContext } from 'react';
 import { fetchAPI } from '../lib/api';
 import { GuildEvent, Member, Assignment, Party, SubEvent } from '../types';
 import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Clock, Shield, Sword, Heart, Star, Share2, Check, Copy, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search, Zap, Target, Music, Hammer, FlaskConical, Hand, Cross, Skull, MessageSquare, Loader2, Menu } from 'lucide-react';
@@ -66,23 +66,24 @@ interface EventsPageProps {
   isAdmin?: boolean;
 }
 
+// Contexts for performance optimization
+const EventsActionsContext = createContext<any>(null);
+const EventsStaticDataContext = createContext<any>(null);
+
 interface SortableAssignmentItemProps {
   assignment: Assignment;
   member: Member | undefined;
   roleStyle: any;
-  isAdmin: boolean;
-  roles: any[];
-  onUnassign: () => void;
 }
 
-function SortableAssignmentItem({
+const SortableAssignmentItem = memo(({
   assignment,
   member,
   roleStyle,
-  isAdmin,
-  roles,
-  onUnassign,
-}: SortableAssignmentItemProps) {
+}: SortableAssignmentItemProps) => {
+  const { isAdmin, unassignMember } = useContext(EventsActionsContext);
+  const { roles } = useContext(EventsStaticDataContext);
+  
   const {
     attributes,
     listeners,
@@ -95,18 +96,20 @@ function SortableAssignmentItem({
     data: {
       type: 'assignment',
       assignment,
-      partyId: assignment.partyId
+      partyId: assignment.partyId,
+      subEventId: assignment.subEventId,
+      eventId: assignment.eventId
     }
   });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 10 : 1,
+    zIndex: isDragging ? 100 : 1,
   };
 
   return (
-    <div ref={setNodeRef} style={style} className={cn("flex items-center justify-between p-2 rounded-lg group bg-zinc-900/50 border border-zinc-800/50", isDragging && "opacity-50")}>
+    <div ref={setNodeRef} style={style} className={cn("flex items-center justify-between p-2 rounded-lg group bg-zinc-900/50 border border-zinc-800/50", isDragging && "opacity-50 z-50")}>
       <div className="flex items-center gap-3">
         {isAdmin && (
           <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-400">
@@ -132,7 +135,7 @@ function SortableAssignmentItem({
       </div>
       {isAdmin && (
         <button
-          onClick={onUnassign}
+          onClick={() => unassignMember(assignment.eventId!, assignment.subEventId!, assignment.partyId!, assignment.id!)}
           className="p-1 text-zinc-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
         >
           <UserMinus className="w-3.5 h-3.5" />
@@ -140,41 +143,30 @@ function SortableAssignmentItem({
       )}
     </div>
   );
-}
+});
+SortableAssignmentItem.displayName = 'SortableAssignmentItem';
 
 interface SortablePartyItemProps {
   party: Party;
-  event: GuildEvent;
-  subEvent: SubEvent;
-  isAdmin: boolean;
-  assignments: Record<string, Assignment[]>;
-  members: Member[];
-  jobs: any[];
-  openAssignModal: (eventId: string, subEventId: string, partyId: string) => void;
-  openPartyModal: (eventId: string, subEventId: string, party?: Party) => void;
-  deleteParty: (eventId: string, subEventId: string, partyId: string) => void;
-  unassignMember: (eventId: string, subEventId: string, partyId: string, assignmentId: string) => void;
-  getRoleStyle: (roleName: string) => any;
-  roles: any[];
-  onReorderAssignments: (eventId: string, subEventId: string, partyId: string, reorderedAssignments: Assignment[]) => void;
+  eventId: string;
+  subEventId: string;
+  partyAssignments: Assignment[];
 }
 
-function SortablePartyItem({
+const SortablePartyItem = memo(({
   party,
-  event,
-  subEvent,
-  isAdmin,
-  assignments,
-  members,
-  jobs,
-  openAssignModal,
-  openPartyModal,
-  deleteParty,
-  unassignMember,
-  getRoleStyle,
-  roles,
-  onReorderAssignments,
-}: SortablePartyItemProps) {
+  eventId,
+  subEventId,
+  partyAssignments,
+}: SortablePartyItemProps) => {
+  const { 
+    isAdmin, 
+    openAssignModal, 
+    openPartyModal, 
+    deleteParty 
+  } = useContext(EventsActionsContext);
+  const { members, getRoleStyle } = useContext(EventsStaticDataContext);
+
   const {
     attributes,
     listeners,
@@ -186,46 +178,22 @@ function SortablePartyItem({
     id: party.id!,
     data: {
       type: 'party',
-      subEventId: subEvent.id,
+      subEventId,
+      eventId,
       party
     }
   });
 
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleAssignmentDragEnd = (eventDnd: DragEndEvent) => {
-    const { active, over } = eventDnd;
-    if (!over || active.id === over.id) return;
-
-    const activeData = active.data.current;
-    const overData = over.data.current;
-
-    if (activeData?.type === 'assignment') {
-      // If it's an assignment, let the parent handle it
-      return;
-    }
-
-    const partyAssignments = assignments[party.id!] || [];
-    const oldIndex = partyAssignments.findIndex((a) => a.id === active.id);
-    const newIndex = partyAssignments.findIndex((a) => a.id === over.id);
-
-    const reordered = arrayMove(partyAssignments, oldIndex, newIndex);
-    onReorderAssignments(event.id!, subEvent.id!, party.id!, reordered);
-  };
-
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 10 : 1,
+    zIndex: isDragging ? 50 : 1,
   };
 
+  const assignmentIds = useMemo(() => partyAssignments.map(a => a.id!), [partyAssignments]);
+
   return (
-    <div ref={setNodeRef} style={style} className={cn("bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden h-full", isDragging && "opacity-50")}>
+    <div ref={setNodeRef} style={style} className={cn("bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden h-full", isDragging && "opacity-50 z-40")}>
       <div className="p-3 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between">
         <div className="flex items-center gap-2">
           {isAdmin && (
@@ -236,28 +204,28 @@ function SortablePartyItem({
           <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
           <h5 className="font-bold text-sm text-white uppercase tracking-wider">{party.name}</h5>
           <span className="text-[10px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded">
-            {assignments[party.id!]?.length || 0}/{party.maxSize || 12}
+            {partyAssignments.length || 0}/{party.maxSize || 12}
           </span>
         </div>
         <div className="flex items-center gap-1">
           {isAdmin && (
             <>
               <button
-                onClick={() => openAssignModal(event.id!, subEvent.id!, party.id!)}
+                onClick={() => openAssignModal(eventId, subEventId, party.id!)}
                 className="p-1.5 text-zinc-400 hover:text-orange-500 transition-colors"
                 title="Assign Member"
               >
                 <UserPlus className="w-4 h-4" />
               </button>
               <button
-                onClick={() => openPartyModal(event.id!, subEvent.id!, party)}
+                onClick={() => openPartyModal(eventId, subEventId, party)}
                 className="p-1.5 text-zinc-500 hover:text-white transition-colors"
                 title="Edit Party Name"
               >
                 <Edit2 className="w-3.5 h-3.5" />
               </button>
               <button
-                onClick={() => deleteParty(event.id!, subEvent.id!, party.id!)}
+                onClick={() => deleteParty(eventId, subEventId, party.id!)}
                 className="p-1.5 text-zinc-500 hover:text-red-500 transition-colors"
               >
                 <Trash2 className="w-4 h-4" />
@@ -267,87 +235,59 @@ function SortablePartyItem({
         </div>
       </div>
       <div className="p-3">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleAssignmentDragEnd}
+        <SortableContext
+          id={`party-${party.id}`}
+          items={assignmentIds}
+          strategy={verticalListSortingStrategy}
         >
-          <SortableContext
-            items={assignments[party.id!]?.map(a => a.id!) || []}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="space-y-2">
-              {assignments[party.id!]?.map((assignment) => {
-                const member = members.find(m => m.id === assignment.memberId);
-                const roleStyle = getRoleStyle(assignment.role);
-                return (
-                  <SortableAssignmentItem
-                    key={assignment.id}
-                    assignment={assignment}
-                    member={member}
-                    roleStyle={roleStyle}
-                    isAdmin={isAdmin}
-                    roles={roles}
-                    onUnassign={() => unassignMember(event.id!, subEvent.id!, party.id!, assignment.id!)}
-                  />
-                );
-              })}
-              {(!assignments[party.id!] || assignments[party.id!].length === 0) && (
-                <div className="py-4 text-center text-zinc-700 text-xs italic">
-                  Empty Party
-                </div>
-              )}
-            </div>
-          </SortableContext>
-        </DndContext>
+          <div className="space-y-2">
+            {partyAssignments.map((assignment) => {
+              const member = members.find((m: any) => m.id === assignment.memberId);
+              const roleStyle = getRoleStyle(assignment.role);
+              return (
+                <SortableAssignmentItem
+                  key={assignment.id}
+                  assignment={assignment}
+                  member={member}
+                  roleStyle={roleStyle}
+                />
+              );
+            })}
+            {partyAssignments.length === 0 && (
+              <div className="py-4 text-center text-zinc-700 text-xs italic">
+                Empty Party
+              </div>
+            )}
+          </div>
+        </SortableContext>
       </div>
     </div>
   );
-}
+});
+SortablePartyItem.displayName = 'SortablePartyItem';
 
 interface SortableSubEventItemProps {
   subEvent: SubEvent;
-  event: GuildEvent;
-  isAdmin: boolean;
-  isCollapsed: boolean;
-  onToggleCollapse: () => void;
-  parties: Party[];
-  assignments: Record<string, Assignment[]>;
-  members: Member[];
-  jobs: any[];
-  openPartyModal: (eventId: string, subEventId: string, party?: Party) => void;
-  openSubEventModal: (eventId: string, subEvent?: SubEvent) => void;
-  deleteSubEvent: (eventId: string, subEventId: string) => void;
-  openAssignModal: (eventId: string, subEventId: string, partyId: string) => void;
-  unassignMember: (eventId: string, subEventId: string, partyId: string, assignmentId: string) => void;
-  deleteParty: (eventId: string, subEventId: string, partyId: string) => void;
-  getRoleStyle: (roleName: string) => any;
-  roles: any[];
-  onReorderParties: (eventId: string, subEventId: string, reorderedParties: Party[]) => void;
-  onReorderAssignments: (eventId: string, subEventId: string, partyId: string, reorderedAssignments: Assignment[]) => void;
+  eventId: string;
+  subEventParties: Party[];
+  partyAssignmentsMap: Record<string, Assignment[]>;
 }
 
-function SortableSubEventItem({
+const SortableSubEventItem = memo(({
   subEvent,
-  event,
-  isAdmin,
-  isCollapsed,
-  onToggleCollapse,
-  parties,
-  assignments,
-  members,
-  jobs,
-  openPartyModal,
-  openSubEventModal,
-  deleteSubEvent,
-  openAssignModal,
-  unassignMember,
-  deleteParty,
-  getRoleStyle,
-  roles,
-  onReorderParties,
-  onReorderAssignments,
-}: SortableSubEventItemProps) {
+  eventId,
+  subEventParties,
+  partyAssignmentsMap,
+}: SortableSubEventItemProps) => {
+  const { 
+    isAdmin, 
+    collapsedSubEvents, 
+    toggleSubEventCollapse,
+    openPartyModal,
+    openSubEventModal,
+    deleteSubEvent
+  } = useContext(EventsActionsContext);
+
   const {
     attributes,
     listeners,
@@ -359,6 +299,7 @@ function SortableSubEventItem({
     id: subEvent.id!,
     data: {
       type: 'subEvent',
+      eventId,
       subEvent
     }
   });
@@ -366,11 +307,14 @@ function SortableSubEventItem({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 10 : 1,
+    zIndex: isDragging ? 30 : 1,
   };
 
+  const partyIds = useMemo(() => subEventParties.map(p => p.id!), [subEventParties]);
+  const isCollapsed = collapsedSubEvents.has(subEvent.id!);
+
   return (
-    <div ref={setNodeRef} style={style} className={cn("space-y-4", isDragging && "opacity-50")}>
+    <div ref={setNodeRef} style={style} className={cn("space-y-4", isDragging && "opacity-50 z-30")}>
       <div className="flex items-center justify-between bg-zinc-800/30 p-3 rounded-xl border border-zinc-800">
         <div className="flex items-center gap-3">
           {isAdmin && (
@@ -379,7 +323,7 @@ function SortableSubEventItem({
             </div>
           )}
           <button 
-            onClick={onToggleCollapse}
+            onClick={() => toggleSubEventCollapse(subEvent.id!)}
             className="text-zinc-500 hover:text-white transition-colors"
           >
             {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -393,20 +337,20 @@ function SortableSubEventItem({
           {isAdmin && (
             <>
               <button
-                onClick={() => openPartyModal(event.id!, subEvent.id!)}
+                onClick={() => openPartyModal(eventId, subEvent.id!)}
                 className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 py-1.5 px-3 rounded-lg text-xs font-medium transition-colors"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add Party
               </button>
               <button
-                onClick={() => openSubEventModal(event.id!, subEvent)}
+                onClick={() => openSubEventModal(eventId, subEvent)}
                 className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-lg transition-colors"
               >
                 <Edit2 className="w-3.5 h-3.5" />
               </button>
               <button
-                onClick={() => deleteSubEvent(event.id!, subEvent.id!)}
+                onClick={() => deleteSubEvent(eventId, subEvent.id!)}
                 className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
               >
                 <Trash2 className="w-3.5 h-3.5" />
@@ -427,30 +371,20 @@ function SortableSubEventItem({
           >
             <SortableContext
               id={subEvent.id!}
-              items={parties.map(p => p.id!)}
+              items={partyIds}
               strategy={rectSortingStrategy}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {parties.map((party) => (
+                {subEventParties.map((party) => (
                   <SortablePartyItem
                     key={party.id}
                     party={party}
-                    event={event}
-                    subEvent={subEvent}
-                    isAdmin={isAdmin}
-                    assignments={assignments}
-                    members={members}
-                    jobs={jobs}
-                    openAssignModal={openAssignModal}
-                    openPartyModal={openPartyModal}
-                    deleteParty={deleteParty}
-                    unassignMember={unassignMember}
-                    getRoleStyle={getRoleStyle}
-                    roles={roles}
-                    onReorderAssignments={onReorderAssignments}
+                    eventId={eventId}
+                    subEventId={subEvent.id!}
+                    partyAssignments={partyAssignmentsMap[party.id!] || []}
                   />
                 ))}
-                {parties.length === 0 && (
+                {subEventParties.length === 0 && (
                   <div className="col-span-full py-4 text-center border border-dashed border-zinc-800 rounded-xl text-zinc-700 text-xs">
                     No parties created for this sub event
                   </div>
@@ -462,71 +396,35 @@ function SortableSubEventItem({
       </AnimatePresence>
     </div>
   );
-}
+});
+SortableSubEventItem.displayName = 'SortableSubEventItem';
 
 interface SortableEventItemProps {
   event: GuildEvent;
-  isAdmin: boolean;
-  collapsedEvents: Set<string>;
-  toggleEventCollapse: (id: string) => void;
-  expandedInstructions: Set<string>;
-  toggleInstructions: (id: string) => void;
-  handleShare: (id: string) => void;
-  copiedId: string | null;
-  openDiscordShareModal: (event: GuildEvent) => void;
-  openSubEventModal: (eventId: string, subEvent?: SubEvent) => void;
-  openEventModal: (event?: GuildEvent) => void;
-  deleteEvent: (id: string) => void;
-  subEvents: Record<string, SubEvent[]>;
-  collapsedSubEvents: Set<string>;
-  toggleSubEventCollapse: (id: string) => void;
-  parties: Record<string, Party[]>;
-  assignments: Record<string, Assignment[]>;
-  members: Member[];
-  jobs: any[];
-  openPartyModal: (eventId: string, subEventId: string, party?: Party) => void;
-  deleteSubEvent: (eventId: string, subEventId: string) => void;
-  openAssignModal: (eventId: string, subEventId: string, partyId: string) => void;
-  unassignMember: (eventId: string, subEventId: string, partyId: string, assignmentId: string) => void;
-  deleteParty: (eventId: string, subEventId: string, partyId: string) => void;
-  getRoleStyle: (roleName: string) => any;
-  roles: any[];
-  handlePartyReorder: (eventId: string, subEventId: string, reorderedParties: Party[]) => void;
-  handleAssignmentReorder: (eventId: string, subEventId: string, partyId: string, reorderedAssignments: Assignment[]) => void;
-  handleDragEnd: (event: DragEndEvent, eventId: string) => void;
+  eventSubEvents: SubEvent[];
+  partiesMap: Record<string, Party[]>;
+  assignmentsMap: Record<string, Assignment[]>;
 }
 
-function SortableEventItem({
+const SortableEventItem = memo(({
   event,
-  isAdmin,
-  collapsedEvents,
-  toggleEventCollapse,
-  expandedInstructions,
-  toggleInstructions,
-  handleShare,
-  copiedId,
-  openDiscordShareModal,
-  openSubEventModal,
-  openEventModal,
-  deleteEvent,
-  subEvents,
-  collapsedSubEvents,
-  toggleSubEventCollapse,
-  parties,
-  assignments,
-  members,
-  jobs,
-  openPartyModal,
-  deleteSubEvent,
-  openAssignModal,
-  unassignMember,
-  deleteParty,
-  getRoleStyle,
-  roles,
-  handlePartyReorder,
-  handleAssignmentReorder,
-  handleDragEnd,
-}: SortableEventItemProps) {
+  eventSubEvents,
+  partiesMap,
+  assignmentsMap,
+}: SortableEventItemProps) => {
+  const { 
+    isAdmin, 
+    collapsedEvents, 
+    toggleEventCollapse,
+    expandedInstructions,
+    toggleInstructions,
+    handleShare,
+    copiedId,
+    openDiscordShareModal,
+    openSubEventModal,
+    openEventModal,
+    deleteEvent
+  } = useContext(EventsActionsContext);
   const {
     attributes,
     listeners,
@@ -542,18 +440,13 @@ function SortableEventItem({
     }
   });
 
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     zIndex: isDragging ? 20 : 1,
   };
+
+  const subEventIds = useMemo(() => eventSubEvents.map(s => s.id!), [eventSubEvents]);
 
   return (
     <div ref={setNodeRef} style={style}>
@@ -679,42 +572,21 @@ function SortableEventItem({
               className="overflow-hidden"
             >
               <div className="p-6 space-y-6">
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={(e) => handleDragEnd(e, event.id!)}
+                <SortableContext
+                  items={subEventIds}
+                  strategy={verticalListSortingStrategy}
                 >
-                  <SortableContext
-                    items={subEvents[event.id!]?.map(s => s.id!) || []}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {subEvents[event.id!]?.map((subEvent) => (
-                      <SortableSubEventItem
-                        key={subEvent.id}
-                        subEvent={subEvent}
-                        event={event}
-                        isAdmin={isAdmin}
-                        isCollapsed={collapsedSubEvents.has(subEvent.id!)}
-                        onToggleCollapse={() => toggleSubEventCollapse(subEvent.id!)}
-                        parties={parties[subEvent.id!] || []}
-                        assignments={assignments}
-                        members={members}
-                        jobs={jobs}
-                        openPartyModal={openPartyModal}
-                        openSubEventModal={openSubEventModal}
-                        deleteSubEvent={deleteSubEvent}
-                        openAssignModal={openAssignModal}
-                        unassignMember={unassignMember}
-                        deleteParty={deleteParty}
-                        getRoleStyle={getRoleStyle}
-                        roles={roles}
-                        onReorderParties={handlePartyReorder}
-                        onReorderAssignments={handleAssignmentReorder}
-                      />
-                    ))}
-                  </SortableContext>
-                </DndContext>
-                {(!subEvents[event.id!] || subEvents[event.id!].length === 0) && (
+                  {eventSubEvents.map((subEvent) => (
+                    <SortableSubEventItem
+                      key={subEvent.id}
+                      subEvent={subEvent}
+                      eventId={event.id!}
+                      subEventParties={partiesMap[subEvent.id!] || []}
+                      partyAssignmentsMap={assignmentsMap}
+                    />
+                  ))}
+                </SortableContext>
+                {eventSubEvents.length === 0 && (
                   <div className="py-12 text-center border-2 border-dashed border-zinc-800 rounded-2xl">
                     <div className="w-12 h-12 bg-zinc-800/50 rounded-full flex items-center justify-center mx-auto mb-4 text-zinc-600">
                       <Layers className="w-6 h-6" />
@@ -738,7 +610,8 @@ function SortableEventItem({
       </motion.div>
     </div>
   );
-}
+});
+SortableEventItem.displayName = 'SortableEventItem';
 
 export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [events, setEvents] = useState<GuildEvent[]>([]);
@@ -804,7 +677,11 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [isSendingDiscord, setIsSendingDiscord] = useState(false);
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -1293,7 +1170,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     }
   };
 
-  const handleDragOver = (event: DragOverEvent) => {
+  const handleDragOver = useCallback((event: DragOverEvent) => {
     const { active, over } = event;
     if (!over) return;
 
@@ -1304,253 +1181,71 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       const activePartyId = activeData.partyId;
       const overPartyId = overData?.type === 'assignment' ? overData.partyId : (overData?.type === 'party' ? over.id : null);
 
-      if (activePartyId && overPartyId && activePartyId !== overPartyId) {
+      if (activePartyId && overPartyId && activePartyId === overPartyId && active.id !== over.id) {
         setAssignments(prev => {
-          const activeItems = prev[activePartyId] || [];
-          const overItems = prev[overPartyId] || [];
-          const activeIndex = activeItems.findIndex(a => a.id === active.id);
-          
-          let newIndex;
-          if (overData?.type === 'assignment') {
-            newIndex = overItems.findIndex(a => a.id === over.id);
-          } else {
-            newIndex = overItems.length;
+          const items = prev[activePartyId] || [];
+          const oldIndex = items.findIndex(a => a.id === active.id);
+          const newIndex = items.findIndex(a => a.id === over.id);
+          if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+            return { ...prev, [activePartyId]: arrayMove(items, oldIndex, newIndex) };
           }
-
-          const item = activeItems[activeIndex];
-          if (!item) return prev;
-
-          const nextActiveItems = [...activeItems];
-          nextActiveItems.splice(activeIndex, 1);
-
-          const nextOverItems = [...overItems];
-          nextOverItems.splice(newIndex, 0, { ...item, partyId: overPartyId });
-
-          return {
-            ...prev,
-            [activePartyId]: nextActiveItems,
-            [overPartyId]: nextOverItems,
-          };
+          return prev;
         });
       }
       return;
     }
 
-    if (!activeData || activeData.type !== 'party') return;
+    if (activeData?.type === 'party') {
+      const activeSubEventId = activeData.subEventId;
+      const overSubEventId = overData?.subEventId || (overData?.type === 'subEvent' ? over.id : null);
 
-    // Find current container in state
-    const activeSubEventId = Object.keys(parties).find(key => 
-      parties[key].some(p => p.id === active.id)
-    );
-    
-    const overSubEventId = overData?.subEventId || (overData?.type === 'subEvent' ? over.id : null);
-
-    if (activeSubEventId && overSubEventId && activeSubEventId !== overSubEventId) {
-      setParties(prev => {
-        const activeItems = prev[activeSubEventId] || [];
-        const overItems = prev[overSubEventId] || [];
-        const activeIndex = activeItems.findIndex(p => p.id === active.id);
-        
-        let newIndex;
-        if (overData?.type === 'party') {
-          newIndex = overItems.findIndex(p => p.id === over.id);
-        } else {
-          newIndex = overItems.length;
-        }
-
-        const item = activeItems[activeIndex];
-        if (!item) return prev;
-
-        const nextActiveItems = [...activeItems];
-        nextActiveItems.splice(activeIndex, 1);
-
-        const nextOverItems = [...overItems];
-        nextOverItems.splice(newIndex, 0, { ...item, subEventId: overSubEventId });
-
-        return {
-          ...prev,
-          [activeSubEventId]: nextActiveItems,
-          [overSubEventId]: nextOverItems,
-        };
-      });
-    }
-  };
-
-  const handleDragEnd = async (event: DragEndEvent, eventId: string) => {
-    const { active, over } = event;
-    if (!over) {
-      setInitialSubEventId(null);
+      if (activeSubEventId && overSubEventId && activeSubEventId === overSubEventId && active.id !== over.id) {
+        setParties(prev => {
+          const items = prev[activeSubEventId] || [];
+          const oldIndex = items.findIndex(p => p.id === active.id);
+          const newIndex = items.findIndex(p => p.id === over.id);
+          if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+            return { ...prev, [activeSubEventId]: arrayMove(items, oldIndex, newIndex) };
+          }
+          return prev;
+        });
+      }
       return;
     }
 
-    const activeData = active.data.current;
-    
     if (activeData?.type === 'subEvent') {
-      if (active.id === over.id) {
-        setInitialSubEventId(null);
-        return;
-      }
-      
-      const eventSubEvents = [...(subEvents[eventId] || [])];
-      const oldIndex = eventSubEvents.findIndex((s) => s.id === active.id);
-      const newIndex = eventSubEvents.findIndex((s) => s.id === over.id);
+      const activeEventId = activeData.eventId;
+      const overEventId = overData?.eventId || (overData?.type === 'event' ? over.id : null);
 
-      const reordered = arrayMove(eventSubEvents, oldIndex, newIndex).map((s, index) => ({
-        ...s,
-        order: index
-      }));
-      
-      setSubEvents(prev => ({ ...prev, [eventId]: reordered }));
-
-      try {
-        await fetchAPI(`/api/events/${eventId}/subevents-reorder`, {
-          method: 'PUT',
-          body: JSON.stringify({ subevents: reordered })
+      if (activeEventId && overEventId && activeEventId === overEventId && active.id !== over.id) {
+        setSubEvents(prev => {
+          const items = prev[activeEventId] || [];
+          const oldIndex = items.findIndex(s => s.id === active.id);
+          const newIndex = items.findIndex(s => s.id === over.id);
+          if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+            return { ...prev, [activeEventId]: arrayMove(items, oldIndex, newIndex) };
+          }
+          return prev;
         });
-        loadData();
-      } catch (error) {
-        console.error('Failed to reorder subevents:', error);
       }
-    } else if (activeData?.type === 'assignment') {
-      const currentPartyId = Object.keys(assignments).find(key => 
-        assignments[key].some(a => a.id === active.id)
-      );
-      
-      if (currentPartyId) {
-        const currentAssignments = assignments[currentPartyId] || [];
-        const oldPartyId = activeData.partyId;
-        
-        if (oldPartyId === currentPartyId) {
-          // Reorder within same party
-          const oldIndex = currentAssignments.findIndex(a => a.id === active.id);
-          const overIndex = currentAssignments.findIndex(a => a.id === over.id);
-          if (oldIndex !== -1 && overIndex !== -1 && oldIndex !== overIndex) {
-            const reordered = arrayMove(currentAssignments, oldIndex, overIndex).map((a, index) => ({
-              ...a,
-              order: index
-            }));
-            // Find which subevent this party belongs to
-            let subEventId = '';
-            for (const seId in parties) {
-              if (parties[seId].some(p => p.id === currentPartyId)) {
-                subEventId = seId;
-                break;
-              }
-            }
-            handleAssignmentReorder(eventId, subEventId, currentPartyId, reordered);
-          }
-        } else {
-          // Cross-party move
-          const assignment = currentAssignments.find(a => a.id === active.id);
-          if (assignment) {
-            // Find subevent for target party
-            let targetSubEventId = '';
-            for (const seId in parties) {
-              if (parties[seId].some(p => p.id === currentPartyId)) {
-                targetSubEventId = seId;
-                break;
-              }
-            }
-            
-            // Find subevent for source party
-            let sourceSubEventId = '';
-            for (const seId in parties) {
-              if (parties[seId].some(p => p.id === oldPartyId)) {
-                sourceSubEventId = seId;
-                break;
-              }
-            }
+      return;
+    }
 
-            try {
-              // Let's just use the current state to update the event
-              const updatedEvent = events.find(e => e.id === eventId);
-              if (updatedEvent) {
-                const newEvent = {
-                  ...updatedEvent,
-                  subevents: ((updatedEvent as any).subevents || []).map((se: any) => ({
-                    ...se,
-                    parties: (se.parties || []).map((p: any) => {
-                      if (p.id === oldPartyId) {
-                        return { 
-                          ...p, 
-                          assignments: (p.assignments || [])
-                            .filter((a: any) => a.id !== active.id)
-                            .map((a: any, index: number) => ({ ...a, order: index }))
-                        };
-                      }
-                      if (p.id === currentPartyId) {
-                        // The currentAssignments array already has the item inserted by handleDragOver
-                        // We just need to ensure the order is correct
-                        return { 
-                          ...p, 
-                          assignments: currentAssignments.map((a: any, index: number) => ({
-                            ...a,
-                            partyId: currentPartyId,
-                            subEventId: targetSubEventId,
-                            order: index
-                          }))
-                        };
-                      }
-                      return p;
-                    })
-                  }))
-                };
-                await fetchAPI(`/api/events/${eventId}`, {
-                  method: 'PUT',
-                  body: JSON.stringify(newEvent)
-                });
-                loadData();
-              }
-            } catch (error) {
-              console.error('Failed to move assignment:', error);
-              loadData();
-            }
+    if (activeData?.type === 'event') {
+      if (active.id !== over.id) {
+        setEvents(prev => {
+          const oldIndex = prev.findIndex(e => e.id === active.id);
+          const newIndex = prev.findIndex(e => e.id === over.id);
+          if (oldIndex !== -1 && newIndex !== -1) {
+            return arrayMove(prev, oldIndex, newIndex);
           }
-        }
-      }
-    } else if (activeData?.type === 'party') {
-      // Find where it ended up in our state
-      const currentSubEventId = Object.keys(parties).find(key => 
-        parties[key].some(p => p.id === active.id)
-      );
-
-      if (initialSubEventId && currentSubEventId) {
-        const currentParties = parties[currentSubEventId] || [];
-        const finalIndex = currentParties.findIndex(p => p.id === active.id);
-
-        if (initialSubEventId === currentSubEventId) {
-          // Reorder within same container
-          const oldIndex = currentParties.findIndex(p => p.id === active.id);
-          const overIndex = currentParties.findIndex(p => p.id === over.id);
-          
-          if (oldIndex !== -1 && overIndex !== -1 && oldIndex !== overIndex) {
-            const reordered = arrayMove(currentParties, oldIndex, overIndex);
-            handlePartyReorder(eventId, currentSubEventId, reordered);
-          }
-        } else {
-          // Cross-container move
-          try {
-            await fetchAPI(`/api/events/${eventId}/move-party`, {
-              method: 'PUT',
-              body: JSON.stringify({
-                partyId: active.id,
-                fromSubEventId: initialSubEventId,
-                toSubEventId: currentSubEventId,
-                newIndex: finalIndex
-              })
-            });
-            loadData();
-          } catch (error) {
-            console.error('Failed to move party:', error);
-            loadData();
-          }
-        }
+          return prev;
+        });
       }
     }
-    setInitialSubEventId(null);
-  };
+  }, []);
 
-  const handlePartyReorder = async (eventId: string, subEventId: string, reorderedParties: Party[]) => {
+  const handlePartyReorder = useCallback(async (eventId: string, subEventId: string, reorderedParties: Party[]) => {
     const reorderedWithOrder = reorderedParties.map((p, index) => ({
       ...p,
       order: index
@@ -1569,9 +1264,9 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     } catch (error) {
       console.error('Failed to reorder parties:', error);
     }
-  };
+  }, [loadData]);
 
-  const handleAssignmentReorder = async (eventId: string, subEventId: string, partyId: string, reorderedAssignments: Assignment[]) => {
+  const handleAssignmentReorder = useCallback(async (eventId: string, subEventId: string, partyId: string, reorderedAssignments: Assignment[]) => {
     const reorderedWithOrder = reorderedAssignments.map((a, index) => ({
       ...a,
       order: index
@@ -1590,28 +1285,87 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     } catch (error) {
       console.error('Failed to reorder assignments:', error);
     }
-  };
+  }, [loadData]);
 
-  const handleEventReorder = async (eventDnd: DragEndEvent) => {
-    const { active, over } = eventDnd;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = events.findIndex((e) => e.id === active.id);
-    const newIndex = events.findIndex((e) => e.id === over.id);
-
-    const reordered = arrayMove(events, oldIndex, newIndex);
-    setEvents(reordered);
-
-    try {
-      await fetchAPI('/api/events-reorder', {
-        method: 'PUT',
-        body: JSON.stringify({ orderedIds: reordered.map(e => e.id) })
-      });
-    } catch (error) {
-      console.error('Failed to reorder events:', error);
-      loadData();
+  const handleDragEndTop = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) {
+      setInitialSubEventId(null);
+      return;
     }
-  };
+
+    const activeData = active.data.current;
+    
+    if (activeData?.type === 'event') {
+      const oldIndex = events.findIndex((e) => e.id === active.id);
+      const newIndex = events.findIndex((e) => e.id === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const reordered = arrayMove(events, oldIndex, newIndex);
+        setEvents(reordered);
+
+        try {
+          await fetchAPI('/api/events-reorder', {
+            method: 'PUT',
+            body: JSON.stringify({ orderedIds: reordered.map(e => e.id) })
+          });
+        } catch (error) {
+          console.error('Failed to reorder events:', error);
+          loadData();
+        }
+      }
+    } else if (activeData?.type === 'subEvent') {
+      const eventId = activeData.eventId;
+      if (!eventId) return;
+      
+      const eventSubEvents = [...(subEvents[eventId] || [])];
+      const oldIndex = eventSubEvents.findIndex((s) => s.id === active.id);
+      const newIndex = eventSubEvents.findIndex((s) => s.id === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const reordered = arrayMove(eventSubEvents, oldIndex, newIndex).map((s, index) => ({
+          ...s,
+          order: index
+        }));
+        
+        setSubEvents(prev => ({ ...prev, [eventId]: reordered }));
+
+        try {
+          await fetchAPI(`/api/events/${eventId}/subevents-reorder`, {
+            method: 'PUT',
+            body: JSON.stringify({ subevents: reordered })
+          });
+          loadData();
+        } catch (error) {
+          console.error('Failed to reorder subevents:', error);
+        }
+      }
+    } else if (activeData?.type === 'assignment') {
+      const currentPartyId = activeData.partyId;
+      const eventId = activeData.eventId;
+      const subEventId = activeData.subEventId;
+      
+      if (currentPartyId && eventId && subEventId) {
+        const currentAssignments = assignments[currentPartyId] || [];
+        handleAssignmentReorder(eventId, subEventId, currentPartyId, currentAssignments);
+      }
+    } else if (activeData?.type === 'party') {
+      const currentSubEventId = activeData.subEventId;
+      const eventId = activeData.eventId;
+
+      if (initialSubEventId && currentSubEventId && initialSubEventId === currentSubEventId && eventId) {
+        const currentParties = parties[currentSubEventId] || [];
+        const oldIndex = currentParties.findIndex(p => p.id === active.id);
+        const overIndex = currentParties.findIndex(p => p.id === over.id);
+        
+        if (oldIndex !== -1 && overIndex !== -1) {
+          const reordered = arrayMove(currentParties, oldIndex, overIndex);
+          handlePartyReorder(eventId, currentSubEventId, reordered);
+        }
+      }
+    }
+    setInitialSubEventId(null);
+  }, [events, subEvents, assignments, parties, initialSubEventId, handleAssignmentReorder, handlePartyReorder, loadData]);
 
   const openEventModal = (event?: GuildEvent) => {
     if (event) {
@@ -1667,7 +1421,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     setIsAssignModalOpen(true);
   };
 
-  const getRoleStyle = (roleName: string) => {
+  const getRoleStyle = useCallback((roleName: string) => {
     const role = roles.find(r => r.name === roleName);
     if (role) {
       return { 
@@ -1679,7 +1433,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       };
     }
     return { name: roleName, color: '#a1a1aa', bg: '#a1a1aa10', border: '#a1a1aa20', icon: <Shield className="w-3 h-3" /> };
-  };
+  }, [roles]);
 
   const getAutoRole = (member: Member) => {
     return getMemberCategory(member);
@@ -1720,76 +1474,81 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   }, [members, subEvents, parties, assignments, activeEventId, memberSearchTerm, memberRoleFilter]);
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Regular Events</h1>
-          <p className="text-zinc-500">Weekly guild activities and party setups</p>
-        </div>
-        {isAdmin && (
-          <button
-            onClick={() => openEventModal()}
-            className="flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 px-5 rounded-xl transition-all active:scale-95 shadow-lg shadow-orange-500/20"
-          >
-            <Plus className="w-5 h-5" />
-            Add Regular Event
-          </button>
-        )}
-      </div>
-
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <div className="w-8 h-8 border-3 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
-        </div>
-      ) : (
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleEventReorder}
-        >
-          <SortableContext
-            items={events.map(e => e.id!)}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="space-y-8">
-              {events.map((event) => (
-                <SortableEventItem
-                  key={event.id}
-                  event={event}
-                  isAdmin={isAdmin}
-                  collapsedEvents={collapsedEvents}
-                  toggleEventCollapse={toggleEventCollapse}
-                  expandedInstructions={expandedInstructions}
-                  toggleInstructions={toggleInstructions}
-                  handleShare={handleShare}
-                  copiedId={copiedId}
-                  openDiscordShareModal={openDiscordShareModal}
-                  openSubEventModal={openSubEventModal}
-                  openEventModal={openEventModal}
-                  deleteEvent={deleteEvent}
-                  subEvents={subEvents}
-                  collapsedSubEvents={collapsedSubEvents}
-                  toggleSubEventCollapse={toggleSubEventCollapse}
-                  parties={parties}
-                  assignments={assignments}
-                  members={members}
-                  jobs={jobs}
-                  openPartyModal={openPartyModal}
-                  deleteSubEvent={deleteSubEvent}
-                  openAssignModal={openAssignModal}
-                  unassignMember={unassignMember}
-                  deleteParty={deleteParty}
-                  getRoleStyle={getRoleStyle}
-                  roles={roles}
-                  handlePartyReorder={handlePartyReorder}
-                  handleAssignmentReorder={handleAssignmentReorder}
-                  handleDragEnd={handleDragEnd}
-                />
-              ))}
+    <EventsActionsContext.Provider value={{
+      isAdmin,
+      collapsedEvents,
+      toggleEventCollapse,
+      expandedInstructions,
+      toggleInstructions,
+      handleShare,
+      copiedId,
+      openDiscordShareModal,
+      openSubEventModal,
+      openEventModal,
+      deleteEvent,
+      collapsedSubEvents,
+      toggleSubEventCollapse,
+      openPartyModal,
+      deleteSubEvent,
+      openAssignModal,
+      unassignMember,
+      deleteParty,
+      handlePartyReorder,
+      handleAssignmentReorder
+    }}>
+      <EventsStaticDataContext.Provider value={{
+        members,
+        jobs,
+        roles,
+        getRoleStyle
+      }}>
+        <div className="p-6 max-w-[1600px] mx-auto">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-white">Regular Events</h1>
+              <p className="text-zinc-500">Weekly guild activities and party setups</p>
             </div>
-          </SortableContext>
-        </DndContext>
-      )}
+            {isAdmin && (
+              <button
+                onClick={() => openEventModal()}
+                className="flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2.5 px-5 rounded-xl transition-all active:scale-95 shadow-lg shadow-orange-500/20"
+              >
+                <Plus className="w-5 h-5" />
+                Add Regular Event
+              </button>
+            )}
+          </div>
+
+          {loading ? (
+            <div className="flex justify-center py-20">
+              <div className="w-8 h-8 border-3 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          ) : (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCorners}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEndTop}
+            >
+              <SortableContext
+                items={events.map(e => e.id!)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="space-y-8">
+                  {events.map((event) => (
+                    <SortableEventItem
+                      key={event.id}
+                      event={event}
+                      eventSubEvents={subEvents[event.id!] || []}
+                      partiesMap={parties}
+                      assignmentsMap={assignments}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
 
       {/* Event Modal */}
       <AnimatePresence>
@@ -2163,5 +1922,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         )}
       </AnimatePresence>
     </div>
+      </EventsStaticDataContext.Provider>
+    </EventsActionsContext.Provider>
   );
 }

@@ -14,7 +14,8 @@ dotenv.config();
 
 async function startServer() {
   // Run migrations
-  if (process.env.DATABASE_URL) {
+  const dbUrl = process.env.DATABASE_URL || process.env.POSTGRES_URL_NON_POOLING || process.env.POSTGRES_URL;
+  if (dbUrl) {
     try {
       console.log("Running migrations...");
       await execAsync("npm run build:migrations");
