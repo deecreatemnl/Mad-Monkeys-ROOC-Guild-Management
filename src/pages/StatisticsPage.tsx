@@ -16,14 +16,14 @@ const COLORS = ['#f97316', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'
 const STATUS_COLORS: Record<string, string> = {
   'active': '#10b981',
   'on-leave': '#f59e0b',
-  'left': '#ef4444'
+  'left the guild': '#ef4444'
 };
 
 interface StatisticsPageProps {
   isAdmin?: boolean;
 }
 
-type TabType = 'jobs' | 'status' | 'raffle' | 'traffic';
+type TabType = 'raffle' | 'traffic';
 
 export default function StatisticsPage({ isAdmin = false }: StatisticsPageProps) {
   const [members, setMembers] = useState<Member[]>([]);
@@ -31,7 +31,7 @@ export default function StatisticsPage({ isAdmin = false }: StatisticsPageProps)
   const [analytics, setAnalytics] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabType>('jobs');
+  const [activeTab, setActiveTab] = useState<TabType>('raffle');
   const [selectedJobName, setSelectedJobName] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
 
@@ -74,7 +74,7 @@ export default function StatisticsPage({ isAdmin = false }: StatisticsPageProps)
     }
   };
 
-  const activeMembers = useMemo(() => members.filter(m => m.status !== 'left'), [members]);
+  const activeMembers = useMemo(() => members.filter(m => m.status !== 'left the guild'), [members]);
 
   const jobStats = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -93,7 +93,7 @@ export default function StatisticsPage({ isAdmin = false }: StatisticsPageProps)
     const counts: Record<string, number> = {
       'active': 0,
       'on-leave': 0,
-      'left': 0
+      'left the guild': 0
     };
     members.forEach(m => {
       const status = m.status || 'active';
@@ -147,8 +147,6 @@ export default function StatisticsPage({ isAdmin = false }: StatisticsPageProps)
   }
 
   const tabs = [
-    { id: 'jobs', label: 'Job Classes', icon: Briefcase },
-    { id: 'status', label: 'Member Status', icon: Activity },
     { id: 'raffle', label: 'Raffle Analytics', icon: TrendingUp },
     { id: 'traffic', label: 'Traffic', icon: MousePointer2 },
   ];
@@ -184,15 +182,7 @@ export default function StatisticsPage({ isAdmin = false }: StatisticsPageProps)
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         {(() => {
-          const cards = activeTab === 'jobs' ? [
-            { label: 'Total Active', value: totalMembers, icon: Users, color: 'text-orange-500', bg: 'bg-orange-500/10' },
-            { label: 'Total Jobs', value: jobs.length, icon: Briefcase, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-            { label: 'Most Popular', value: mostPopularJob, icon: Activity, color: 'text-green-500', bg: 'bg-green-500/10' }
-          ] : activeTab === 'status' ? [
-            { label: 'Total Members', value: members.length, icon: Users, color: 'text-orange-500', bg: 'bg-orange-500/10' },
-            { label: 'Active', value: members.filter(m => (m.status || 'active') === 'active').length, icon: ShieldCheck, color: 'text-green-500', bg: 'bg-green-500/10' },
-            { label: 'On Leave', value: members.filter(m => m.status === 'on-leave').length, icon: Activity, color: 'text-blue-500', bg: 'bg-blue-500/10' }
-          ] : activeTab === 'raffle' ? [
+          const cards = activeTab === 'raffle' ? [
             { label: 'Raffle Weeks', value: analytics?.raffleStats?.length || 0, icon: Calendar, color: 'text-orange-500', bg: 'bg-orange-500/10' },
             { label: 'Total Entries', value: analytics?.raffleStats?.reduce((acc: number, s: any) => acc + (s.entryCount || s.entry_count || 0), 0) || 0, icon: TrendingUp, color: 'text-green-500', bg: 'bg-green-500/10' },
             { label: 'Avg Entries', value: ((analytics?.raffleStats?.reduce((acc: number, s: any) => acc + (s.entryCount || s.entry_count || 0), 0) || 0) / (analytics?.raffleStats?.length || 1)).toFixed(1), icon: Activity, color: 'text-blue-500', bg: 'bg-blue-500/10' }
@@ -223,128 +213,6 @@ export default function StatisticsPage({ isAdmin = false }: StatisticsPageProps)
       </div>
 
       <AnimatePresence mode="wait">
-        {activeTab === 'jobs' && (
-          <motion.div
-            key="jobs"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="space-y-8"
-          >
-            <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-xl">
-              <h2 className="text-xl font-bold text-white mb-8 flex items-center gap-2">
-                <Briefcase className="w-5 h-5 text-orange-500" />
-                Class Distribution
-              </h2>
-              <div className="h-[400px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart 
-                    data={pieData} 
-                    layout="vertical" 
-                    margin={{ left: 40 }}
-                    onClick={(data) => {
-                      if (data && data.activeLabel) {
-                        handleJobClick(String(data.activeLabel));
-                      }
-                    }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" stroke="#71717a" fontSize={12} width={100} />
-                    <Tooltip
-                      cursor={{ fill: '#27272a', opacity: 0.4 }}
-                      contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px' }}
-                    />
-                    <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={24} className="cursor-pointer">
-                      {pieData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <p className="text-center text-xs text-zinc-500 mt-4 italic">Click a bar to see members</p>
-            </div>
-
-            <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-xl overflow-hidden flex flex-col">
-              <h2 className="text-xl font-bold text-white mb-8 flex items-center gap-2">
-                <Users className="w-5 h-5 text-orange-500" />
-                Job Class List
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto custom-scrollbar pr-2">
-                {jobStats.filter(s => s.count > 0).map((stat, index) => (
-                  <button
-                    key={stat.name}
-                    onClick={() => handleJobClick(stat.name)}
-                    className="w-full flex items-center justify-between p-4 bg-zinc-800/30 rounded-xl border border-zinc-800 hover:border-orange-500/30 hover:bg-zinc-800/50 transition-all group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-2 h-8 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                      <span className="font-bold text-zinc-200">{stat.name}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl font-bold text-white">{stat.count}</span>
-                      <div className="p-1.5 bg-zinc-800 rounded-lg group-hover:bg-orange-500/10 group-hover:text-orange-500 transition-all">
-                        <Users className="w-4 h-4" />
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-        )}
-
-        {activeTab === 'status' && (
-          <motion.div
-            key="status"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            className="grid grid-cols-1 lg:grid-cols-2 gap-8"
-          >
-            <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-xl">
-              <h2 className="text-xl font-bold text-white mb-8 flex items-center gap-2">
-                <Activity className="w-5 h-5 text-orange-500" />
-                Member Status Overview
-              </h2>
-              <div className="h-[300px] w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={statusStats}
-                      innerRadius={60}
-                      outerRadius={100}
-                      paddingAngle={5}
-                      dataKey="count"
-                    >
-                      {statusStats.map((entry) => (
-                        <Cell key={`cell-${entry.name}`} fill={STATUS_COLORS[entry.name] || '#71717a'} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '12px' }} />
-                    <Legend />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-2xl shadow-xl">
-              <h2 className="text-xl font-bold text-white mb-8">Status Breakdown</h2>
-              <div className="space-y-4">
-                {statusStats.map((stat) => (
-                  <div key={stat.name} className="flex items-center justify-between p-4 bg-zinc-800/30 rounded-xl border border-zinc-800">
-                    <div className="flex items-center gap-3">
-                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: STATUS_COLORS[stat.name] || '#71717a' }} />
-                      <span className="font-bold text-zinc-200 uppercase text-xs tracking-widest">{stat.name}</span>
-                    </div>
-                    <span className="text-xl font-bold text-white">{stat.count}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </motion.div>
-        )}
-
         {activeTab === 'raffle' && (
           <motion.div
             key="raffle"

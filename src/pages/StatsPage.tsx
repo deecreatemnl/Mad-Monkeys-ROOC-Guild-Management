@@ -21,7 +21,7 @@ export default function StatsPage({ isAdmin = false }: StatsPageProps) {
           fetchAPI('/api/jobs')
         ]);
         // Filter out members who have left
-        const activeMembers = membersData.filter((m: Member) => m.status !== 'left');
+        const activeMembers = membersData.filter((m: Member) => m.status !== 'left the guild');
         setMembers(activeMembers);
         setJobs(jobsData || []);
       } catch (err) {

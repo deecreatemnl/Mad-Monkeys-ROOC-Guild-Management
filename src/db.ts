@@ -55,6 +55,8 @@ export interface Database {
   updateMembersJob: (oldJobName: string, newJobName: string) => Promise<void>;
   updateRoleName: (oldRoleName: string, newRoleName: string) => Promise<void>;
   updateAssignmentsRole: (memberId: string, newRole: string) => Promise<void>;
+  saveMembers: (members: any[]) => Promise<void>;
+  saveEvents: (events: any[]) => Promise<void>;
   recordPageView: (page: string, memberId?: string) => Promise<void>;
   getPageViews: () => Promise<any[]>;
   saveRaffleStats: (stats: { week: number, month: number, year: number, entryCount: number }) => Promise<void>;
@@ -427,18 +429,20 @@ export class FileDatabase implements Database {
 
   async updateMembersJob(oldJobName: string, newJobName: string) {
     const data = await this.get();
+    const lowerOldName = oldJobName.toLowerCase();
     data.members = data.members.map((m: any) => 
-      m.job === oldJobName ? { ...m, job: newJobName } : m
+      (m.job || '').toLowerCase() === lowerOldName ? { ...m, job: newJobName } : m
     );
     await this.save(data);
   }
 
   async updateRoleName(oldRoleName: string, newRoleName: string) {
     const data = await this.get();
+    const lowerOldName = oldRoleName.toLowerCase();
     
     // Update members
     data.members = (data.members || []).map((m: any) => 
-      m.role === oldRoleName ? { ...m, role: newRoleName } : m
+      (m.role || '').toLowerCase() === lowerOldName ? { ...m, role: newRoleName } : m
     );
 
     // Update assignments
@@ -449,7 +453,7 @@ export class FileDatabase implements Database {
         parties: (subevent.parties || []).map((party: any) => ({
           ...party,
           assignments: (party.assignments || []).map((assignment: any) => 
-            assignment.role === oldRoleName ? { ...assignment, role: newRoleName } : assignment
+            (assignment.role || '').toLowerCase() === lowerOldName ? { ...assignment, role: newRoleName } : assignment
           )
         }))
       }))
@@ -471,6 +475,32 @@ export class FileDatabase implements Database {
         }))
       }))
     }));
+    await this.save(data);
+  }
+
+  async saveMembers(members: any[]) {
+    const data = await this.get();
+    for (const member of members) {
+      const index = data.members.findIndex((m: any) => m.id === member.id);
+      if (index !== -1) {
+        data.members[index] = member;
+      } else {
+        data.members.push(member);
+      }
+    }
+    await this.save(data);
+  }
+
+  async saveEvents(events: any[]) {
+    const data = await this.get();
+    for (const event of events) {
+      const index = data.events.findIndex((e: any) => e.id === event.id);
+      if (index !== -1) {
+        data.events[index] = event;
+      } else {
+        data.events.push(event);
+      }
+    }
     await this.save(data);
   }
 
@@ -1480,52 +1510,105 @@ export class SupabaseDatabase implements Database {
   }
 
   async updateMembersJob(oldJobName: string, newJobName: string) {
-    const { error } = await this.supabase.from('members').update({ job: newJobName }).eq('job', oldJobName);
+    this.clearCache('members');
+    // Use ilike for case-insensitive update to handle inconsistent import data
+    const { error } = await this.supabase.from('members').update({ job: newJobName }).filter('job', 'ilike', oldJobName);
     if (error) console.error("Supabase Update Members Job Error:", error.message);
   }
 
+  async saveEvents(events: any[]) {
+    this.clearCache('events');
+    const { error } = await this.supabase.from('events').upsert(events);
+    if (error) {
+      console.error("Supabase Save Events Batch Error:", error.message);
+      // Fallback to individual saves if batch fails (e.g. due to missing columns in some records)
+      for (const event of events) {
+        await this.saveEvent(event);
+      }
+    }
+  }
+
+  async saveMembers(members: any[]) {
+    this.clearCache('members');
+    const payloads = members.map(member => ({
+      id: member.id,
+      ign: member.ign,
+      job: member.job,
+      role: member.role,
+      date_joined: formatDateForDB(member.dateJoined),
+      uid: member.uid,
+      status: member.status || 'active',
+      leave_reason: member.leaveReason,
+      leave_dates: member.leaveDates || [],
+      leave_started_at: member.leaveStartedAt === "" ? null : member.leaveStartedAt,
+      return_date: member.returnDate === "" ? null : member.returnDate
+    }));
+
+    const { error } = await this.supabase.from('members').upsert(payloads);
+    if (error) {
+      console.error("Supabase Save Members Batch Error:", error.message);
+      // Fallback to individual saves
+      for (const member of members) {
+        await this.saveMember(member);
+      }
+    }
+  }
+
   async updateRoleName(oldRoleName: string, newRoleName: string) {
-    // Update members
-    const { error: membersError } = await this.supabase.from('members').update({ role: newRoleName }).eq('role', oldRoleName);
+    this.clearCache('members');
+    this.clearCache('events');
+    // Update members case-insensitively
+    const { error: membersError } = await this.supabase.from('members').update({ role: newRoleName }).filter('role', 'ilike', oldRoleName);
     if (membersError) console.error("Supabase Update Members Role Error:", membersError.message);
 
     // Update assignments
     const events = await this.getEvents();
-    const updatedEvents = events.map((event: any) => ({
-      ...event,
-      subevents: (event.subevents || []).map((subevent: any) => ({
-        ...subevent,
-        parties: (subevent.parties || []).map((party: any) => ({
-          ...party,
-          assignments: (party.assignments || []).map((assignment: any) => 
-            assignment.role === oldRoleName ? { ...assignment, role: newRoleName } : assignment
-          )
-        }))
-      }))
-    }));
+    const lowerOldName = oldRoleName.toLowerCase();
+    const updatedEvents = events.map((event: any) => {
+      let changed = false;
+      const newSubevents = (event.subevents || []).map((subevent: any) => {
+        const newParties = (subevent.parties || []).map((party: any) => {
+          const newAssignments = (party.assignments || []).map((assignment: any) => {
+            if ((assignment.role || '').toLowerCase() === lowerOldName) {
+              changed = true;
+              return { ...assignment, role: newRoleName };
+            }
+            return assignment;
+          });
+          return { ...party, assignments: newAssignments };
+        });
+        return { ...subevent, parties: newParties };
+      });
+      return changed ? { ...event, subevents: newSubevents } : null;
+    }).filter(Boolean);
     
-    for (const event of updatedEvents) {
-      await this.saveEvent(event);
+    if (updatedEvents.length > 0) {
+      await this.saveEvents(updatedEvents);
     }
   }
 
   async updateAssignmentsRole(memberId: string, newRole: string) {
     const events = await this.getEvents();
-    const updatedEvents = events.map((event: any) => ({
-      ...event,
-      subevents: (event.subevents || []).map((subevent: any) => ({
-        ...subevent,
-        parties: (subevent.parties || []).map((party: any) => ({
-          ...party,
-          assignments: (party.assignments || []).map((assignment: any) => 
-            assignment.memberId === memberId ? { ...assignment, role: newRole } : assignment
-          )
-        }))
-      }))
-    }));
+    const updatedEvents = events.map((event: any) => {
+      let changed = false;
+      const newSubevents = (event.subevents || []).map((subevent: any) => {
+        const newParties = (subevent.parties || []).map((party: any) => {
+          const newAssignments = (party.assignments || []).map((assignment: any) => {
+            if (assignment.memberId === memberId) {
+              changed = true;
+              return { ...assignment, role: newRole };
+            }
+            return assignment;
+          });
+          return { ...party, assignments: newAssignments };
+        });
+        return { ...subevent, parties: newParties };
+      });
+      return changed ? { ...event, subevents: newSubevents } : null;
+    }).filter(Boolean);
     
-    for (const event of updatedEvents) {
-      await this.saveEvent(event);
+    if (updatedEvents.length > 0) {
+      await this.saveEvents(updatedEvents);
     }
   }
 

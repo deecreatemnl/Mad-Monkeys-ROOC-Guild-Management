@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { fetchAPI } from '../lib/api';
 import { Job, Role } from '../types';
-import { Plus, Edit2, Trash2, X, Check, Briefcase, Shield } from 'lucide-react';
+import { Plus, Edit2, Trash2, X, Check, Briefcase, Shield, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import ConfirmModal from '../components/ConfirmModal';
@@ -30,6 +30,8 @@ export default function JobsPage({ isAdmin = false }: JobsPageProps) {
     color: '#a1a1aa'
   });
   
+  const [isSyncing, setIsSyncing] = useState(false);
+  
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -51,6 +53,10 @@ export default function JobsPage({ isAdmin = false }: JobsPageProps) {
       setJobs(jobsData);
       setRoles(rolesData);
       setLoading(false);
+      
+      // Automatically sync members in background when roles/jobs change
+      fetchAPI('/api/members/sync-roles', { method: 'POST' }).catch(() => {});
+      fetchAPI('/api/members/sync-jobs', { method: 'POST' }).catch(() => {});
     } catch (error) {
       console.error('Failed to load data:', error);
       setLoading(false);
@@ -60,6 +66,34 @@ export default function JobsPage({ isAdmin = false }: JobsPageProps) {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const handleSyncJobs = async () => {
+    setIsSyncing(true);
+    try {
+      const result = await fetchAPI('/api/members/sync-jobs', { method: 'POST' });
+      alert(`Successfully synced ${result.synced} members to official job names.`);
+      loadData();
+    } catch (error) {
+      console.error('Failed to sync jobs:', error);
+      alert('Failed to sync jobs. Check console for details.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const handleSyncRoles = async () => {
+    setIsSyncing(true);
+    try {
+      const result = await fetchAPI('/api/members/sync-roles', { method: 'POST' });
+      alert(`Successfully synced ${result.synced} members to official role names.`);
+      loadData();
+    } catch (error) {
+      console.error('Failed to sync roles:', error);
+      alert('Failed to sync roles. Check console for details.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

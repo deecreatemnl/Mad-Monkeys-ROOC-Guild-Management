@@ -88,7 +88,8 @@ export default function DashboardPage() {
     activeJobs: 0,
     recentWinners: [],
     memberLogs: [],
-    membersOnLeave: []
+    membersOnLeave: [],
+    membersMap: new Map()
   });
   const [loading, setLoading] = useState(true);
 
@@ -160,7 +161,8 @@ export default function DashboardPage() {
           activeJobs: summary.activeJobs,
           recentWinners,
           memberLogs,
-          membersOnLeave: summary.membersOnLeave || []
+          membersOnLeave: summary.membersOnLeave || [],
+          membersMap
         });
       } catch (error) {
         console.error('Failed to load dashboard data:', error);
@@ -227,6 +229,40 @@ export default function DashboardPage() {
     }
   };
 
+  const formatLogDetails = (log: any) => {
+    const details = log.details || '';
+
+    // Handle "Status changed from active to left" -> "left the guild"
+    if (details.includes('Status changed from active to left')) {
+      return 'left the guild';
+    }
+    
+    // Handle "Automatically marked active as leave period ended." -> "has returned and ready to fight."
+    if (details.includes('Automatically marked active as leave period ended.')) {
+      return 'has returned and ready to fight.';
+    }
+
+    // Handle legacy "Status automatically changed..." messages
+    if (details.includes('Status automatically changed to on-leave due to absence report for')) {
+      const eventMatch = details.match(/for (.*)$/);
+      if (eventMatch) return `won't be able to participate in ${eventMatch[1]}`;
+    }
+
+    // If it's already a specific "won't be able to participate" message, use it as is
+    if (details.includes("won't be able to participate in") && !details.includes("in events")) {
+      return details;
+    }
+
+    // Reconstruct only if it's a generic on-leave log
+    if (log.newValue === 'on-leave') {
+      const member = stats.membersMap.get(log.memberId);
+      const eventName = member?.absentEvent || member?.leaveReason || 'events';
+      return `won't be able to participate in ${eventName}`;
+    }
+
+    return details;
+  };
+
   const containers = {
     activity: (
       <SortableContainer key="activity" id="activity" title="Recent Member Activity" icon={Activity} isCollapsed={collapsedState.activity} onToggle={() => toggleCollapse('activity')}>
@@ -239,7 +275,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex-1">
                   <p className="text-white text-sm font-medium">
-                    <span className="text-orange-400">{log.memberIgn}</span> {log.details}
+                    <span className="text-orange-400">{log.memberIgn}</span> {formatLogDetails(log)}
                   </p>
                   <p className="text-xs text-zinc-500 mt-1">
                     {formatDistanceToNow(new Date(log.timestamp), { addSuffix: true })}

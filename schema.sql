@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS members (
     role TEXT,
     date_joined TEXT,
     uid TEXT,
-    status TEXT DEFAULT 'active',
+    status TEXT DEFAULT 'active', -- 'active', 'busy', 'on-leave', 'left the guild'
     leave_reason TEXT,
     leave_dates JSONB DEFAULT '[]'::jsonb,
     leave_started_at TIMESTAMP WITH TIME ZONE,
@@ -136,3 +136,10 @@ CREATE INDEX IF NOT EXISTS idx_member_logs_member_id ON member_logs(member_id);
 CREATE INDEX IF NOT EXISTS idx_event_share_links_event_id ON event_share_links(event_id);
 CREATE INDEX IF NOT EXISTS idx_page_views_page ON page_views(page);
 CREATE INDEX IF NOT EXISTS idx_raffle_stats_date ON raffle_stats(year, month, week);
+
+-- 11. Extensions
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- 12. Trigram Indexes
+CREATE INDEX IF NOT EXISTS idx_members_job_trgm ON members USING gin (job gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_members_role_trgm ON members USING gin (role gin_trgm_ops);

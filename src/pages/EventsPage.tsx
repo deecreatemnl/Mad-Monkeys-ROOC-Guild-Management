@@ -168,7 +168,7 @@ const SortablePartyItem = memo(({
     openPartyModal, 
     deleteParty 
   } = useContext(EventsActionsContext);
-  const { members, getRoleStyle } = useContext(EventsStaticDataContext);
+  const { members, getRoleStyle, settings } = useContext(EventsStaticDataContext);
 
   const {
     attributes,
@@ -194,6 +194,8 @@ const SortablePartyItem = memo(({
   };
 
   const assignmentIds = useMemo(() => partyAssignments.map(a => a.id!), [partyAssignments]);
+  const maxSize = party.maxSize || settings?.maxPartySize || 12;
+  const isFull = partyAssignments.length >= maxSize;
 
   return (
     <div ref={setNodeRef} style={style} className={cn("bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden h-full", isDragging && "opacity-50 z-40")}>
@@ -206,17 +208,18 @@ const SortablePartyItem = memo(({
           )}
           <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse" />
           <h5 className="font-bold text-sm text-white uppercase tracking-wider">{party.name}</h5>
-          <span className="text-[10px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded">
-            {partyAssignments.length || 0}/{party.maxSize || 12}
+          <span className={cn("text-[10px] px-1.5 py-0.5 rounded", isFull ? "bg-red-500/20 text-red-400" : "bg-zinc-800 text-zinc-500")}>
+            {partyAssignments.length || 0}/{maxSize}
           </span>
         </div>
         <div className="flex items-center gap-1">
           {isAdmin && (
             <>
               <button
-                onClick={() => openAssignModal(eventId, subEventId, party.id!)}
-                className="p-1.5 text-zinc-400 hover:text-orange-500 transition-colors"
-                title="Assign Member"
+                onClick={() => !isFull && openAssignModal(eventId, subEventId, party.id!)}
+                disabled={isFull}
+                className={cn("p-1.5 transition-colors", isFull ? "text-zinc-700 cursor-not-allowed" : "text-zinc-400 hover:text-orange-500")}
+                title={isFull ? "Party is full" : "Assign Member"}
               >
                 <UserPlus className="w-4 h-4" />
               </button>
@@ -673,7 +676,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   }, [collapsedSubEvents]);
   
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
-  const [memberRoleFilter, setMemberRoleFilter] = useState<'All' | 'DPS' | 'Support' | 'Tank' | 'Utility'>('All');
+  const [memberRoleFilter, setMemberRoleFilter] = useState<string>('All');
   const [initialSubEventId, setInitialSubEventId] = useState<string | null>(null);
   const [initialPartyId, setInitialPartyId] = useState<string | null>(null);
   const [initialAssignmentsState, setInitialAssignmentsState] = useState<Record<string, Assignment[]>>({});
@@ -1354,18 +1357,6 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     setInitialPartyId(null);
   };
 
-  const handleConfirmMove = async () => {
-    if (!swapModal.initialPartyId || !swapModal.newPartyId || !swapModal.eventId || !swapModal.subEventId) return;
-
-    const newAssignments = assignments[swapModal.newPartyId] || [];
-    await handleAssignmentReorder(swapModal.eventId, swapModal.subEventId, swapModal.newPartyId, newAssignments);
-    const initialAssignments = assignments[swapModal.initialPartyId] || [];
-    await handleAssignmentReorder(swapModal.eventId, swapModal.subEventId, swapModal.initialPartyId, initialAssignments);
-    
-    setSwapModal(prev => ({ ...prev, isOpen: false }));
-    setInitialPartyId(null);
-  };
-
   const handleCancelSwap = () => {
     // Revert to initial state
     setAssignments(initialAssignmentsState);
@@ -1436,20 +1427,32 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       if (initialPartyId && newPartyId && eventId && subEventId) {
         if (initialPartyId !== newPartyId) {
           // Cross-party drop
-          if (overData?.type === 'assignment') {
-            // Dropped on another assignment, ask to swap
-            setSwapModal({
-              isOpen: true,
-              activeAssignment: activeData.assignment,
-              overAssignment: overData.assignment,
-              initialPartyId,
-              newPartyId,
-              eventId,
-              subEventId
-            });
-            return; // Don't save or clear initialPartyId yet
+          const targetParty = parties[subEventId]?.find(p => p.id === newPartyId);
+          const maxSize = targetParty?.maxSize || settings?.maxPartySize || 12;
+          const initialTargetCount = (initialAssignmentsState[newPartyId] || []).length;
+          const isTargetFull = initialTargetCount >= maxSize;
+
+          if (isTargetFull) {
+            if (overData?.type === 'assignment') {
+              // Target is full and dropped on an assignment -> Swap
+              setSwapModal({
+                isOpen: true,
+                activeAssignment: activeData.assignment,
+                overAssignment: overData.assignment,
+                initialPartyId,
+                newPartyId,
+                eventId,
+                subEventId
+              });
+              return; // Don't save or clear initialPartyId yet
+            } else {
+              // Target is full but dropped on empty space -> Reject
+              setAssignments(initialAssignmentsState);
+              setInitialPartyId(null);
+              return;
+            }
           } else {
-            // Dropped on empty space in party, just move
+            // Target is not full -> Just move
             const newAssignments = assignments[newPartyId] || [];
             handleAssignmentReorder(eventId, subEventId, newPartyId, newAssignments);
             const initialAssignments = assignments[initialPartyId] || [];
@@ -1558,6 +1561,13 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     return getMemberCategory(member);
   };
 
+  const filterCategories = useMemo(() => {
+    const cats = new Set(['All']);
+    roles.forEach(r => cats.add(r.name));
+    members.forEach(m => cats.add(getMemberCategory(m)));
+    return Array.from(cats);
+  }, [roles, members]);
+
   const filteredMembersForAssign = useMemo(() => {
     if (!activeEventId) return [];
     
@@ -1573,7 +1583,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     return members
       .filter(m => !assignedMemberIds.has(m.id!))
       .filter(m => {
-        // Filter out inactive/busy/left members
+        // Filter out busy/left members
         const status = m.status || 'active';
         return status === 'active';
       })
@@ -1619,6 +1629,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         members,
         jobs,
         roles,
+        settings,
         getRoleStyle
       }}>
         <div className="p-6 max-w-[1600px] mx-auto">
@@ -1795,7 +1806,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         {isAssignModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsAssignModalOpen(false)} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
-            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-h-[90vh] flex flex-col">
+            <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }} className="relative w-full max-w-xl bg-zinc-900 border border-zinc-800 rounded-2xl p-6 max-h-[90vh] flex flex-col">
               <h2 className="text-2xl font-bold text-white mb-6">Assign to {parties[activeSubEventId!]?.find(p => p.id === activePartyId)?.name}</h2>
               
               <div className="space-y-4 flex-1 overflow-hidden flex flex-col">
@@ -1812,14 +1823,14 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                     />
                   </div>
                   
-                  <div className="flex gap-1 mb-4">
-                    {['All', 'DPS', 'Support', 'Tank', 'Utility'].map((filter) => (
+                  <div className="flex flex-wrap gap-1 mb-4">
+                    {filterCategories.map((filter) => (
                       <button
                         key={filter}
                         type="button"
-                        onClick={() => setMemberRoleFilter(filter as any)}
+                        onClick={() => setMemberRoleFilter(filter)}
                         className={cn(
-                          "flex-1 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all",
+                          "px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border transition-all",
                           memberRoleFilter === filter 
                             ? "bg-orange-500/10 text-orange-500 border-orange-500/20" 
                             : "bg-zinc-800 border-zinc-700 text-zinc-500 hover:border-zinc-600"
@@ -1860,15 +1871,22 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                           <p className="text-xs text-zinc-500">{m.job}</p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className={cn(
-                            "text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border",
-                            getMemberCategory(m) === 'Support' ? "bg-blue-500/10 text-blue-500 border-blue-500/20" :
-                            getMemberCategory(m) === 'Tank' ? "bg-orange-500/10 text-orange-500 border-orange-500/20" :
-                            getMemberCategory(m) === 'Utility' ? "bg-emerald-500/10 text-emerald-500 border-emerald-500/20" :
-                            "bg-zinc-700 text-zinc-400 border-zinc-600"
-                          )}>
-                            {getMemberCategory(m)}
-                          </span>
+                          {(() => {
+                            const category = getMemberCategory(m);
+                            const role = roles.find(r => r.name === category);
+                            return (
+                              <span 
+                                className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded border"
+                                style={role ? { 
+                                  backgroundColor: `${role.color}1a`, 
+                                  color: role.color, 
+                                  borderColor: `${role.color}33` 
+                                } : undefined}
+                              >
+                                {category}
+                              </span>
+                            );
+                          })()}
                           {assignFormData.memberId === m.id && <Check className="w-4 h-4 text-orange-500" />}
                         </div>
                       </button>
@@ -1919,9 +1937,9 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
               className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6"
             >
-              <h3 className="text-xl font-bold text-white mb-4">Swap or Move?</h3>
+              <h3 className="text-xl font-bold text-white mb-4">Swap Assignments?</h3>
               <p className="text-zinc-400 mb-6">
-                You dropped an assignment onto another assignment. Do you want to swap them, or just move the assignment into the party?
+                The target party is full. Do you want to swap these assignments?
               </p>
               <div className="flex flex-col gap-3">
                 <button
@@ -1929,12 +1947,6 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                   className="w-full py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-colors"
                 >
                   Swap Assignments
-                </button>
-                <button
-                  onClick={handleConfirmMove}
-                  className="w-full py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl transition-colors"
-                >
-                  Just Move
                 </button>
                 <button
                   onClick={handleCancelSwap}

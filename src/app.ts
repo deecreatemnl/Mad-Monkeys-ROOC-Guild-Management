@@ -241,41 +241,9 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     res.json({ success: true });
   }));
 
-  // Members API
-  app.get("/api/dashboard/summary", asyncHandler(async (req: any, res: any) => {
-    const [members, events, raffle, logs, jobs] = await Promise.all([
-      db.getMembers(),
-      db.getEvents(),
-      db.getRaffle(),
-      db.getAllMemberLogs(),
-      db.getJobs()
-    ]);
-
-    const activeMembers = members.filter((m: any) => m.status !== 'left');
-    const membersOnLeave = members.filter((m: any) => m.status === 'on-leave');
-    
-    // Only return the last 20 logs to keep the response small
-    const recentLogs = [...logs].sort((a: any, b: any) => 
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    ).slice(0, 20);
-
-    res.json({
-      totalMembers: activeMembers.length,
-      activeEvents: events.length,
-      activeJobs: jobs.length,
-      recentWinners: raffle.winners || [],
-      memberLogs: recentLogs,
-      membersOnLeave: membersOnLeave,
-      members: members // Still need full members for some dashboard processing if needed, but summarized is better
-    });
-  }));
-
-  app.get("/api/members", asyncHandler(async (req: any, res: any) => {
-    const members = await db.getMembers();
-    const events = await db.getEvents();
+  // Helper to update member statuses based on absences
+  const updateMemberStatuses = async (members: any[], events: any[]) => {
     const now = new Date();
-    
-    // Helper to parse "Thu, Apr 9" format
     const parseAbsenceDate = (dateStr: string) => {
       const currentYear = new Date().getFullYear();
       return new Date(`${dateStr}, ${currentYear}`);
@@ -323,17 +291,24 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
                 oldValue: 'on-leave',
                 newValue: 'active',
                 timestamp: new Date().toISOString(),
-                details: 'Automatically marked active as leave period ended.'
+                details: 'has returned and ready to fight.'
               });
               hasChanges = true;
             }
           } else {
-            // If they have an active absence, ensure they are 'on-leave'
-            if (member.status !== 'on-leave' && member.status !== 'left') {
+            if (member.status !== 'on-leave' && member.status !== 'left the guild') {
               member.status = 'on-leave';
               member.leaveReason = latestAbsence.reason;
               member.leaveDates = latestAbsence.dates;
               await db.saveMember(member);
+              await db.saveMemberLog({
+                memberId: member.id,
+                type: 'status_change',
+                oldValue: 'active',
+                newValue: 'on-leave',
+                timestamp: new Date().toISOString(),
+                details: `won't be able to participate in ${latestAbsence.eventName || 'events'}`
+              });
               hasChanges = true;
             }
             member.returnDate = returnDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -344,6 +319,46 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       return member;
     }));
 
+    return { updatedMembers, hasChanges };
+  };
+
+  // Members API
+  app.get("/api/dashboard/summary", asyncHandler(async (req: any, res: any) => {
+    const [members, events, raffle, logs, jobs] = await Promise.all([
+      db.getMembers(),
+      db.getEvents(),
+      db.getRaffle(),
+      db.getAllMemberLogs(),
+      db.getJobs()
+    ]);
+
+    const { updatedMembers } = await updateMemberStatuses(members, events);
+
+    const activeMembers = updatedMembers.filter((m: any) => m.status !== 'left the guild');
+    const membersOnLeave = updatedMembers.filter((m: any) => m.status === 'on-leave');
+    
+    // Only return the last 20 logs to keep the response small
+    const recentLogs = [...logs].sort((a: any, b: any) => 
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    ).slice(0, 20);
+
+    res.json({
+      totalMembers: activeMembers.length,
+      activeEvents: events.length,
+      activeJobs: jobs.length,
+      recentWinners: raffle.winners || [],
+      memberLogs: recentLogs,
+      membersOnLeave: membersOnLeave,
+      members: updatedMembers
+    });
+  }));
+
+  app.get("/api/members", asyncHandler(async (req: any, res: any) => {
+    const members = await db.getMembers();
+    const events = await db.getEvents();
+    
+    const { updatedMembers, hasChanges } = await updateMemberStatuses(members, events);
+
     if (hasChanges && emitUpdate) emitUpdate('members');
     res.json(updatedMembers);
   }));
@@ -351,6 +366,89 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
   app.get("/api/logs", asyncHandler(async (req: any, res: any) => {
     const logs = await db.getAllMemberLogs();
     res.json(logs);
+  }));
+
+  app.post("/api/members/sync-roles", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    const members = await db.getMembers();
+    const roles = await db.getRoles();
+    const membersToUpdate = [];
+
+    for (const member of members) {
+      const currentRole = (member.role || '').trim();
+      if (!currentRole) continue;
+
+      // 1. Try exact case-insensitive match
+      const exactMatch = roles.find((r: any) => r.name.toLowerCase() === currentRole.toLowerCase());
+      
+      if (exactMatch) {
+        if (exactMatch.name !== currentRole) {
+          member.role = exactMatch.name;
+          membersToUpdate.push(member);
+        }
+      } else {
+        // 2. Orphaned role - try smart substring match
+        const potentialMatches = roles.filter((r: any) => 
+          r.name.toLowerCase().includes(currentRole.toLowerCase()) ||
+          currentRole.toLowerCase().includes(r.name.toLowerCase())
+        );
+
+        // Only auto-sync if there is exactly one logical match
+        if (potentialMatches.length === 1) {
+          member.role = potentialMatches[0].name;
+          membersToUpdate.push(member);
+        }
+      }
+    }
+
+    if (membersToUpdate.length > 0) {
+      await db.saveMembers(membersToUpdate);
+      if (emitUpdate) {
+        emitUpdate('members');
+      }
+    }
+
+    res.json({ success: true, synced: membersToUpdate.length });
+  }));
+
+  app.post("/api/members/sync-jobs", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    const members = await db.getMembers();
+    const jobs = await db.getJobs();
+    const membersToUpdate = [];
+
+    for (const member of members) {
+      const currentJob = (member.job || '').trim();
+      if (!currentJob) continue;
+
+      // 1. Try exact case-insensitive match
+      const exactMatch = jobs.find((j: any) => j.name.toLowerCase() === currentJob.toLowerCase());
+      
+      if (exactMatch) {
+        if (exactMatch.name !== currentJob) {
+          member.job = exactMatch.name;
+          membersToUpdate.push(member);
+        }
+      } else {
+        // 2. Orphaned job - try smart substring match
+        const potentialMatches = jobs.filter((j: any) => 
+          j.name.toLowerCase().includes(currentJob.toLowerCase()) ||
+          currentJob.toLowerCase().includes(j.name.toLowerCase())
+        );
+
+        if (potentialMatches.length === 1) {
+          member.job = potentialMatches[0].name;
+          membersToUpdate.push(member);
+        }
+      }
+    }
+
+    if (membersToUpdate.length > 0) {
+      await db.saveMembers(membersToUpdate);
+      if (emitUpdate) {
+        emitUpdate('members');
+      }
+    }
+
+    res.json({ success: true, synced: membersToUpdate.length });
   }));
 
   app.get("/api/members/:id/logs", asyncHandler(async (req: any, res: any) => {
@@ -407,8 +505,8 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
         }
       }
 
-      // If status is changed to 'left', remove from all parties
-      if (newStatus === 'left' && oldStatus !== 'left') {
+      // If status is changed to 'left the guild', remove from all parties
+      if (newStatus === 'left the guild' && oldStatus !== 'left the guild') {
         const events = await db.getEvents();
         for (const event of events) {
           let eventChanged = false;
@@ -436,8 +534,19 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       // Log changes
       if (oldStatus !== newStatus) {
         let type: any = 'status_change';
-        if (newStatus === 'left') type = 'guild_leave';
-        else if (oldStatus === 'left' && newStatus === 'active') type = 'guild_return';
+        let details = `Status changed from ${oldStatus} to ${newStatus}`;
+        
+        if (newStatus === 'left the guild') {
+          type = 'guild_leave';
+          details = 'left the guild';
+        } else if (oldStatus === 'left the guild' && newStatus === 'active') {
+          type = 'guild_return';
+          details = 'has returned and ready to fight.';
+        } else if (newStatus === 'active' && oldStatus === 'on-leave') {
+          details = 'has returned and ready to fight.';
+        } else if (newStatus === 'on-leave') {
+          details = "won't be able to participate in events";
+        }
         
         await db.saveMemberLog({
           memberId: member.id,
@@ -445,7 +554,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
           oldValue: oldStatus,
           newValue: newStatus,
           timestamp: new Date().toISOString(),
-          details: `Status changed from ${oldStatus} to ${newStatus}`
+          details
         });
       }
 
@@ -526,6 +635,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       }
       
       await db.saveJob(updatedJob);
+      if (emitUpdate) emitUpdate('members');
       if (emitUpdate) emitUpdate('jobs');
       res.json(updatedJob);
     } else {
@@ -569,11 +679,13 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       const updatedRole = { ...role, ...req.body };
       
       if (oldName !== newName) {
-        await db.updateAssignmentsRole(oldName, newName);
+        await db.updateRoleName(oldName, newName);
       }
       
       await db.saveRole(updatedRole);
+      if (emitUpdate) emitUpdate('members');
       if (emitUpdate) emitUpdate('roles');
+      if (emitUpdate) emitUpdate('events');
       res.json(updatedRole);
     } else {
       res.status(404).json({ error: "Role not found" });
@@ -876,7 +988,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       oldValue: member.status || 'active',
       newValue: 'on-leave',
       timestamp: new Date().toISOString(),
-      details: `Status automatically changed to on-leave due to absence report for ${event.name}`
+      details: `won't be able to participate in ${event.name}`
     });
 
     if (emitUpdate) {

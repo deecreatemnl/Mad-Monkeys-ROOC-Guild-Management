@@ -419,7 +419,7 @@ export default function RafflePage() {
   const availableMembers = members.filter(m => {
     // Active, busy, or on-leave members can join the raffle
     const status = m.status || 'active';
-    if (status === 'left') return false;
+    if (status === 'left the guild') return false;
     
     // Not a winner this month
     const isWinnerThisMonth = currentMonthWinners.some(w => w.memberId === m.id);
