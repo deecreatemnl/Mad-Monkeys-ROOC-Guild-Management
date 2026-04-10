@@ -707,7 +707,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [memberRoleFilter, setMemberRoleFilter] = useState<string>('All');
   const [initialSubEventId, setInitialSubEventId] = useState<string | null>(null);
   const [initialPartyId, setInitialPartyId] = useState<string | null>(null);
-  const [initialAssignmentsState, setInitialAssignmentsState] = useState<Record<string, Assignment[]>>({});
+  const initialAssignmentsStateRef = useRef<Record<string, Assignment[]>>({});
 
   const [isDiscordShareModalOpen, setIsDiscordShareModalOpen] = useState(false);
   const [discordShareMessage, setDiscordShareMessage] = useState('');
@@ -1236,7 +1236,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       setInitialSubEventId(activeData.subEventId);
     } else if (activeData?.type === 'assignment') {
       setInitialPartyId(activeData.partyId);
-      setInitialAssignmentsState(assignmentsRef.current);
+      initialAssignmentsStateRef.current = assignmentsRef.current;
     }
   };
 
@@ -1306,10 +1306,12 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           const newIndex = items.findIndex((a) => a.id === over.id);
           
           if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
-            return {
+            const newState = {
               ...prev,
               [activePartyId]: arrayMove(items, oldIndex, newIndex)
             };
+            assignmentsRef.current = newState;
+            return newState;
           }
           return prev;
         });
@@ -1362,11 +1364,13 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           newAItems[aIndex] = { ...overItem, partyId: activePartyId, subEventId: activeData.subEventId, eventId: activeData.eventId };
           newOItems[oIndex] = { ...item, partyId: overPartyId, subEventId: overSubEventId, eventId: overEventId };
           
-          return {
+          const newState = {
             ...prev,
             [activePartyId]: newAItems,
             [overPartyId]: newOItems,
           };
+          assignmentsRef.current = newState;
+          return newState;
         }
 
         // NORMAL MOVE LOGIC
@@ -1382,11 +1386,13 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           newOItems.push(newItem);
         }
 
-        return {
+        const newState = {
           ...prev,
           [activePartyId]: newAItems,
           [overPartyId]: newOItems,
         };
+        assignmentsRef.current = newState;
+        return newState;
       });
     }
   }, [parties, settings]);
@@ -1448,6 +1454,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     } else if (activeData?.type === 'assignment') {
       // Find all parties that have changed since the drag started
       const currentAssignments = assignmentsRef.current;
+      const initialAssignmentsState = initialAssignmentsStateRef.current;
       
       // Get all unique party IDs from both initial and current states
       const allPartyIds = new Set([
@@ -1456,17 +1463,14 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       ]);
 
       const dirtyPartyIds = Array.from(allPartyIds).filter(partyId => {
-        const initial = initialAssignmentsState[partyId];
-        const current = currentAssignments[partyId];
+        const initial = initialAssignmentsState[partyId] || [];
+        const current = currentAssignments[partyId] || [];
         
-        // If both are undefined or empty arrays, they are equal
-        const initialLen = initial?.length || 0;
-        const currentLen = current?.length || 0;
+        // Deep compare the arrays to ensure we catch all changes
+        const initialStr = JSON.stringify(initial);
+        const currentStr = JSON.stringify(current);
         
-        if (initialLen === 0 && currentLen === 0) return false;
-        
-        // If references are different, it's dirty
-        return initial !== current;
+        return initialStr !== currentStr;
       });
 
       // Save all dirty parties sequentially to avoid race conditions
@@ -1509,8 +1513,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     }
     setInitialSubEventId(null);
     setInitialPartyId(null);
-    setInitialAssignmentsState({});
-  }, [events, subEvents, parties, initialSubEventId, initialPartyId, initialAssignmentsState, handleAssignmentReorder, handlePartyReorder, loadData]);
+    initialAssignmentsStateRef.current = {};
+  }, [events, subEvents, parties, initialSubEventId, initialPartyId, handleAssignmentReorder, handlePartyReorder, loadData]);
 
   const openEventModal = (event?: GuildEvent) => {
     if (event) {
