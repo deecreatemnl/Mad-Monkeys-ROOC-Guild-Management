@@ -652,6 +652,10 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [subEvents, setSubEvents] = useState<Record<string, SubEvent[]>>({});
   const [parties, setParties] = useState<Record<string, Party[]>>({});
   const [assignments, setAssignments] = useState<Record<string, Assignment[]>>({});
+  const assignmentsRef = useRef(assignments);
+  useEffect(() => {
+    assignmentsRef.current = assignments;
+  }, [assignments]);
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const isFetching = useRef(false);
@@ -1291,7 +1295,24 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       const activePartyId = activeData.partyId;
       const overPartyId = overData.type === 'party' ? overData.party.id : overData.partyId;
 
-      if (!activePartyId || !overPartyId || activePartyId === overPartyId) {
+      if (!activePartyId || !overPartyId) {
+        return;
+      }
+
+      if (activePartyId === overPartyId) {
+        setAssignments((prev) => {
+          const items = prev[activePartyId] || [];
+          const oldIndex = items.findIndex((a) => a.id === active.id);
+          const newIndex = items.findIndex((a) => a.id === over.id);
+          
+          if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+            return {
+              ...prev,
+              [activePartyId]: arrayMove(items, oldIndex, newIndex)
+            };
+          }
+          return prev;
+        });
         return;
       }
 
@@ -1429,13 +1450,14 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       const subEventId = activeData.subEventId;
       
       if (initialPartyId && newPartyId && eventId && subEventId) {
-        // Just save the current state since handleDragOver already handled the reordering/swapping
-        const newAssignments = assignments[newPartyId] || [];
-        handleAssignmentReorder(eventId, subEventId, newPartyId, newAssignments);
+        // Use assignmentsRef.current to get the most up-to-date state
+        const currentAssignments = assignmentsRef.current;
+        const newAssignments = currentAssignments[newPartyId] || [];
+        await handleAssignmentReorder(eventId, subEventId, newPartyId, newAssignments);
         
         if (initialPartyId !== newPartyId) {
-          const initialAssignments = assignments[initialPartyId] || [];
-          handleAssignmentReorder(eventId, subEventId, initialPartyId, initialAssignments);
+          const initialAssignments = currentAssignments[initialPartyId] || [];
+          await handleAssignmentReorder(eventId, subEventId, initialPartyId, initialAssignments);
         }
       }
     } else if (activeData?.type === 'party') {
@@ -1455,7 +1477,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     }
     setInitialSubEventId(null);
     setInitialPartyId(null);
-  }, [events, subEvents, assignments, parties, initialSubEventId, initialPartyId, handleAssignmentReorder, handlePartyReorder, loadData]);
+  }, [events, subEvents, parties, initialSubEventId, initialPartyId, handleAssignmentReorder, handlePartyReorder, loadData]);
 
   const openEventModal = (event?: GuildEvent) => {
     if (event) {
