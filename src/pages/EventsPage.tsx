@@ -94,6 +94,7 @@ const SortableAssignmentItem = memo(({
     transform,
     transition,
     isDragging,
+    isOver,
   } = useSortable({ 
     id: assignment.id!,
     data: {
@@ -112,18 +113,41 @@ const SortableAssignmentItem = memo(({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className={cn("flex items-center justify-between p-2 rounded-lg group bg-zinc-900/50 border border-zinc-800/50", isDragging && "opacity-50 z-50")}>
+    <div 
+      ref={setNodeRef} 
+      style={style} 
+      className={cn(
+        "flex items-center justify-between p-2 rounded-lg group transition-all duration-200",
+        "bg-zinc-900/50 border border-zinc-800/50",
+        isDragging && "opacity-50 z-50 scale-[1.02] shadow-2xl border-orange-500/50",
+        isOver && !isDragging && "border-orange-500 bg-orange-500/10 scale-[0.98] ring-2 ring-orange-500/20"
+      )}
+    >
       <div className="flex items-center gap-3">
         {isAdmin && (
           <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-400">
             <GripVertical className="w-3.5 h-3.5" />
           </div>
         )}
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-zinc-800">
+        <div className={cn(
+          "w-8 h-8 rounded-lg flex items-center justify-center transition-colors",
+          isOver && !isDragging ? "bg-orange-500/20" : "bg-zinc-800"
+        )}>
           {member ? getJobIcon(member, roles) : <Star className="w-4 h-4 text-zinc-500" />}
         </div>
         <div>
-          <p className="text-sm font-bold leading-none text-white">{member?.ign}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-bold leading-none text-white">{member?.ign}</p>
+            {isOver && !isDragging && (
+              <motion.span 
+                initial={{ opacity: 0, x: -5 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="text-[10px] font-black text-orange-500 uppercase tracking-tighter"
+              >
+                ← SWAP
+              </motion.span>
+            )}
+          </div>
           <div className="flex items-center gap-2 mt-1">
             <div 
               className="flex items-center gap-1 text-[9px] font-bold uppercase"
@@ -680,24 +704,6 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [initialSubEventId, setInitialSubEventId] = useState<string | null>(null);
   const [initialPartyId, setInitialPartyId] = useState<string | null>(null);
   const [initialAssignmentsState, setInitialAssignmentsState] = useState<Record<string, Assignment[]>>({});
-
-  const [swapModal, setSwapModal] = useState<{
-    isOpen: boolean;
-    activeAssignment: Assignment | null;
-    overAssignment: Assignment | null;
-    initialPartyId: string | null;
-    newPartyId: string | null;
-    eventId: string | null;
-    subEventId: string | null;
-  }>({
-    isOpen: false,
-    activeAssignment: null,
-    overAssignment: null,
-    initialPartyId: null,
-    newPartyId: null,
-    eventId: null,
-    subEventId: null
-  });
 
   const [isDiscordShareModalOpen, setIsDiscordShareModalOpen] = useState(false);
   const [discordShareMessage, setDiscordShareMessage] = useState('');
@@ -1301,6 +1307,40 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         if (activeIndex === -1) return prev;
 
         const item = activeItems[activeIndex];
+        
+        // Check if target party is full
+        const targetParty = parties[activeData.subEventId]?.find(p => p.id === overPartyId);
+        const maxSize = targetParty?.maxSize || settings?.maxPartySize || 12;
+        const isTargetFull = overItems.length >= maxSize;
+
+        if (isTargetFull) {
+          if (overData.type === 'assignment') {
+            // SWAP LOGIC: If full and over an assignment, swap them
+            const overItem = overItems[overIndex];
+            const newActiveItems = [...activeItems];
+            const newOverItems = [...overItems];
+            
+            newActiveItems[activeIndex] = { ...overItem, partyId: activePartyId };
+            newOverItems[overIndex] = { ...item, partyId: overPartyId };
+            
+            // Update active data so handleDragEnd knows the new party
+            active.data.current = {
+              ...activeData,
+              partyId: overPartyId
+            };
+
+            return {
+              ...prev,
+              [activePartyId]: newActiveItems,
+              [overPartyId]: newOverItems,
+            };
+          } else {
+            // Target is full and not over an assignment -> block the move
+            return prev;
+          }
+        }
+
+        // NORMAL MOVE LOGIC: If not full, just move the item
         const newActiveItems = [...activeItems];
         newActiveItems.splice(activeIndex, 1);
 
@@ -1326,43 +1366,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         };
       });
     }
-  }, []);
-
-  const handleConfirmSwap = async () => {
-    if (!swapModal.activeAssignment || !swapModal.overAssignment || !swapModal.initialPartyId || !swapModal.newPartyId || !swapModal.eventId || !swapModal.subEventId) return;
-
-    const newAssignmentsState = { ...initialAssignmentsState };
-    const activeParty = [...(newAssignmentsState[swapModal.initialPartyId] || [])];
-    const overParty = [...(newAssignmentsState[swapModal.newPartyId] || [])];
-    
-    const activeIndex = activeParty.findIndex(a => a.id === swapModal.activeAssignment!.id);
-    const overIndex = overParty.findIndex(a => a.id === swapModal.overAssignment!.id);
-    
-    if (activeIndex !== -1 && overIndex !== -1) {
-      // Swap them
-      activeParty[activeIndex] = { ...swapModal.overAssignment, partyId: swapModal.initialPartyId };
-      overParty[overIndex] = { ...swapModal.activeAssignment, partyId: swapModal.newPartyId };
-      
-      newAssignmentsState[swapModal.initialPartyId] = activeParty;
-      newAssignmentsState[swapModal.newPartyId] = overParty;
-      
-      setAssignments(prev => ({ ...prev, ...newAssignmentsState }));
-      
-      // Save to DB
-      await handleAssignmentReorder(swapModal.eventId, swapModal.subEventId, swapModal.initialPartyId, activeParty);
-      await handleAssignmentReorder(swapModal.eventId, swapModal.subEventId, swapModal.newPartyId, overParty);
-    }
-    
-    setSwapModal(prev => ({ ...prev, isOpen: false }));
-    setInitialPartyId(null);
-  };
-
-  const handleCancelSwap = () => {
-    // Revert to initial state
-    setAssignments(initialAssignmentsState);
-    setSwapModal(prev => ({ ...prev, isOpen: false }));
-    setInitialPartyId(null);
-  };
+  }, [parties, settings]);
 
   const handleDragEndTop = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1425,49 +1429,13 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       const subEventId = activeData.subEventId;
       
       if (initialPartyId && newPartyId && eventId && subEventId) {
+        // Just save the current state since handleDragOver already handled the reordering/swapping
+        const newAssignments = assignments[newPartyId] || [];
+        handleAssignmentReorder(eventId, subEventId, newPartyId, newAssignments);
+        
         if (initialPartyId !== newPartyId) {
-          // Cross-party drop
-          const targetParty = parties[subEventId]?.find(p => p.id === newPartyId);
-          const maxSize = targetParty?.maxSize || settings?.maxPartySize || 12;
-          const initialTargetCount = (initialAssignmentsState[newPartyId] || []).length;
-          const isTargetFull = initialTargetCount >= maxSize;
-
-          if (isTargetFull) {
-            if (overData?.type === 'assignment') {
-              // Target is full and dropped on an assignment -> Swap
-              setSwapModal({
-                isOpen: true,
-                activeAssignment: activeData.assignment,
-                overAssignment: overData.assignment,
-                initialPartyId,
-                newPartyId,
-                eventId,
-                subEventId
-              });
-              return; // Don't save or clear initialPartyId yet
-            } else {
-              // Target is full but dropped on empty space -> Reject
-              setAssignments(initialAssignmentsState);
-              setInitialPartyId(null);
-              return;
-            }
-          } else {
-            // Target is not full -> Just move
-            const newAssignments = assignments[newPartyId] || [];
-            handleAssignmentReorder(eventId, subEventId, newPartyId, newAssignments);
-            const initialAssignments = assignments[initialPartyId] || [];
-            handleAssignmentReorder(eventId, subEventId, initialPartyId, initialAssignments);
-          }
-        } else {
-          // Reorder within same party
-          const currentAssignments = assignments[initialPartyId] || [];
-          const oldIndex = currentAssignments.findIndex(a => a.id === active.id);
-          const overIndex = currentAssignments.findIndex(a => a.id === over.id);
-          
-          if (oldIndex !== -1 && overIndex !== -1) {
-            const reordered = arrayMove(currentAssignments, oldIndex, overIndex);
-            handleAssignmentReorder(eventId, subEventId, initialPartyId, reordered);
-          }
+          const initialAssignments = assignments[initialPartyId] || [];
+          handleAssignmentReorder(eventId, subEventId, initialPartyId, initialAssignments);
         }
       }
     } else if (activeData?.type === 'party') {
@@ -1916,44 +1884,6 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                     </button>
                   </div>
                 </form>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {swapModal.isOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            />
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6"
-            >
-              <h3 className="text-xl font-bold text-white mb-4">Swap Assignments?</h3>
-              <p className="text-zinc-400 mb-6">
-                The target party is full. Do you want to swap these assignments?
-              </p>
-              <div className="flex flex-col gap-3">
-                <button
-                  onClick={handleConfirmSwap}
-                  className="w-full py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-colors"
-                >
-                  Swap Assignments
-                </button>
-                <button
-                  onClick={handleCancelSwap}
-                  className="w-full py-3 px-4 border border-zinc-700 hover:bg-zinc-800 text-zinc-300 font-bold rounded-xl transition-colors mt-2"
-                >
-                  Cancel
-                </button>
               </div>
             </motion.div>
           </div>
