@@ -176,15 +176,49 @@ export class FileDatabase implements Database {
     const data = await this.get();
     const members = data.members || [];
     let hasChanges = false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     
-    // Migrate existing dates to the new format
+    // Migrate existing dates to the new format and check for expired leave
     const migratedMembers = members.map((m: any) => {
+      let updated = { ...m };
+      let memberChanged = false;
+
       const newDate = formatDateForDB(m.dateJoined);
       if (m.dateJoined !== newDate) {
-        hasChanges = true;
-        return { ...m, dateJoined: newDate };
+        updated.dateJoined = newDate;
+        memberChanged = true;
       }
-      return m;
+
+      // Auto-activate if return date reached
+      if (m.status === 'on-leave' && m.returnDate) {
+        const returnDate = new Date(m.returnDate);
+        returnDate.setHours(0, 0, 0, 0);
+        if (!isNaN(returnDate.getTime()) && returnDate <= today) {
+          updated.status = 'active';
+          updated.returnDate = null;
+          updated.leaveReason = null;
+          updated.leaveDates = [];
+          updated.leaveStartedAt = null;
+          memberChanged = true;
+          
+          // Add a log entry
+          if (!data.member_logs) data.member_logs = {};
+          if (!data.member_logs[m.id]) data.member_logs[m.id] = [];
+          data.member_logs[m.id].push({
+            id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
+            memberId: m.id,
+            type: 'status_change',
+            oldValue: 'on-leave',
+            newValue: 'active',
+            timestamp: new Date().toISOString(),
+            details: 'Automatically returned from leave (Expected return date reached)'
+          });
+        }
+      }
+
+      if (memberChanged) hasChanges = true;
+      return updated;
     });
     
     if (hasChanges) {
@@ -475,7 +509,7 @@ export class FileDatabase implements Database {
 export class SupabaseDatabase implements Database {
   private supabase;
   private cache: Record<string, { data: any, timestamp: number }> = {};
-  private CACHE_TTL = 5000; // 5 seconds cache
+  private CACHE_TTL = 30000; // 30 seconds cache (optimized from 5s)
 
   private async getCached(key: string, fetcher: () => Promise<any>) {
     const now = Date.now();
@@ -649,21 +683,72 @@ export class SupabaseDatabase implements Database {
           status: m.status || 'active',
           leaveReason: m.leave_reason,
           leaveDates: m.leave_dates || [],
-          leaveStartedAt: m.leave_started_at
+          leaveStartedAt: m.leave_started_at,
+          returnDate: m.return_date
         }));
 
-        // Migrate existing dates to the new format
-        let hasChanges = false;
-        const migratedMembers = members.map(m => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Migrate existing dates to the new format and check for expired leave
+        const migratedMembers = await Promise.all(members.map(async m => {
+          let updated = { ...m };
+          let memberChanged = false;
+
           const newDate = formatDateForDB(m.dateJoined);
           if (m.dateJoined !== newDate) {
-            hasChanges = true;
+            updated.dateJoined = newDate;
+            memberChanged = true;
             // Fire and forget update to DB
             this.supabase.from('members').update({ date_joined: newDate }).eq('id', m.id).then();
-            return { ...m, dateJoined: newDate };
           }
-          return m;
-        });
+
+          // Auto-activate if return date reached
+          if (m.status === 'on-leave' && m.returnDate) {
+            const returnDate = new Date(m.returnDate);
+            // Set returnDate to midnight for comparison
+            returnDate.setHours(0, 0, 0, 0);
+            
+            if (!isNaN(returnDate.getTime()) && returnDate <= today) {
+              updated.status = 'active';
+              updated.returnDate = null;
+              updated.leaveReason = null;
+              updated.leaveDates = [];
+              updated.leaveStartedAt = null;
+              memberChanged = true;
+
+              // Update DB with error handling for missing columns
+              const updatePayload: any = {
+                status: 'active',
+                return_date: null,
+                leave_reason: null,
+                leave_dates: [],
+                leave_started_at: null
+              };
+
+              this.supabase.from('members').update(updatePayload).eq('id', m.id).then(({ error }) => {
+                if (error && error.message.toLowerCase().includes("column") && error.message.toLowerCase().includes("not found")) {
+                  // Retry without return_date if it's missing
+                  const cleanUpdate = { ...updatePayload };
+                  delete cleanUpdate.return_date;
+                  this.supabase.from('members').update(cleanUpdate).eq('id', m.id).then();
+                }
+              });
+
+              // Add a log entry
+              this.saveMemberLog({
+                memberId: m.id,
+                type: 'status_change',
+                oldValue: 'on-leave',
+                newValue: 'active',
+                timestamp: new Date().toISOString(),
+                details: 'Automatically returned from leave (Expected return date reached)'
+              }).then();
+            }
+          }
+
+          return updated;
+        }));
 
         return migratedMembers;
       } catch (e: any) {
@@ -685,7 +770,8 @@ export class SupabaseDatabase implements Database {
       status: member.status || 'active',
       leave_reason: member.leaveReason,
       leave_dates: member.leaveDates || [],
-      leave_started_at: member.leaveStartedAt === "" ? null : member.leaveStartedAt
+      leave_started_at: member.leaveStartedAt === "" ? null : member.leaveStartedAt,
+      return_date: member.returnDate === "" ? null : member.returnDate
     };
 
     const { error } = await this.supabase.from('members').upsert(payload);

@@ -753,6 +753,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   };
 
   const loadData = useCallback(async () => {
+    if (loading) return;
+    
     try {
       const [eventsData, membersData, settingsData, jobsData, rolesData] = await Promise.all([
         fetchAPI('/api/events'),

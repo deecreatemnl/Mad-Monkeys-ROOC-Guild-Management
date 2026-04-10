@@ -21,7 +21,9 @@ import {
   AlertCircle,
   ArrowUpDown,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  MessageSquare,
+  Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -71,7 +73,8 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
     status: 'active' as any,
     leaveReason: '',
     leaveDates: [] as string[],
-    leaveStartedAt: ''
+    leaveStartedAt: '',
+    returnDate: ''
   });
   const [viewMode, setViewMode] = useState<'tile' | 'list'>('list');
   const [selectedJob, setSelectedJob] = useState('All');
@@ -350,7 +353,8 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
         status: member.status || 'active',
         leaveReason: member.leaveReason || '',
         leaveDates: member.leaveDates || [],
-        leaveStartedAt: member.leaveStartedAt || ''
+        leaveStartedAt: member.leaveStartedAt || '',
+        returnDate: member.returnDate || ''
       });
     } else {
       setEditingMember(null);
@@ -362,7 +366,8 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
         status: 'active',
         leaveReason: '',
         leaveDates: [],
-        leaveStartedAt: ''
+        leaveStartedAt: '',
+        returnDate: ''
       });
     }
     setIsModalOpen(true);
@@ -379,7 +384,8 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
       status: 'active',
       leaveReason: '',
       leaveDates: [],
-      leaveStartedAt: ''
+      leaveStartedAt: '',
+      returnDate: ''
     });
   };
 
@@ -755,7 +761,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6"
+              className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6"
             >
               <div className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold text-white">
@@ -825,25 +831,62 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                     animate={{ opacity: 1, height: 'auto' }}
                     className="space-y-4"
                   >
-                    <div>
-                      <label className="block text-sm font-medium text-zinc-400 mb-1.5">Leave Reason</label>
-                      <textarea
-                        value={formData.leaveReason}
-                        onChange={(e) => setFormData({ ...formData, leaveReason: e.target.value })}
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 h-20 resize-none"
-                        placeholder="Reason for leave..."
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-zinc-400 mb-1.5">Leave Dates (comma separated)</label>
-                      <input
-                        type="text"
-                        value={formData.leaveDates?.join(', ') || ''}
-                        onChange={(e) => setFormData({ ...formData, leaveDates: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
-                        className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-                        placeholder="e.g. Thu, Apr 9, Fri, Apr 10"
-                      />
-                    </div>
+                    {editingMember?.status === 'on-leave' ? (
+                      <div className="bg-zinc-800/50 border border-zinc-700/50 rounded-xl p-4 space-y-3">
+                        <div className="flex items-start gap-3">
+                          <MessageSquare className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-zinc-500 mb-0.5">Leave Reason</label>
+                            <p className="text-sm text-zinc-200">{formData.leaveReason || 'No reason provided'}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <Calendar className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-zinc-500 mb-0.5">Leave Dates</label>
+                            <p className="text-sm text-zinc-200">{formData.leaveDates?.join(', ') || 'No dates provided'}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start gap-3">
+                          <Clock className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+                          <div>
+                            <label className="block text-[10px] font-bold uppercase text-zinc-500 mb-0.5">Expected Return</label>
+                            <p className="text-sm text-zinc-200">{formData.returnDate || 'No return date set'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-400 mb-1.5">Leave Reason</label>
+                          <textarea
+                            value={formData.leaveReason}
+                            onChange={(e) => setFormData({ ...formData, leaveReason: e.target.value })}
+                            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50 h-20 resize-none"
+                            placeholder="Reason for leave..."
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-400 mb-1.5">Leave Dates (comma separated)</label>
+                          <input
+                            type="text"
+                            value={formData.leaveDates?.join(', ') || ''}
+                            onChange={(e) => setFormData({ ...formData, leaveDates: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })}
+                            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                            placeholder="e.g. Thu, Apr 9, Fri, Apr 10"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-400 mb-1.5">Expected Return Date</label>
+                          <input
+                            type="date"
+                            value={formatDateForInput(formData.returnDate)}
+                            onChange={(e) => setFormData({ ...formData, returnDate: formatDateForDisplay(e.target.value) })}
+                            className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
+                          />
+                        </div>
+                      </>
+                    )}
                   </motion.div>
                 )}
                 <div>

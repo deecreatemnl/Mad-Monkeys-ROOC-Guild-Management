@@ -84,6 +84,8 @@ export default function PublicEventPage() {
     if (!eventId && !token) return;
 
     const loadData = async () => {
+      if (loading && event) return;
+      
       try {
         const [eventData, membersData, jobsData, rolesData] = await Promise.all([
           token ? fetchAPI(`/api/public/events/by-token/${token}`) : fetchAPI(`/api/events/${eventId}`),

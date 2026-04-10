@@ -18,7 +18,7 @@ export default function OnLeavePage() {
     setLoading(true);
     try {
       const data = await fetchAPI('/api/members');
-      const membersList = Object.values(data || {}) as Member[];
+      const membersList = Array.isArray(data) ? data : Object.values(data || {}) as Member[];
       setMembers(membersList.filter(m => m.status === 'on-leave'));
     } catch (error) {
       console.error('Failed to load members:', error);

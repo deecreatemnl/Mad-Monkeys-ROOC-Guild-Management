@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import compression from "compression";
 import bcrypt from "bcryptjs";
 import axios from "axios";
 import fs from "fs";
@@ -42,6 +43,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     db = new FileDatabase();
   }
 
+  app.use(compression());
   app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'user-role'],
     origin: true,
