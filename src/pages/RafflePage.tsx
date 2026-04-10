@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { fetchAPI } from '../lib/api';
 import RaffleAnimation from '../components/RaffleAnimation';
 import { cn } from '../lib/utils';
+import { io } from 'socket.io-client';
 
 export default function RafflePage() {
   const [raffle, setRaffle] = useState<any>(null);
@@ -65,6 +66,13 @@ export default function RafflePage() {
       ]);
       setRaffle(raffleData);
       setMembers(membersData);
+
+      // Record page view
+      fetchAPI('/api/analytics/page-view', {
+        method: 'POST',
+        body: JSON.stringify({ page: 'raffle' })
+      }).catch(err => console.error('Failed to record page view:', err));
+
       // Store settings in a way that RafflePage can use them
       (window as any).raffleSettings = settingsData;
       if (settingsData && settingsData.raffleWinners) {
@@ -117,7 +125,19 @@ export default function RafflePage() {
       setTick(t => t + 1);
       loadData();
     }, 60000);
-    return () => clearInterval(interval);
+
+    // Listen for real-time updates
+    const socket = io();
+    socket.on('update', (data) => {
+      if (data.type === 'raffle' || data.type === 'members' || data.type === 'settings') {
+        loadData();
+      }
+    });
+
+    return () => {
+      clearInterval(interval);
+      socket.disconnect();
+    };
   }, []);
 
   const handleJoin = async (e: React.FormEvent) => {
@@ -295,6 +315,7 @@ export default function RafflePage() {
 
   const handleUpdateRaffleSettings = async () => {
     try {
+      // Update raffle settings
       await fetchAPI('/api/raffle/settings', {
         method: 'POST',
         body: JSON.stringify({
@@ -304,6 +325,15 @@ export default function RafflePage() {
           prizes: raffle.settings.prizes || []
         })
       });
+
+      // Update guild settings for raffle winners count
+      await fetchAPI('/api/settings', {
+        method: 'POST',
+        body: JSON.stringify({
+          raffleWinners: raffleWinnersCount
+        })
+      });
+
       setIsSettingsModalOpen(false);
       await loadData();
       alert('Raffle settings updated and synced!');
@@ -1148,6 +1178,19 @@ export default function RafflePage() {
                         {[2025, 2026, 2027, 2028].map(y => <option key={y} value={y}>{y}</option>)}
                       </select>
                     </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">Raffle Winners Count</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={raffleWinnersCount}
+                      onChange={(e) => setRaffleWinnersCount(parseInt(e.target.value) || 1)}
+                      className="w-full bg-zinc-800 border border-zinc-700 rounded-xl p-2.5 text-sm text-white outline-none focus:ring-2 focus:ring-orange-500/50"
+                    />
+                    <p className="text-[9px] text-zinc-500">Number of winners to draw each week</p>
                   </div>
 
                   <div className="space-y-2">

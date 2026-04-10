@@ -55,6 +55,10 @@ export interface Database {
   updateMembersJob: (oldJobName: string, newJobName: string) => Promise<void>;
   updateRoleName: (oldRoleName: string, newRoleName: string) => Promise<void>;
   updateAssignmentsRole: (memberId: string, newRole: string) => Promise<void>;
+  recordPageView: (page: string, memberId?: string) => Promise<void>;
+  getPageViews: () => Promise<any[]>;
+  saveRaffleStats: (stats: { week: number, month: number, year: number, entryCount: number }) => Promise<void>;
+  getRaffleStats: () => Promise<any[]>;
   seed: () => Promise<void>;
 }
 
@@ -470,6 +474,37 @@ export class FileDatabase implements Database {
     await this.save(data);
   }
 
+  async recordPageView(page: string, memberId?: string) {
+    const data = await this.get();
+    if (!data.page_views) data.page_views = [];
+    data.page_views.push({
+      page,
+      member_id: memberId,
+      timestamp: new Date().toISOString()
+    });
+    await this.save(data);
+  }
+
+  async getPageViews() {
+    const data = await this.get();
+    return data.page_views || [];
+  }
+
+  async saveRaffleStats(stats: any) {
+    const data = await this.get();
+    if (!data.raffle_stats) data.raffle_stats = [];
+    data.raffle_stats.push({
+      ...stats,
+      timestamp: new Date().toISOString()
+    });
+    await this.save(data);
+  }
+
+  async getRaffleStats() {
+    const data = await this.get();
+    return data.raffle_stats || [];
+  }
+
   async getEventShareLinks(eventId: string) {
     const data = await this.get();
     return (data.event_share_links || []).filter((l: any) => l.eventId === eventId);
@@ -509,7 +544,7 @@ export class FileDatabase implements Database {
 export class SupabaseDatabase implements Database {
   private supabase;
   private cache: Record<string, { data: any, timestamp: number }> = {};
-  private CACHE_TTL = 30000; // 30 seconds cache (optimized from 5s)
+  private CACHE_TTL = 0; // Disabled cache to prevent stale data across Vercel serverless functions
 
   private async getCached(key: string, fetcher: () => Promise<any>) {
     const now = Date.now();
@@ -658,6 +693,7 @@ export class SupabaseDatabase implements Database {
   }
 
   async deleteUser(id: string) {
+    this.clearCache('users');
     const { error } = await this.supabase.from('users').delete().eq('id', id);
     if (error) console.error("Supabase Delete User Error:", error.message);
   }
@@ -816,6 +852,7 @@ export class SupabaseDatabase implements Database {
   }
 
   async deleteMember(id: string) {
+    this.clearCache('members');
     const { error } = await this.supabase.from('members').delete().eq('id', id);
     if (error) console.error("Supabase Delete Member Error:", error.message);
   }
@@ -924,6 +961,7 @@ export class SupabaseDatabase implements Database {
   }
 
   async deleteJob(id: string) {
+    this.clearCache('jobs');
     const { error } = await this.supabase.from('jobs').delete().eq('id', id);
     if (error) console.error("Supabase Delete Job Error:", error.message);
   }
@@ -960,6 +998,7 @@ export class SupabaseDatabase implements Database {
   }
 
   async deleteRole(id: string) {
+    this.clearCache('roles');
     const { error } = await this.supabase.from('roles').delete().eq('id', id);
     if (error) console.error("Supabase Delete Role Error:", error.message);
   }
@@ -1124,6 +1163,7 @@ export class SupabaseDatabase implements Database {
   }
 
   async deleteEvent(id: string) {
+    this.clearCache('events');
     const { error } = await this.supabase.from('events').delete().eq('id', id);
     if (error) console.error("Supabase Delete Event Error:", error.message);
   }
@@ -1253,10 +1293,98 @@ export class SupabaseDatabase implements Database {
       winners: raffle.winners || [],
       settings: raffle.settings || {}
     });
+
+    // Automatically sync current week's stats to analytics
+    if (raffle.settings && raffle.settings.currentWeek) {
+      this.saveRaffleStats({
+        week: Number(raffle.settings.currentWeek),
+        month: Number(raffle.settings.currentMonth),
+        year: Number(raffle.settings.currentYear),
+        entryCount: (raffle.entries || []).length
+      }).catch(() => {});
+    }
     if (error) {
       console.error("Supabase Save Raffle Error:", error.message, error.details, error.hint);
     } else {
       console.log('[Supabase] Raffle data saved successfully.');
+    }
+  }
+
+  async recordPageView(page: string, memberId?: string) {
+    try {
+      const { error } = await this.supabase.from('page_views').insert({
+        page,
+        member_id: memberId,
+        timestamp: new Date().toISOString()
+      });
+      if (error && !error.message.includes("Could not find the table")) {
+        console.error("Supabase Record Page View Error:", error.message);
+      }
+    } catch (e) {
+      // Ignore errors if table doesn't exist yet
+    }
+  }
+
+  async getPageViews() {
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const { data, error } = await this.supabase
+        .from('page_views')
+        .select('page, timestamp')
+        .gte('timestamp', thirtyDaysAgo.toISOString());
+        
+      if (error) {
+        if (!error.message.includes("Could not find the table")) {
+          console.error("Supabase Get Page Views Error:", error.message);
+        }
+        return [];
+      }
+      return data;
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async saveRaffleStats(stats: { week: number, month: number, year: number, entryCount: number }) {
+    try {
+      // Delete existing record for this week to avoid duplicates since we might not have a unique constraint
+      await this.supabase.from('raffle_stats').delete().match({ 
+        week: stats.week, 
+        month: stats.month, 
+        year: stats.year 
+      });
+
+      // Insert new record with updated count
+      const { error } = await this.supabase.from('raffle_stats').insert({
+        week: stats.week,
+        month: stats.month,
+        year: stats.year,
+        entry_count: stats.entryCount,
+        timestamp: new Date().toISOString()
+      });
+
+      if (error && !error.message.includes("Could not find the table")) {
+        console.error("Supabase Save Raffle Stats Error:", error.message);
+      }
+    } catch (e) {
+      // Ignore
+    }
+  }
+
+  async getRaffleStats() {
+    try {
+      const { data, error } = await this.supabase.from('raffle_stats').select('*').order('timestamp', { ascending: true });
+      if (error) {
+        if (!error.message.includes("Could not find the table")) {
+          console.error("Supabase Get Raffle Stats Error:", error.message);
+        }
+        return [];
+      }
+      return data;
+    } catch (e) {
+      return [];
     }
   }
 
@@ -1346,6 +1474,7 @@ export class SupabaseDatabase implements Database {
   }
 
   async deleteEventShareLink(id: string) {
+    this.clearCache('event_share_links');
     const { error } = await this.supabase.from('event_share_links').delete().eq('id', id);
     if (error) console.error("Supabase Delete EventShareLink Error:", error.message);
   }

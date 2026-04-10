@@ -675,6 +675,26 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [memberRoleFilter, setMemberRoleFilter] = useState<'All' | 'DPS' | 'Support' | 'Tank' | 'Utility'>('All');
   const [initialSubEventId, setInitialSubEventId] = useState<string | null>(null);
+  const [initialPartyId, setInitialPartyId] = useState<string | null>(null);
+  const [initialAssignmentsState, setInitialAssignmentsState] = useState<Record<string, Assignment[]>>({});
+
+  const [swapModal, setSwapModal] = useState<{
+    isOpen: boolean;
+    activeAssignment: Assignment | null;
+    overAssignment: Assignment | null;
+    initialPartyId: string | null;
+    newPartyId: string | null;
+    eventId: string | null;
+    subEventId: string | null;
+  }>({
+    isOpen: false,
+    activeAssignment: null,
+    overAssignment: null,
+    initialPartyId: null,
+    newPartyId: null,
+    eventId: null,
+    subEventId: null
+  });
 
   const [isDiscordShareModalOpen, setIsDiscordShareModalOpen] = useState(false);
   const [discordShareMessage, setDiscordShareMessage] = useState('');
@@ -837,6 +857,12 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
 
   useEffect(() => {
     loadData();
+    
+    // Record page view
+    fetchAPI('/api/analytics/page-view', {
+      method: 'POST',
+      body: JSON.stringify({ page: 'events' })
+    }).catch(() => {});
   }, [loadData]);
 
   const [shareLinks, setShareLinks] = useState<Record<string, any[]>>({});
@@ -1195,6 +1221,9 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     const activeData = active.data.current;
     if (activeData?.type === 'party') {
       setInitialSubEventId(activeData.subEventId);
+    } else if (activeData?.type === 'assignment') {
+      setInitialPartyId(activeData.partyId);
+      setInitialAssignmentsState(assignments);
     }
   };
 
@@ -1240,10 +1269,115 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     }
   }, [loadData]);
 
+  const handleDragOver = useCallback((event: DragOverEvent) => {
+    const { active, over } = event;
+    if (!over) return;
+
+    const activeData = active.data.current;
+    const overData = over.data.current;
+
+    if (!activeData || !overData) return;
+
+    if (activeData.type === 'assignment') {
+      const activePartyId = activeData.partyId;
+      const overPartyId = overData.type === 'party' ? overData.party.id : overData.partyId;
+
+      if (!activePartyId || !overPartyId || activePartyId === overPartyId) {
+        return;
+      }
+
+      setAssignments((prev) => {
+        const activeItems = prev[activePartyId] || [];
+        const overItems = prev[overPartyId] || [];
+
+        const activeIndex = activeItems.findIndex((a) => a.id === active.id);
+        const overIndex = overData.type === 'party' 
+          ? overItems.length 
+          : overItems.findIndex((a) => a.id === over.id);
+
+        if (activeIndex === -1) return prev;
+
+        const item = activeItems[activeIndex];
+        const newActiveItems = [...activeItems];
+        newActiveItems.splice(activeIndex, 1);
+
+        const newOverItems = [...overItems];
+        const newItem = { ...item, partyId: overPartyId };
+        
+        // Update active data so handleDragEnd knows the new party
+        active.data.current = {
+          ...activeData,
+          partyId: overPartyId
+        };
+
+        if (overIndex >= 0) {
+          newOverItems.splice(overIndex, 0, newItem);
+        } else {
+          newOverItems.push(newItem);
+        }
+
+        return {
+          ...prev,
+          [activePartyId]: newActiveItems,
+          [overPartyId]: newOverItems,
+        };
+      });
+    }
+  }, []);
+
+  const handleConfirmSwap = async () => {
+    if (!swapModal.activeAssignment || !swapModal.overAssignment || !swapModal.initialPartyId || !swapModal.newPartyId || !swapModal.eventId || !swapModal.subEventId) return;
+
+    const newAssignmentsState = { ...initialAssignmentsState };
+    const activeParty = [...(newAssignmentsState[swapModal.initialPartyId] || [])];
+    const overParty = [...(newAssignmentsState[swapModal.newPartyId] || [])];
+    
+    const activeIndex = activeParty.findIndex(a => a.id === swapModal.activeAssignment!.id);
+    const overIndex = overParty.findIndex(a => a.id === swapModal.overAssignment!.id);
+    
+    if (activeIndex !== -1 && overIndex !== -1) {
+      // Swap them
+      activeParty[activeIndex] = { ...swapModal.overAssignment, partyId: swapModal.initialPartyId };
+      overParty[overIndex] = { ...swapModal.activeAssignment, partyId: swapModal.newPartyId };
+      
+      newAssignmentsState[swapModal.initialPartyId] = activeParty;
+      newAssignmentsState[swapModal.newPartyId] = overParty;
+      
+      setAssignments(prev => ({ ...prev, ...newAssignmentsState }));
+      
+      // Save to DB
+      await handleAssignmentReorder(swapModal.eventId, swapModal.subEventId, swapModal.initialPartyId, activeParty);
+      await handleAssignmentReorder(swapModal.eventId, swapModal.subEventId, swapModal.newPartyId, overParty);
+    }
+    
+    setSwapModal(prev => ({ ...prev, isOpen: false }));
+    setInitialPartyId(null);
+  };
+
+  const handleConfirmMove = async () => {
+    if (!swapModal.initialPartyId || !swapModal.newPartyId || !swapModal.eventId || !swapModal.subEventId) return;
+
+    const newAssignments = assignments[swapModal.newPartyId] || [];
+    await handleAssignmentReorder(swapModal.eventId, swapModal.subEventId, swapModal.newPartyId, newAssignments);
+    const initialAssignments = assignments[swapModal.initialPartyId] || [];
+    await handleAssignmentReorder(swapModal.eventId, swapModal.subEventId, swapModal.initialPartyId, initialAssignments);
+    
+    setSwapModal(prev => ({ ...prev, isOpen: false }));
+    setInitialPartyId(null);
+  };
+
+  const handleCancelSwap = () => {
+    // Revert to initial state
+    setAssignments(initialAssignmentsState);
+    setSwapModal(prev => ({ ...prev, isOpen: false }));
+    setInitialPartyId(null);
+  };
+
   const handleDragEndTop = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) {
       setInitialSubEventId(null);
+      setInitialPartyId(null);
       return;
     }
 
@@ -1294,18 +1428,43 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         }
       }
     } else if (activeData?.type === 'assignment') {
-      const currentPartyId = activeData.partyId;
+      const overData = over.data.current;
+      const newPartyId = overData?.type === 'party' ? overData.party.id : overData?.partyId;
       const eventId = activeData.eventId;
       const subEventId = activeData.subEventId;
       
-      if (currentPartyId && eventId && subEventId) {
-        const currentAssignments = assignments[currentPartyId] || [];
-        const oldIndex = currentAssignments.findIndex(a => a.id === active.id);
-        const overIndex = currentAssignments.findIndex(a => a.id === over.id);
-        
-        if (oldIndex !== -1 && overIndex !== -1) {
-          const reordered = arrayMove(currentAssignments, oldIndex, overIndex);
-          handleAssignmentReorder(eventId, subEventId, currentPartyId, reordered);
+      if (initialPartyId && newPartyId && eventId && subEventId) {
+        if (initialPartyId !== newPartyId) {
+          // Cross-party drop
+          if (overData?.type === 'assignment') {
+            // Dropped on another assignment, ask to swap
+            setSwapModal({
+              isOpen: true,
+              activeAssignment: activeData.assignment,
+              overAssignment: overData.assignment,
+              initialPartyId,
+              newPartyId,
+              eventId,
+              subEventId
+            });
+            return; // Don't save or clear initialPartyId yet
+          } else {
+            // Dropped on empty space in party, just move
+            const newAssignments = assignments[newPartyId] || [];
+            handleAssignmentReorder(eventId, subEventId, newPartyId, newAssignments);
+            const initialAssignments = assignments[initialPartyId] || [];
+            handleAssignmentReorder(eventId, subEventId, initialPartyId, initialAssignments);
+          }
+        } else {
+          // Reorder within same party
+          const currentAssignments = assignments[initialPartyId] || [];
+          const oldIndex = currentAssignments.findIndex(a => a.id === active.id);
+          const overIndex = currentAssignments.findIndex(a => a.id === over.id);
+          
+          if (oldIndex !== -1 && overIndex !== -1) {
+            const reordered = arrayMove(currentAssignments, oldIndex, overIndex);
+            handleAssignmentReorder(eventId, subEventId, initialPartyId, reordered);
+          }
         }
       }
     } else if (activeData?.type === 'party') {
@@ -1324,7 +1483,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       }
     }
     setInitialSubEventId(null);
-  }, [events, subEvents, assignments, parties, initialSubEventId, handleAssignmentReorder, handlePartyReorder, loadData]);
+    setInitialPartyId(null);
+  }, [events, subEvents, assignments, parties, initialSubEventId, initialPartyId, handleAssignmentReorder, handlePartyReorder, loadData]);
 
   const openEventModal = (event?: GuildEvent) => {
     if (event) {
@@ -1487,6 +1647,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
               sensors={sensors}
               collisionDetection={closestCorners}
               onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
               onDragEnd={handleDragEndTop}
             >
               <SortableContext
@@ -1737,6 +1898,50 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
                     </button>
                   </div>
                 </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {swapModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6"
+            >
+              <h3 className="text-xl font-bold text-white mb-4">Swap or Move?</h3>
+              <p className="text-zinc-400 mb-6">
+                You dropped an assignment onto another assignment. Do you want to swap them, or just move the assignment into the party?
+              </p>
+              <div className="flex flex-col gap-3">
+                <button
+                  onClick={handleConfirmSwap}
+                  className="w-full py-3 px-4 bg-orange-500 hover:bg-orange-600 text-white font-bold rounded-xl transition-colors"
+                >
+                  Swap Assignments
+                </button>
+                <button
+                  onClick={handleConfirmMove}
+                  className="w-full py-3 px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl transition-colors"
+                >
+                  Just Move
+                </button>
+                <button
+                  onClick={handleCancelSwap}
+                  className="w-full py-3 px-4 border border-zinc-700 hover:bg-zinc-800 text-zinc-300 font-bold rounded-xl transition-colors mt-2"
+                >
+                  Cancel
+                </button>
               </div>
             </motion.div>
           </div>

@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import axios from "axios";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { Database, FileDatabase, SupabaseDatabase, ensureDataIntegrity } from "./db.js";
 
 export const asyncHandler = (fn: any) => (req: any, res: any, next: any) => {
@@ -357,8 +358,8 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     res.json(logs);
   }));
 
-  app.post("/api/members", asyncHandler(async (req: any, res: any) => {
-    const newMember = { ...req.body, id: Date.now().toString(), status: req.body.status || 'active' };
+  app.post("/api/members", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    const newMember = { ...req.body, id: crypto.randomUUID(), status: req.body.status || 'active' };
     await db.saveMember(newMember);
     
     // Log initial join
@@ -370,6 +371,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       details: `Member joined the guild as ${newMember.job}`
     });
     
+    if (emitUpdate) emitUpdate('members');
     res.json(newMember);
   }));
 
@@ -401,6 +403,32 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
               absences: event.absences.filter((a: any) => a.memberId !== member.id)
             };
             await db.saveEvent(updatedEvent);
+          }
+        }
+      }
+
+      // If status is changed to 'left', remove from all parties
+      if (newStatus === 'left' && oldStatus !== 'left') {
+        const events = await db.getEvents();
+        for (const event of events) {
+          let eventChanged = false;
+          const updatedSubevents = (event.subevents || []).map((sub: any) => {
+            let subChanged = false;
+            const updatedParties = (sub.parties || []).map((party: any) => {
+              const initialLen = (party.assignments || []).length;
+              const filteredAssignments = (party.assignments || []).filter((a: any) => a.memberId !== member.id);
+              if (filteredAssignments.length !== initialLen) {
+                subChanged = true;
+                eventChanged = true;
+                return { ...party, assignments: filteredAssignments };
+              }
+              return party;
+            });
+            return subChanged ? { ...sub, parties: updatedParties } : sub;
+          });
+          
+          if (eventChanged) {
+            await db.saveEvent({ ...event, subevents: updatedSubevents });
           }
         }
       }
@@ -475,12 +503,8 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     res.json(jobs);
   }));
 
-  app.post("/api/jobs", asyncHandler(async (req: any, res: any) => {
-    const user = req.headers['user-role'];
-    if (user !== 'admin' && user !== 'superadmin') {
-      return res.status(403).json({ error: "Only admins can manage jobs" });
-    }
-    const newJob = { ...req.body, id: Date.now().toString() };
+  app.post("/api/jobs", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    const newJob = { ...req.body, id: crypto.randomUUID() };
     await db.saveJob(newJob);
     if (emitUpdate) emitUpdate('jobs');
     res.json(newJob);
@@ -525,12 +549,8 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     res.json(roles);
   }));
 
-  app.post("/api/roles", asyncHandler(async (req: any, res: any) => {
-    const user = req.headers['user-role'];
-    if (user !== 'admin' && user !== 'superadmin') {
-      return res.status(403).json({ error: "Only admins can manage roles" });
-    }
-    const newRole = { ...req.body, id: Date.now().toString() };
+  app.post("/api/roles", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    const newRole = { ...req.body, id: crypto.randomUUID() };
     await db.saveRole(newRole);
     if (emitUpdate) emitUpdate('roles');
     res.json(newRole);
@@ -613,7 +633,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
 
   app.post("/api/events", checkAdmin, asyncHandler(async (req: any, res: any) => {
     console.log("POST /api/events body:", req.body);
-    const newEvent = { ...req.body, id: Date.now().toString(), subevents: [] };
+    const newEvent = { ...req.body, id: crypto.randomUUID(), subevents: [] };
     await db.saveEvent(newEvent);
     if (emitUpdate) emitUpdate('events');
     res.json(newEvent);
@@ -676,7 +696,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24 hours
 
     const newLink = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       eventId,
       token,
       createdAt: now.toISOString(),
@@ -705,10 +725,106 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
 
     const event = await db.getEventById(link.eventId);
     if (event) {
+      // Record page view
+      await db.recordPageView('public_event', link.memberId);
       res.json(event);
     } else {
       res.status(404).json({ error: "Event not found" });
     }
+  }));
+
+  app.get("/api/analytics", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    // Automatically sync current week's entries to analytics for real-time charts
+    try {
+      const raffle = await db.getRaffle();
+      if (raffle.settings && raffle.settings.currentWeek) {
+        await db.saveRaffleStats({
+          week: Number(raffle.settings.currentWeek),
+          month: Number(raffle.settings.currentMonth),
+          year: Number(raffle.settings.currentYear),
+          entryCount: (raffle.entries || []).length
+        });
+      }
+    } catch (e) {
+      console.error("Auto-sync raffle stats error:", e);
+    }
+
+    const [pageViews, raffleStats] = await Promise.all([
+      db.getPageViews(),
+      db.getRaffleStats()
+    ]);
+
+    // Aggregate page views to save bandwidth
+    const aggregatedPageViews = pageViews.reduce((acc: any, view: any) => {
+      const date = new Date(view.timestamp).toLocaleDateString();
+      const existing = acc.find((a: any) => a.timestamp === date && a.page === view.page);
+      if (existing) {
+        existing.count++;
+      } else {
+        acc.push({ timestamp: date, page: view.page, count: 1 });
+      }
+      return acc;
+    }, []);
+
+    res.json({ pageViews: aggregatedPageViews, raffleStats });
+  }));
+
+  app.post("/api/analytics/page-view", asyncHandler(async (req: any, res: any) => {
+    const { page, memberId } = req.body;
+    await db.recordPageView(page, memberId);
+    res.json({ success: true });
+  }));
+
+  app.post("/api/analytics/sync-raffle", checkAdmin, asyncHandler(async (req: any, res: any) => {
+    const raffle = await db.getRaffle();
+    const stats = await db.getRaffleStats();
+    
+    const winners = raffle.winners || [];
+    const existingStats = new Set(stats.map((s: any) => `${s.year}-${s.month}-${s.week}`));
+    
+    const newStats = [];
+    const weekGroups: Record<string, { week: number, month: number, year: number, count: number, timestamp: string }> = {};
+    
+    // Group winners by week to find historical weeks
+    winners.forEach((w: any) => {
+      const key = `${w.year}-${w.month}-${w.week}`;
+      if (!existingStats.has(key)) {
+        if (!weekGroups[key]) {
+          weekGroups[key] = {
+            week: Number(w.week),
+            month: Number(w.month),
+            year: Number(w.year),
+            count: 0,
+            timestamp: w.timestamp || new Date().toISOString()
+          };
+        }
+        weekGroups[key].count++; // Count winners as a baseline for participation
+      }
+    });
+    
+    // For each historical week found from winners, add a stat entry if missing
+    for (const key in weekGroups) {
+      const group = weekGroups[key];
+      await db.saveRaffleStats({
+        week: group.week,
+        month: group.month,
+        year: group.year,
+        entryCount: group.count // Use winner count as baseline
+      });
+      newStats.push(group);
+    }
+
+    // Also sync the current week's entries automatically
+    if (raffle.settings && raffle.settings.currentWeek) {
+      await db.saveRaffleStats({
+        week: Number(raffle.settings.currentWeek),
+        month: Number(raffle.settings.currentMonth),
+        year: Number(raffle.settings.currentYear),
+        entryCount: (raffle.entries || []).length
+      });
+    }
+    
+    res.json({ success: true, syncedCount: newStats.length });
   }));
 
   app.post("/api/events/:eventId/absent", asyncHandler(async (req: any, res: any) => {
@@ -830,7 +946,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
         // Create a new link that expires in 7 days
         const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
         link = {
-          id: Date.now().toString(),
+          id: crypto.randomUUID(),
           eventId,
           token,
           createdAt: new Date().toISOString(),
@@ -869,7 +985,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
   app.post("/api/events/:eventId/subevents", asyncHandler(async (req: any, res: any) => {
     const event = await db.getEventById(req.params.eventId);
     if (event) {
-      const newSubEvent = { ...req.body, id: Date.now().toString(), parties: [] };
+      const newSubEvent = { ...req.body, id: crypto.randomUUID(), parties: [] };
       if (!event.subevents) event.subevents = [];
       event.subevents.push(newSubEvent);
       await db.saveEvent(event);
@@ -930,7 +1046,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     if (event) {
       const subIndex = event.subevents.findIndex((s: any) => s.id === req.params.subEventId);
       if (subIndex !== -1) {
-        const newParty = { ...req.body, id: Date.now().toString(), assignments: [] };
+        const newParty = { ...req.body, id: crypto.randomUUID(), assignments: [] };
         if (!event.subevents[subIndex].parties) event.subevents[subIndex].parties = [];
         event.subevents[subIndex].parties.push(newParty);
         await db.saveEvent(event);
@@ -1037,7 +1153,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
       if (subIndex !== -1) {
         const partyIndex = event.subevents[subIndex].parties.findIndex((p: any) => p.id === req.params.partyId);
         if (partyIndex !== -1) {
-          const newAssignment = { ...req.body, id: Date.now().toString() };
+          const newAssignment = { ...req.body, id: crypto.randomUUID() };
           if (!event.subevents[subIndex].parties[partyIndex].assignments) event.subevents[subIndex].parties[partyIndex].assignments = [];
           event.subevents[subIndex].parties[partyIndex].assignments.push(newAssignment);
           await db.saveEvent(event);
@@ -1198,6 +1314,14 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
   }));
 
   app.post("/api/raffle/join", asyncHandler(async (req: any, res: any) => {
+    // Enforce raffle lock on the backend
+    const now = new Date();
+    const day = now.getUTCDay(); // 0 is Sunday
+    const hour = now.getUTCHours();
+    if (day === 0 && hour >= 14 && hour < 22) {
+      return res.status(403).json({ error: "The raffle is currently locked for drawing. Please try again on Monday morning." });
+    }
+
     const { memberId } = req.body;
     const raffle = await db.getRaffle();
     const members = await db.getMembers();
@@ -1208,8 +1332,8 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     // Check if member is already a winner this month
     const isWinnerThisMonth = (raffle.winners || []).some((w: any) => 
       w.memberId === memberId && 
-      w.month === raffle.settings.currentMonth && 
-      w.year === raffle.settings.currentYear
+      Number(w.month) === Number(raffle.settings.currentMonth) && 
+      Number(w.year) === Number(raffle.settings.currentYear)
     );
 
     if (isWinnerThisMonth) {
@@ -1219,9 +1343,9 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     // Check if already entered this week
     const alreadyEntered = (raffle.entries || []).some((e: any) => 
       e.memberId === memberId && 
-      e.week === raffle.settings.currentWeek &&
-      e.month === raffle.settings.currentMonth &&
-      e.year === raffle.settings.currentYear
+      Number(e.week) === Number(raffle.settings.currentWeek) &&
+      Number(e.month) === Number(raffle.settings.currentMonth) &&
+      Number(e.year) === Number(raffle.settings.currentYear)
     );
 
     if (alreadyEntered) {
@@ -1229,7 +1353,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     }
 
     const newEntry = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       memberId,
       ign: member.ign,
       week: raffle.settings.currentWeek,
@@ -1241,15 +1365,11 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     if (!raffle.entries) raffle.entries = [];
     raffle.entries.push(newEntry);
     await db.saveRaffle(raffle);
+    if (emitUpdate) emitUpdate('raffle');
     res.json({ success: true, entry: newEntry });
   }));
 
-  app.post("/api/raffle/draw", asyncHandler(async (req: any, res: any) => {
-    const userRole = req.headers['user-role'];
-    if (userRole !== 'admin' && userRole !== 'superadmin') {
-      return res.status(403).json({ error: "Only admins can draw winners" });
-    }
-
+  app.post("/api/raffle/draw", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const raffle = await db.getRaffle();
     const restrictedIds = raffle.settings.restrictedMemberIds || [];
     
@@ -1286,7 +1406,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     // Shuffle and pick winners
     const shuffled = [...uniqueEntries].sort(() => 0.5 - Math.random());
     const winners = shuffled.slice(0, numWinners).map((e, idx) => ({
-      id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5),
+      id: crypto.randomUUID(),
       memberId: e.memberId,
       ign: e.ign,
       week: raffle.settings.currentWeek,
@@ -1305,17 +1425,11 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     raffle.settings.isOpen = false;
     
     await db.saveRaffle(raffle);
+    if (emitUpdate) emitUpdate('raffle');
     res.json({ success: true, winners });
   }));
 
-  app.post("/api/raffle/advance", asyncHandler(async (req: any, res: any) => {
-    const userRole = req.headers['user-role'];
-    console.log(`[Raffle Advance] Request received. Role: ${userRole}`);
-    if (userRole !== 'admin' && userRole !== 'superadmin') {
-      console.warn(`[Raffle Advance] Forbidden: Role ${userRole} is not admin`);
-      return res.status(403).json({ error: "Only admins can advance the raffle" });
-    }
-
+  app.post("/api/raffle/advance", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const raffle = await db.getRaffle();
     console.log(`[Raffle Advance] Current Settings:`, raffle.settings);
     
@@ -1341,17 +1455,23 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     raffle.settings.isOpen = true;
     raffle.settings.prizes = []; // Reset prizes for the new week
     console.log(`[Raffle Advance] New Settings:`, raffle.settings);
+    
+    // Save stats for the week that just ended
+    const entryCount = (raffle.entries || []).length;
+    await db.saveRaffleStats({
+      week: currentWeek,
+      month: currentMonth,
+      year: currentYear,
+      entryCount: entryCount
+    });
+
     await db.saveRaffle(raffle);
     console.log(`[Raffle Advance] Raffle advanced and entries cleared`);
+    if (emitUpdate) emitUpdate('raffle');
     res.json({ success: true, settings: raffle.settings });
   }));
 
-  app.post("/api/raffle/reroll", asyncHandler(async (req: any, res: any) => {
-    const userRole = req.headers['user-role'];
-    if (userRole !== 'admin' && userRole !== 'superadmin') {
-      return res.status(403).json({ error: "Only admins can reroll winners" });
-    }
-
+  app.post("/api/raffle/reroll", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const { winnerId } = req.body;
     const raffle = await db.getRaffle();
     const restrictedIds = raffle.settings.restrictedMemberIds || [];
@@ -1383,7 +1503,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     const newWinnerEntry = currentWeekEntries[Math.floor(Math.random() * currentWeekEntries.length)];
     const newWinner = {
       ...oldWinner,
-      id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5),
+      id: crypto.randomUUID(),
       memberId: newWinnerEntry.memberId,
       ign: newWinnerEntry.ign,
       round: oldWinner.round, // Preserve round
@@ -1393,15 +1513,11 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
 
     raffle.winners[winnerIndex] = newWinner;
     await db.saveRaffle(raffle);
+    if (emitUpdate) emitUpdate('raffle');
     res.json({ success: true, winner: newWinner });
   }));
 
-  app.post("/api/raffle/override", asyncHandler(async (req: any, res: any) => {
-    const userRole = req.headers['user-role'];
-    if (userRole !== 'superadmin') {
-      return res.status(403).json({ error: "Only superadmins can override winners" });
-    }
-
+  app.post("/api/raffle/override", checkSuperAdmin, asyncHandler(async (req: any, res: any) => {
     const { winnerId, newMemberId } = req.body;
     const raffle = await db.getRaffle();
     const members = await db.getMembers();
@@ -1428,7 +1544,7 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
 
     const newWinner = {
       ...oldWinner,
-      id: Date.now().toString() + '-' + Math.random().toString(36).substr(2, 5),
+      id: crypto.randomUUID(),
       memberId: newMemberId,
       ign: newMember.ign,
       round: oldWinner.round, // Preserve round
@@ -1438,31 +1554,32 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
 
     raffle.winners[winnerIndex] = newWinner;
     await db.saveRaffle(raffle);
+    if (emitUpdate) emitUpdate('raffle');
     res.json({ success: true, winner: newWinner });
   }));
 
-  app.post("/api/raffle/clear-entries", asyncHandler(async (req: any, res: any) => {
-    const userRole = req.headers['user-role'];
-    if (userRole !== 'admin' && userRole !== 'superadmin') {
-      return res.status(403).json({ error: "Only admins can clear entries" });
-    }
-
+  app.post("/api/raffle/clear-entries", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const raffle = await db.getRaffle();
     raffle.entries = [];
     await db.saveRaffle(raffle);
+    if (emitUpdate) emitUpdate('raffle');
     res.json({ success: true });
   }));
 
-  app.post("/api/raffle/reset", asyncHandler(async (req: any, res: any) => {
-    const userRole = req.headers['user-role'];
-    console.log(`[Raffle Reset] Role: ${userRole}, Body:`, req.body);
-    if (userRole !== 'admin' && userRole !== 'superadmin') {
-      return res.status(403).json({ error: "Only admins can reset the raffle" });
-    }
-
+  app.post("/api/raffle/reset", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const { nextWeek, nextMonth, nextYear } = req.body;
     const raffle = await db.getRaffle();
     
+    // Save stats before clearing
+    if (raffle.entries && raffle.entries.length > 0) {
+      await db.saveRaffleStats({
+        week: raffle.settings.currentWeek,
+        month: raffle.settings.currentMonth,
+        year: raffle.settings.currentYear,
+        entryCount: raffle.entries.length
+      });
+    }
+
     if (nextWeek !== undefined) raffle.settings.currentWeek = Number(nextWeek);
     else raffle.settings.currentWeek = (raffle.settings.currentWeek % 5) + 1;
     
@@ -1472,28 +1589,11 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     
     console.log(`[Raffle Reset] New Settings:`, raffle.settings);
     await db.saveRaffle(raffle);
+    if (emitUpdate) emitUpdate('raffle');
     res.json({ success: true, settings: raffle.settings });
   }));
 
-  app.post("/api/raffle/settings", asyncHandler(async (req: any, res: any) => {
-    const userRole = req.headers['user-role'];
-    if (userRole !== 'admin' && userRole !== 'superadmin') {
-      return res.status(403).json({ error: "Only admins can change raffle settings" });
-    }
-
-    const raffle = await db.getRaffle();
-    raffle.settings = { ...raffle.settings, ...req.body };
-    await db.saveRaffle(raffle);
-    res.json(raffle.settings);
-  }));
-
-  app.post("/api/raffle/remove-entry", asyncHandler(async (req: any, res: any) => {
-    const userRole = req.headers['user-role'];
-    console.log(`[Raffle Remove] Role: ${userRole}, Body:`, req.body);
-    if (userRole !== 'admin' && userRole !== 'superadmin') {
-      return res.status(403).json({ error: "Only admins can remove entries" });
-    }
-
+  app.post("/api/raffle/remove-entry", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const { entryId } = req.body;
     const raffle = await db.getRaffle();
     if (!raffle.entries) raffle.entries = [];
@@ -1507,15 +1607,11 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
     }
     
     await db.saveRaffle(raffle);
+    if (emitUpdate) emitUpdate('raffle');
     res.json({ success: true, count: finalCount });
   }));
 
-  app.post("/api/raffle/force-reset", asyncHandler(async (req: any, res: any) => {
-    const userRole = req.headers['user-role'];
-    if (userRole !== 'admin' && userRole !== 'superadmin') {
-      return res.status(403).json({ error: "Only admins can force reset" });
-    }
-
+  app.post("/api/raffle/force-reset", checkAdmin, asyncHandler(async (req: any, res: any) => {
     const initialRaffle = {
       entries: [],
       winners: [],
@@ -1523,10 +1619,17 @@ export function createApp(emitUpdate?: (type: string, data?: any) => void) {
         currentWeek: 1,
         currentMonth: 4,
         currentYear: 2026,
-        isOpen: true
+        isOpen: true,
+        prizes: []
       }
     };
     await db.saveRaffle(initialRaffle);
+    
+    // Set default party size to 5 for new installations
+    const settings = await db.getSettings();
+    await db.saveSettings({ ...settings, maxPartySize: 5 });
+    
+    if (emitUpdate) emitUpdate('raffle');
     res.json({ success: true, raffle: initialRaffle });
   }));
 

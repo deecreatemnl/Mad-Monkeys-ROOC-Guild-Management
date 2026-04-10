@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS members (
     leave_reason TEXT,
     leave_dates JSONB DEFAULT '[]'::jsonb,
     leave_started_at TIMESTAMP WITH TIME ZONE,
+    return_date TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -80,6 +81,7 @@ CREATE TABLE IF NOT EXISTS settings (
     discord_guild_id TEXT,
     discord_announcements_channel_id TEXT,
     discord_absence_channel_id TEXT,
+    discord_default_role_to_tag TEXT,
     github_repo TEXT,
     vercel_deploy_hook_url TEXT,
     disable_signups BOOLEAN DEFAULT false,
@@ -105,6 +107,32 @@ CREATE TABLE IF NOT EXISTS event_share_links (
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
 
+-- 8. Raffle Stats Table
+CREATE TABLE IF NOT EXISTS raffle_stats (
+    id SERIAL PRIMARY KEY,
+    week INTEGER NOT NULL,
+    month INTEGER NOT NULL,
+    year INTEGER NOT NULL,
+    entry_count INTEGER DEFAULT 0,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 9. Page Views Table
+CREATE TABLE IF NOT EXISTS page_views (
+    id SERIAL PRIMARY KEY,
+    page TEXT NOT NULL,
+    member_id TEXT,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Enable RLS (Row Level Security) - Optional but recommended
 -- For simplicity in this initial setup, we'll assume the app handles auth via API
 -- but you can add policies here for direct Supabase access.
+
+-- 10. Performance Indexes
+CREATE INDEX IF NOT EXISTS idx_members_status ON members(status);
+CREATE INDEX IF NOT EXISTS idx_members_uid ON members(uid);
+CREATE INDEX IF NOT EXISTS idx_member_logs_member_id ON member_logs(member_id);
+CREATE INDEX IF NOT EXISTS idx_event_share_links_event_id ON event_share_links(event_id);
+CREATE INDEX IF NOT EXISTS idx_page_views_page ON page_views(page);
+CREATE INDEX IF NOT EXISTS idx_raffle_stats_date ON raffle_stats(year, month, week);

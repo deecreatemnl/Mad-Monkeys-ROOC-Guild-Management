@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Users, Calendar, Trophy, Activity, Clock, Briefcase, ChevronDown, ChevronUp, GripVertical, ChevronLeft, ChevronRight } from 'lucide-react';
 import { fetchAPI } from '../lib/api';
+import { io } from 'socket.io-client';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -92,12 +93,26 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   // Container order and collapse state
-  const [containerOrder, setContainerOrder] = useState(['activity', 'winners', 'leave']);
-  const [collapsedState, setCollapsedState] = useState<Record<string, boolean>>({
-    activity: false,
-    winners: false,
-    leave: false
+  const [containerOrder, setContainerOrder] = useState(() => {
+    const stored = localStorage.getItem('dashboardContainerOrder');
+    return stored ? JSON.parse(stored) : ['activity', 'winners', 'leave'];
   });
+  const [collapsedState, setCollapsedState] = useState<Record<string, boolean>>(() => {
+    const stored = localStorage.getItem('dashboardCollapsedState');
+    return stored ? JSON.parse(stored) : {
+      activity: false,
+      winners: false,
+      leave: false
+    };
+  });
+
+  useEffect(() => {
+    localStorage.setItem('dashboardContainerOrder', JSON.stringify(containerOrder));
+  }, [containerOrder]);
+
+  useEffect(() => {
+    localStorage.setItem('dashboardCollapsedState', JSON.stringify(collapsedState));
+  }, [collapsedState]);
 
   // Pagination states
   const [activityPage, setActivityPage] = useState(1);
@@ -155,6 +170,23 @@ export default function DashboardPage() {
     };
 
     loadDashboardData();
+    
+    const socket = io();
+    socket.on('update', (data) => {
+      if (['members', 'events', 'jobs', 'raffle'].includes(data.type)) {
+        loadDashboardData();
+      }
+    });
+
+    // Record page view
+    fetchAPI('/api/analytics/page-view', {
+      method: 'POST',
+      body: JSON.stringify({ page: 'dashboard' })
+    }).catch(() => {});
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   const handleDragEnd = (event: DragEndEvent) => {

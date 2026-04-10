@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { fetchAPI } from '../lib/api';
+import { io } from 'socket.io-client';
 import { 
   Plus, 
   Edit2, 
@@ -279,6 +280,23 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
 
   useEffect(() => {
     loadData();
+    
+    const socket = io();
+    socket.on('update', (data) => {
+      if (data.type === 'members' || data.type === 'jobs' || data.type === 'roles') {
+        loadData();
+      }
+    });
+
+    // Record page view
+    fetchAPI('/api/analytics/page-view', {
+      method: 'POST',
+      body: JSON.stringify({ page: 'members' })
+    }).catch(() => {});
+
+    return () => {
+      socket.disconnect();
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -343,6 +361,18 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
   };
 
   const openModal = (member?: Member) => {
+    if (!member && (jobs.length === 0 || roles.length === 0)) {
+      setConfirmModal({
+        isOpen: true,
+        title: 'Setup Required',
+        message: 'Please add at least one Job Class and one Job Role in the "Jobs & Roles" page before adding members.',
+        onConfirm: () => {
+          window.location.hash = '#/jobs';
+        }
+      });
+      return;
+    }
+
     if (member) {
       setEditingMember(member);
       setFormData({ 
@@ -507,7 +537,6 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
               <option value="All">All Status</option>
               <option value="active">Active</option>
               <option value="on-leave">On Leave</option>
-              <option value="busy">Busy</option>
               <option value="inactive">Inactive</option>
               <option value="left">Left Guild</option>
             </select>
@@ -561,7 +590,6 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                       <span className={cn(
                         "w-2 h-2 rounded-full",
                         member.status === 'active' ? 'bg-green-500' :
-                        member.status === 'busy' ? 'bg-orange-500' :
                         member.status === 'inactive' ? 'bg-zinc-500' : 'bg-red-500'
                       )} />
                     </div>
@@ -781,7 +809,7 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                     value={formData.ign}
                     onChange={(e) => setFormData({ ...formData, ign: e.target.value })}
                     className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
-                    placeholder="e.g. MadMonkeyBoss"
+                    placeholder="Member Name"
                   />
                 </div>
                 <div>
@@ -817,7 +845,6 @@ export default function MembersPage({ isAdmin = false }: MembersPageProps) {
                       className="w-full bg-zinc-800 border border-zinc-700 rounded-xl py-2.5 px-4 text-white focus:outline-none focus:ring-2 focus:ring-orange-500/50"
                     >
                       <option value="active">Active</option>
-                      <option value="busy">Busy</option>
                       <option value="on-leave">On Leave</option>
                       <option value="inactive">Inactive</option>
                       <option value="left">Left Guild</option>

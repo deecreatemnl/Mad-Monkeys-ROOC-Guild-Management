@@ -54,7 +54,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     expressApp.use(express.static(distPath, {
-      maxAge: '1d',
+      maxAge: '1y',
       immutable: true
     }));
     expressApp.get("*", (req, res) => {

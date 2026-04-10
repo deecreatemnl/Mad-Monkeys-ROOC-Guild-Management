@@ -100,6 +100,15 @@ export default function PublicEventPage() {
         setEvent(eventData);
         setJobs(jobsData);
         setRoles(rolesData || []);
+
+        // Record page view
+        fetchAPI('/api/analytics/page-view', {
+          method: 'POST',
+          body: JSON.stringify({ 
+            page: 'public_event',
+            memberId: eventData?.memberId 
+          })
+        }).catch(() => {});
         
         // Process nested data from eventData
         const subEventsData = [...(eventData.subevents || [])];
@@ -521,7 +530,11 @@ export default function PublicEventPage() {
             });
             
             const unavailableMembers = [
-              ...(event.absences || []),
+              ...(event.absences || [])
+                .filter(a => {
+                  const member = membersMap.get(a.memberId);
+                  return member && member.status === 'on-leave';
+                }),
               ...members
                 .filter(m => m.status === 'on-leave')
                 .filter(m => !(event.absences || []).some(a => a.memberId === m.id))
