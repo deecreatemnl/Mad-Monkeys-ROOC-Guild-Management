@@ -1333,11 +1333,17 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         return;
       }
 
+      if (overData.type === 'assignment' && activePartyId !== overPartyId) {
+        // For swapping across parties, we don't want to move the item in onDragOver
+        // This prevents the shifting animation and keeps the target stable for swapping
+        return;
+      }
+
       const targetParty = parties[overSubEventId]?.find(p => p.id === overPartyId);
       const maxSize = targetParty?.maxSize || settings?.maxPartySize || 12;
       const isTargetFull = overItems.length >= maxSize;
 
-      if (isTargetFull && overData.type !== 'assignment') {
+      if (isTargetFull) {
         return;
       }
 
@@ -1353,33 +1359,11 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         const aItems = prev[activePartyId] || [];
         const oItems = prev[overPartyId] || [];
         const aIndex = aItems.findIndex((a) => a.id === active.id);
-        const oIndex = overData.type === 'party' 
-          ? oItems.length 
-          : oItems.findIndex((a) => a.id === over.id);
+        const oIndex = oItems.length; // Always end of list for moving to party container
 
         if (aIndex === -1) return prev;
 
         const item = aItems[aIndex];
-
-        if (overData.type === 'assignment') {
-          // SWAP LOGIC
-          const overItem = oItems[oIndex];
-          const newAItems = [...aItems];
-          const newOItems = [...oItems];
-          
-          newAItems[aIndex] = { ...overItem, partyId: activePartyId, subEventId: item.subEventId, eventId: item.eventId };
-          newOItems[oIndex] = { ...item, partyId: overPartyId, subEventId: overItem.subEventId, eventId: overItem.eventId };
-          
-          const newState = {
-            ...prev,
-            [activePartyId]: newAItems,
-            [overPartyId]: newOItems,
-          };
-          assignmentsRef.current = newState;
-          return newState;
-        }
-
-        if (isTargetFull) return prev;
 
         // NORMAL MOVE LOGIC
         const newAItems = [...aItems];
@@ -1480,6 +1464,34 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         return;
       }
 
+      // HANDLE SWAP ON DROP
+      if (overData?.type === 'assignment' && activeData.partyId !== overData.partyId) {
+        const aPartyId = activeData.partyId;
+        const oPartyId = overData.partyId;
+        const aItems = [...(assignments[aPartyId] || [])];
+        const oItems = [...(assignments[oPartyId] || [])];
+        
+        const aIndex = aItems.findIndex(i => i.id === active.id);
+        const oIndex = oItems.findIndex(i => i.id === over.id);
+        
+        if (aIndex !== -1 && oIndex !== -1) {
+          const aItem = aItems[aIndex];
+          const oItem = oItems[oIndex];
+          
+          // Swap them
+          aItems[aIndex] = { ...oItem, partyId: aPartyId, subEventId: aItem.subEventId, eventId: aItem.eventId };
+          oItems[oIndex] = { ...aItem, partyId: oPartyId, subEventId: oItem.subEventId, eventId: oItem.eventId };
+          
+          const newState = {
+            ...assignments,
+            [aPartyId]: aItems,
+            [oPartyId]: oItems
+          };
+          assignmentsRef.current = newState;
+          setAssignments(newState);
+        }
+      }
+
       // Find all parties that have changed since the drag started
       const currentAssignments = assignmentsRef.current;
       const initialAssignmentsState = initialAssignmentsStateRef.current;
@@ -1542,7 +1554,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     setInitialSubEventId(null);
     setInitialPartyId(null);
     initialAssignmentsStateRef.current = {};
-  }, [events, subEvents, parties, initialSubEventId, initialPartyId, handleAssignmentReorder, handlePartyReorder, loadData]);
+  }, [events, subEvents, parties, assignments, initialSubEventId, initialPartyId, handleAssignmentReorder, handlePartyReorder, loadData]);
 
   const openEventModal = (event?: GuildEvent) => {
     if (event) {
