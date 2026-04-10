@@ -1236,7 +1236,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       setInitialSubEventId(activeData.subEventId);
     } else if (activeData?.type === 'assignment') {
       setInitialPartyId(activeData.partyId);
-      setInitialAssignmentsState(assignments);
+      setInitialAssignmentsState(assignmentsRef.current);
     }
   };
 
@@ -1322,7 +1322,10 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       
       if (activeIndex === -1) return;
 
-      const targetParty = parties[activeData.subEventId]?.find(p => p.id === overPartyId);
+      const overSubEventId = overData.type === 'party' ? overData.subEventId : overData.subEventId;
+      const overEventId = overData.type === 'party' ? overData.eventId : overData.eventId;
+
+      const targetParty = parties[overSubEventId]?.find(p => p.id === overPartyId);
       const maxSize = targetParty?.maxSize || settings?.maxPartySize || 12;
       const isTargetFull = overItems.length >= maxSize;
 
@@ -1333,7 +1336,9 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       // Update active data so handleDragEnd knows the new party
       active.data.current = {
         ...activeData,
-        partyId: overPartyId
+        partyId: overPartyId,
+        subEventId: overSubEventId,
+        eventId: overEventId
       };
 
       setAssignments((prev) => {
@@ -1354,8 +1359,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           const newAItems = [...aItems];
           const newOItems = [...oItems];
           
-          newAItems[aIndex] = { ...overItem, partyId: activePartyId };
-          newOItems[oIndex] = { ...item, partyId: overPartyId };
+          newAItems[aIndex] = { ...overItem, partyId: activePartyId, subEventId: activeData.subEventId, eventId: activeData.eventId };
+          newOItems[oIndex] = { ...item, partyId: overPartyId, subEventId: overSubEventId, eventId: overEventId };
           
           return {
             ...prev,
@@ -1369,7 +1374,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         newAItems.splice(aIndex, 1);
 
         const newOItems = [...oItems];
-        const newItem = { ...item, partyId: overPartyId };
+        const newItem = { ...item, partyId: overPartyId, subEventId: overSubEventId, eventId: overEventId };
         
         if (oIndex >= 0) {
           newOItems.splice(oIndex, 0, newItem);
@@ -1441,22 +1446,50 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         }
       }
     } else if (activeData?.type === 'assignment') {
-      const eventId = activeData.eventId;
-      const subEventId = activeData.subEventId;
+      // Find all parties that have changed since the drag started
+      const currentAssignments = assignmentsRef.current;
       
-      if (eventId && subEventId) {
-        // Find all parties that have changed since the drag started
-        const currentAssignments = assignmentsRef.current;
-        const dirtyPartyIds = Object.keys(currentAssignments).filter(partyId => {
-          // Compare with initial state. If it didn't exist in initial, it's dirty if it has items now.
-          const initial = initialAssignmentsState[partyId] || [];
-          const current = currentAssignments[partyId] || [];
-          return initial !== current;
-        });
+      // Get all unique party IDs from both initial and current states
+      const allPartyIds = new Set([
+        ...Object.keys(initialAssignmentsState),
+        ...Object.keys(currentAssignments)
+      ]);
 
-        // Save all dirty parties sequentially to avoid race conditions
-        for (const partyId of dirtyPartyIds) {
-          await handleAssignmentReorder(eventId, subEventId, partyId, currentAssignments[partyId]);
+      const dirtyPartyIds = Array.from(allPartyIds).filter(partyId => {
+        const initial = initialAssignmentsState[partyId];
+        const current = currentAssignments[partyId];
+        
+        // If both are undefined or empty arrays, they are equal
+        const initialLen = initial?.length || 0;
+        const currentLen = current?.length || 0;
+        
+        if (initialLen === 0 && currentLen === 0) return false;
+        
+        // If references are different, it's dirty
+        return initial !== current;
+      });
+
+      // Save all dirty parties sequentially to avoid race conditions
+      for (const partyId of dirtyPartyIds) {
+        // Find which subEvent and event this party belongs to
+        let targetSubEventId = null;
+        let targetEventId = null;
+        
+        for (const [sId, sParties] of Object.entries(parties)) {
+          if (sParties.find(p => p.id === partyId)) {
+            targetSubEventId = sId;
+            for (const [eId, eSubEvents] of Object.entries(subEvents)) {
+              if (eSubEvents.find(s => s.id === sId)) {
+                targetEventId = eId;
+                break;
+              }
+            }
+            break;
+          }
+        }
+        
+        if (targetEventId && targetSubEventId) {
+          await handleAssignmentReorder(targetEventId, targetSubEventId, partyId, currentAssignments[partyId]);
         }
       }
     } else if (activeData?.type === 'party') {
