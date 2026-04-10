@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, memo, createContext, useContext } from 'react';
+import { useState, useEffect, useCallback, useMemo, memo, createContext, useContext, useRef } from 'react';
 import { fetchAPI } from '../lib/api';
 import { GuildEvent, Member, Assignment, Party, SubEvent } from '../types';
 import { Plus, Edit2, Trash2, X, Users, UserPlus, UserMinus, Info, LayoutGrid, Clock, Shield, Sword, Heart, Star, Share2, Check, Copy, Layers, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search, Zap, Target, Music, Hammer, FlaskConical, Hand, Cross, Skull, MessageSquare, Loader2, Menu } from 'lucide-react';
@@ -627,6 +627,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   const [assignments, setAssignments] = useState<Record<string, Assignment[]>>({});
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const isFetching = useRef(false);
   
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [isSubEventModalOpen, setIsSubEventModalOpen] = useState(false);
@@ -753,7 +754,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
   };
 
   const loadData = useCallback(async () => {
-    if (loading) return;
+    if (isFetching.current) return;
+    isFetching.current = true;
     
     try {
       const [eventsData, membersData, settingsData, jobsData, rolesData] = await Promise.all([
@@ -813,6 +815,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     } catch (error) {
       console.error('Failed to load events data:', error);
       setLoading(false);
+    } finally {
+      isFetching.current = false;
     }
   }, []);
 

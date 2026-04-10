@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { fetchAPI } from '../lib/api';
 import { GuildEvent, Member, Assignment, Party, SubEvent, GuildSettings } from '../types';
@@ -56,6 +56,7 @@ export default function PublicEventPage() {
   const [parties, setParties] = useState<Record<string, Party[]>>({});
   const [assignments, setAssignments] = useState<Record<string, Assignment[]>>({});
   const [loading, setLoading] = useState(true);
+  const isFetching = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [collapsedSubEvents, setCollapsedSubEvents] = useState<Set<string>>(new Set());
   const [guildSettings, setGuildSettings] = useState<GuildSettings | null>(null);
@@ -84,7 +85,8 @@ export default function PublicEventPage() {
     if (!eventId && !token) return;
 
     const loadData = async () => {
-      if (loading && event) return;
+      if (isFetching.current) return;
+      isFetching.current = true;
       
       try {
         const [eventData, membersData, jobsData, rolesData] = await Promise.all([
@@ -132,6 +134,8 @@ export default function PublicEventPage() {
         console.error('Error loading event data:', err);
         setError(err.message || 'Error loading event.');
         setLoading(false);
+      } finally {
+        isFetching.current = false;
       }
     };
 
