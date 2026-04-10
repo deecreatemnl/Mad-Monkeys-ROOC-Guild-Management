@@ -670,6 +670,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     title: string;
     message: string;
     onConfirm: () => void;
+    confirmText?: string;
+    cancelText?: string;
     variant?: 'danger' | 'warning' | 'info';
   }>({
     isOpen: false,
@@ -1327,6 +1329,10 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       const overSubEventId = overData.type === 'party' ? overData.subEventId : overData.assignment?.subEventId;
       const overEventId = overData.type === 'party' ? overData.eventId : overData.assignment?.eventId;
 
+      if (activeData.eventId !== overEventId) {
+        return;
+      }
+
       const targetParty = parties[overSubEventId]?.find(p => p.id === overPartyId);
       const maxSize = targetParty?.maxSize || settings?.maxPartySize || 12;
       const isTargetFull = overItems.length >= maxSize;
@@ -1355,7 +1361,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
 
         const item = aItems[aIndex];
 
-        if (isTargetFull && overData.type === 'assignment') {
+        if (overData.type === 'assignment') {
           // SWAP LOGIC
           const overItem = oItems[oIndex];
           const newAItems = [...aItems];
@@ -1372,6 +1378,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           assignmentsRef.current = newState;
           return newState;
         }
+
+        if (isTargetFull) return prev;
 
         // NORMAL MOVE LOGIC
         const newAItems = [...aItems];
@@ -1453,6 +1461,25 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         }
       }
     } else if (activeData?.type === 'assignment') {
+      const overData = over.data.current;
+      const overEventId = overData?.type === 'party' ? overData.eventId : overData?.assignment?.eventId;
+      
+      if (overEventId && activeData.eventId !== overEventId) {
+        setConfirmModal({
+          isOpen: true,
+          title: 'Action Not Allowed',
+          message: 'Swapping or moving members is only allowed for sub-event parties within the same event.',
+          onConfirm: () => setConfirmModal(prev => ({ ...prev, isOpen: false })),
+          confirmText: 'OK',
+          cancelText: 'Close',
+          variant: 'warning'
+        });
+        setInitialSubEventId(null);
+        setInitialPartyId(null);
+        initialAssignmentsStateRef.current = {};
+        return;
+      }
+
       // Find all parties that have changed since the drag started
       const currentAssignments = assignmentsRef.current;
       const initialAssignmentsState = initialAssignmentsStateRef.current;
@@ -1957,6 +1984,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         title={confirmModal.title}
         message={confirmModal.message}
         variant={confirmModal.variant}
+        confirmText={confirmModal.confirmText}
+        cancelText={confirmModal.cancelText}
       />
 
       {/* Share Modal */}
