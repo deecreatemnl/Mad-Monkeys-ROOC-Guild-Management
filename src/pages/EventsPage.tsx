@@ -1316,74 +1316,71 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         return;
       }
 
+      const activeItems = assignments[activePartyId] || [];
+      const overItems = assignments[overPartyId] || [];
+      const activeIndex = activeItems.findIndex((a) => a.id === active.id);
+      
+      if (activeIndex === -1) return;
+
+      const targetParty = parties[activeData.subEventId]?.find(p => p.id === overPartyId);
+      const maxSize = targetParty?.maxSize || settings?.maxPartySize || 12;
+      const isTargetFull = overItems.length >= maxSize;
+
+      if (isTargetFull && overData.type !== 'assignment') {
+        return;
+      }
+
+      // Update active data so handleDragEnd knows the new party
+      active.data.current = {
+        ...activeData,
+        partyId: overPartyId
+      };
+
       setAssignments((prev) => {
-        const activeItems = prev[activePartyId] || [];
-        const overItems = prev[overPartyId] || [];
+        const aItems = prev[activePartyId] || [];
+        const oItems = prev[overPartyId] || [];
+        const aIndex = aItems.findIndex((a) => a.id === active.id);
+        const oIndex = overData.type === 'party' 
+          ? oItems.length 
+          : oItems.findIndex((a) => a.id === over.id);
 
-        const activeIndex = activeItems.findIndex((a) => a.id === active.id);
-        const overIndex = overData.type === 'party' 
-          ? overItems.length 
-          : overItems.findIndex((a) => a.id === over.id);
+        if (aIndex === -1) return prev;
 
-        if (activeIndex === -1) return prev;
+        const item = aItems[aIndex];
 
-        const item = activeItems[activeIndex];
-        
-        // Check if target party is full
-        const targetParty = parties[activeData.subEventId]?.find(p => p.id === overPartyId);
-        const maxSize = targetParty?.maxSize || settings?.maxPartySize || 12;
-        const isTargetFull = overItems.length >= maxSize;
-
-        if (isTargetFull) {
-          if (overData.type === 'assignment') {
-            // SWAP LOGIC: If full and over an assignment, swap them
-            const overItem = overItems[overIndex];
-            const newActiveItems = [...activeItems];
-            const newOverItems = [...overItems];
-            
-            newActiveItems[activeIndex] = { ...overItem, partyId: activePartyId };
-            newOverItems[overIndex] = { ...item, partyId: overPartyId };
-            
-            // Update active data so handleDragEnd knows the new party
-            active.data.current = {
-              ...activeData,
-              partyId: overPartyId
-            };
-
-            return {
-              ...prev,
-              [activePartyId]: newActiveItems,
-              [overPartyId]: newOverItems,
-            };
-          } else {
-            // Target is full and not over an assignment -> block the move
-            return prev;
-          }
+        if (isTargetFull && overData.type === 'assignment') {
+          // SWAP LOGIC
+          const overItem = oItems[oIndex];
+          const newAItems = [...aItems];
+          const newOItems = [...oItems];
+          
+          newAItems[aIndex] = { ...overItem, partyId: activePartyId };
+          newOItems[oIndex] = { ...item, partyId: overPartyId };
+          
+          return {
+            ...prev,
+            [activePartyId]: newAItems,
+            [overPartyId]: newOItems,
+          };
         }
 
-        // NORMAL MOVE LOGIC: If not full, just move the item
-        const newActiveItems = [...activeItems];
-        newActiveItems.splice(activeIndex, 1);
+        // NORMAL MOVE LOGIC
+        const newAItems = [...aItems];
+        newAItems.splice(aIndex, 1);
 
-        const newOverItems = [...overItems];
+        const newOItems = [...oItems];
         const newItem = { ...item, partyId: overPartyId };
         
-        // Update active data so handleDragEnd knows the new party
-        active.data.current = {
-          ...activeData,
-          partyId: overPartyId
-        };
-
-        if (overIndex >= 0) {
-          newOverItems.splice(overIndex, 0, newItem);
+        if (oIndex >= 0) {
+          newOItems.splice(oIndex, 0, newItem);
         } else {
-          newOverItems.push(newItem);
+          newOItems.push(newItem);
         }
 
         return {
           ...prev,
-          [activePartyId]: newActiveItems,
-          [overPartyId]: newOverItems,
+          [activePartyId]: newAItems,
+          [overPartyId]: newOItems,
         };
       });
     }
@@ -1444,20 +1441,22 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         }
       }
     } else if (activeData?.type === 'assignment') {
-      const overData = over.data.current;
-      const newPartyId = overData?.type === 'party' ? overData.party.id : overData?.partyId;
       const eventId = activeData.eventId;
       const subEventId = activeData.subEventId;
       
-      if (initialPartyId && newPartyId && eventId && subEventId) {
-        // Use assignmentsRef.current to get the most up-to-date state
+      if (eventId && subEventId) {
+        // Find all parties that have changed since the drag started
         const currentAssignments = assignmentsRef.current;
-        const newAssignments = currentAssignments[newPartyId] || [];
-        await handleAssignmentReorder(eventId, subEventId, newPartyId, newAssignments);
-        
-        if (initialPartyId !== newPartyId) {
-          const initialAssignments = currentAssignments[initialPartyId] || [];
-          await handleAssignmentReorder(eventId, subEventId, initialPartyId, initialAssignments);
+        const dirtyPartyIds = Object.keys(currentAssignments).filter(partyId => {
+          // Compare with initial state. If it didn't exist in initial, it's dirty if it has items now.
+          const initial = initialAssignmentsState[partyId] || [];
+          const current = currentAssignments[partyId] || [];
+          return initial !== current;
+        });
+
+        // Save all dirty parties sequentially to avoid race conditions
+        for (const partyId of dirtyPartyIds) {
+          await handleAssignmentReorder(eventId, subEventId, partyId, currentAssignments[partyId]);
         }
       }
     } else if (activeData?.type === 'party') {
@@ -1477,7 +1476,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
     }
     setInitialSubEventId(null);
     setInitialPartyId(null);
-  }, [events, subEvents, parties, initialSubEventId, initialPartyId, handleAssignmentReorder, handlePartyReorder, loadData]);
+    setInitialAssignmentsState({});
+  }, [events, subEvents, parties, initialSubEventId, initialPartyId, initialAssignmentsState, handleAssignmentReorder, handlePartyReorder, loadData]);
 
   const openEventModal = (event?: GuildEvent) => {
     if (event) {
