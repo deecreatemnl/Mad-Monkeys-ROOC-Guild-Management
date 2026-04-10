@@ -1326,8 +1326,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       
       if (activeIndex === -1) return;
 
-      const overSubEventId = overData.type === 'party' ? overData.subEventId : overData.assignment?.subEventId;
-      const overEventId = overData.type === 'party' ? overData.eventId : overData.assignment?.eventId;
+      const overSubEventId = overData.subEventId;
+      const overEventId = overData.eventId;
 
       if (activeData.eventId !== overEventId) {
         return;
@@ -1446,9 +1446,16 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       }
     } else if (activeData?.type === 'assignment') {
       const overData = over.data.current;
-      const overEventId = overData?.type === 'party' ? overData.eventId : overData?.assignment?.eventId;
+      const overEventId = overData?.eventId;
       
       if (overEventId && activeData.eventId !== overEventId) {
+        // Rollback state if it was optimistically updated in handleDragOver
+        if (Object.keys(initialAssignmentsStateRef.current).length > 0) {
+          const rollbackState = JSON.parse(JSON.stringify(initialAssignmentsStateRef.current));
+          setAssignments(rollbackState);
+          assignmentsRef.current = rollbackState;
+        }
+
         setConfirmModal({
           isOpen: true,
           title: 'Action Not Allowed',
