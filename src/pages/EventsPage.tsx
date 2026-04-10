@@ -1236,7 +1236,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       setInitialSubEventId(activeData.subEventId);
     } else if (activeData?.type === 'assignment') {
       setInitialPartyId(activeData.partyId);
-      initialAssignmentsStateRef.current = assignmentsRef.current;
+      initialAssignmentsStateRef.current = JSON.parse(JSON.stringify(assignmentsRef.current));
     }
   };
 
@@ -1324,8 +1324,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       
       if (activeIndex === -1) return;
 
-      const overSubEventId = overData.type === 'party' ? overData.subEventId : overData.subEventId;
-      const overEventId = overData.type === 'party' ? overData.eventId : overData.eventId;
+      const overSubEventId = overData.type === 'party' ? overData.subEventId : overData.assignment?.subEventId;
+      const overEventId = overData.type === 'party' ? overData.eventId : overData.assignment?.eventId;
 
       const targetParty = parties[overSubEventId]?.find(p => p.id === overPartyId);
       const maxSize = targetParty?.maxSize || settings?.maxPartySize || 12;
@@ -1361,8 +1361,8 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
           const newAItems = [...aItems];
           const newOItems = [...oItems];
           
-          newAItems[aIndex] = { ...overItem, partyId: activePartyId, subEventId: activeData.subEventId, eventId: activeData.eventId };
-          newOItems[oIndex] = { ...item, partyId: overPartyId, subEventId: overSubEventId, eventId: overEventId };
+          newAItems[aIndex] = { ...overItem, partyId: activePartyId, subEventId: item.subEventId, eventId: item.eventId };
+          newOItems[oIndex] = { ...item, partyId: overPartyId, subEventId: overItem.subEventId, eventId: overItem.eventId };
           
           const newState = {
             ...prev,
@@ -1399,9 +1399,10 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
 
   const handleDragEndTop = useCallback(async (event: DragEndEvent) => {
     const { active, over } = event;
-    if (!over || active.id === over.id) {
+    if (!over) {
       setInitialSubEventId(null);
       setInitialPartyId(null);
+      initialAssignmentsStateRef.current = {};
       return;
     }
 
@@ -1411,7 +1412,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       const oldIndex = events.findIndex((e) => e.id === active.id);
       const newIndex = events.findIndex((e) => e.id === over.id);
 
-      if (oldIndex !== -1 && newIndex !== -1) {
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
         const reordered = arrayMove(events, oldIndex, newIndex);
         setEvents(reordered);
 
@@ -1433,7 +1434,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
       const oldIndex = eventSubEvents.findIndex((s) => s.id === active.id);
       const newIndex = eventSubEvents.findIndex((s) => s.id === over.id);
 
-      if (oldIndex !== -1 && newIndex !== -1) {
+      if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
         const reordered = arrayMove(eventSubEvents, oldIndex, newIndex).map((s, index) => ({
           ...s,
           order: index
@@ -1505,7 +1506,7 @@ export default function EventsPage({ isAdmin = false }: EventsPageProps) {
         const oldIndex = currentParties.findIndex(p => p.id === active.id);
         const overIndex = currentParties.findIndex(p => p.id === over.id);
         
-        if (oldIndex !== -1 && overIndex !== -1) {
+        if (oldIndex !== -1 && overIndex !== -1 && oldIndex !== overIndex) {
           const reordered = arrayMove(currentParties, oldIndex, overIndex);
           handlePartyReorder(eventId, currentSubEventId, reordered);
         }
